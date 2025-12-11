@@ -117,6 +117,7 @@ server.listen(port, function () {
     console.log("============================================================");
     console.log(new Date().toISOString() + " - Starting production server");
     console.log("Base path: " + basePath);
+    console.log("BASE_PATH env var: " + (process.env.BASE_PATH || "(not set)"));
     console.log("Listening on port " + port + "...");
 });
 
