@@ -14,6 +14,7 @@ var path = require("path");
 
 var port = process.argv[2] || 8080;
 var publicDir = path.join(__dirname, "public");
+var publicDirResolved = path.resolve(publicDir);
 
 var mimeTypes = {
     ".html": "text/html",
@@ -41,10 +42,11 @@ var server = http.createServer(function(req, res) {
         pathname = "/index.html";
     }
     
-    var filePath = path.join(publicDir, pathname);
+    // Resolve absolute path and guard against path traversal (CVE-2025-23084 / CVE-2025-27210)
+    var filePath = path.resolve(publicDirResolved, "." + pathname);
     
     // Security check - ensure file is within public directory
-    if (!filePath.startsWith(publicDir)) {
+    if (filePath !== publicDirResolved && !filePath.startsWith(publicDirResolved + path.sep)) {
         res.writeHead(403);
         res.end("Forbidden");
         return;
