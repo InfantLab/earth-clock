@@ -1,5 +1,6 @@
 /**
  * dev-server - serves static resources for developing "earth" locally
+ * Updated to use Node's built-in http server for better compatibility
  */
 
 "use strict";
@@ -7,48 +8,69 @@
 console.log("============================================================");
 console.log(new Date().toISOString() + " - Starting");
 
-var util = require("util");
+var http = require("http");
+var fs = require("fs");
+var path = require("path");
 
-/**
- * Returns true if the response should be compressed.
- */
-function compressionFilter(req, res) {
-    return (/json|text|javascript|font/).test(res.getHeader('Content-Type'));
-}
+var port = process.argv[2] || 8080;
+var publicDir = path.join(__dirname, "public");
 
-/**
- * Adds headers to a response to enable caching.
- */
-function cacheControl() {
-    return function(req, res, next) {
+var mimeTypes = {
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".json": "application/json",
+    ".css": "text/css",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".ttf": "font/ttf",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2"
+};
+
+var server = http.createServer(function(req, res) {
+    // Extract pathname from URL (handle query strings)
+    var urlPath = req.url;
+    var queryIndex = urlPath.indexOf('?');
+    var pathname = queryIndex >= 0 ? urlPath.substring(0, queryIndex) : urlPath;
+    
+    // Default to index.html for root
+    if (pathname === "/") {
+        pathname = "/index.html";
+    }
+    
+    var filePath = path.join(publicDir, pathname);
+    
+    // Security check - ensure file is within public directory
+    if (!filePath.startsWith(publicDir)) {
+        res.writeHead(403);
+        res.end("Forbidden");
+        return;
+    }
+    
+    fs.stat(filePath, function(err, stats) {
+        if (err || !stats.isFile()) {
+            res.writeHead(404);
+            res.end("Not Found");
+            return;
+        }
+        
+        var ext = path.extname(filePath).toLowerCase();
+        var contentType = mimeTypes[ext] || "application/octet-stream";
+        
+        res.setHeader("Content-Type", contentType);
         res.setHeader("Cache-Control", "public, max-age=300");
-        return next();
-    };
-}
-
-function logger() {
-    express.logger.token("date", function() {
-        return new Date().toISOString();
+        
+        var stream = fs.createReadStream(filePath);
+        stream.on("error", function() {
+            res.writeHead(500);
+            res.end("Internal Server Error");
+        });
+        stream.pipe(res);
     });
-    express.logger.token("response-all", function(req, res) {
-        return (res._header ? res._header : "").trim();
-    });
-    express.logger.token("request-all", function(req, res) {
-        return util.inspect(req.headers);
-    });
-    return express.logger(
-        ':date - info: :remote-addr :req[cf-connecting-ip] :req[cf-ipcountry] :method :url HTTP/:http-version ' +
-        '":user-agent" :referrer :req[cf-ray] :req[accept-encoding]\\n:request-all\\n\\n:response-all\\n');
-}
+});
 
-var port = process.argv[2];
-var express = require("express");
-var app = express();
-
-app.use(cacheControl());
-app.use(express.compress({filter: compressionFilter}));
-app.use(logger());
-app.use(express.static("public"));
-
-app.listen(port);
+server.listen(port);
 console.log("Listening on port " + port + "...");

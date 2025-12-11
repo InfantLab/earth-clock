@@ -1,15 +1,17 @@
-earth
-=====
+earth-clock
+===========
 
 **NOTE: the location of `dev-server.js` has changed from `{repository}/server/` to `{repository}/`**
 
-"earth" is a project to visualize global weather conditions.
+**earth-clock** is a fork of [earth](https://github.com/cambecc/earth) that transforms the classic Earth weather visualization into a world clock with real-time day/night terminator overlay, inspired by [World Clock](https://www.worldclock.ws/index.html).
 
-A customized instance of "earth" is available at http://earth.nullschool.net.
+This project extends the original earth visualization with:
+- **Real-time day/night terminator overlay** - Shows which parts of the Earth are currently in daylight or darkness
+- **Current weather data integration** - Automatically fetches and displays current GFS weather data
+- **Time display** - Shows current time with UTC/Local toggle
+- **Native JavaScript weather service** - No Java dependency required for weather data processing
 
-"earth" is a personal project I've used to learn javascript and browser programming, and is based on the earlier
-[Tokyo Wind Map](https://github.com/cambecc/air) project.  Feedback and contributions are welcome! ...especially
-those that clarify accepted best practices.
+The original "earth" project visualizes global weather conditions and is available at http://earth.nullschool.net. The original project is based on the earlier [Tokyo Wind Map](https://github.com/cambecc/air) project.
 
 building and launching
 ----------------------
@@ -22,7 +24,14 @@ After installing node.js and npm, clone "earth" and install dependencies:
 
 Next, launch the development web server:
 
+Using npm:
+    npm start
+
+Or using node directly:
     node dev-server.js 8080
+
+Or using bun (if installed):
+    bun dev-server.js 8080
 
 Finally, point your browser to:
 
@@ -62,18 +71,23 @@ following commands build these files:
 getting weather data
 --------------------
 
-Weather data is produced by the [Global Forecast System](http://en.wikipedia.org/wiki/Global_Forecast_System) (GFS),
+Weather data is automatically fetched by the weather service (see [WEATHER_SERVICE.md](WEATHER_SERVICE.md) for details).
+
+The weather service:
+- Automatically downloads current GFS data from NOAA NOMADS
+- Converts GRIB2 to JSON using native JavaScript (no Java required)
+- Updates every 6 hours
+- Saves data to `public/data/weather/current/`
+
+To run the weather service:
+
+    npm run weather-service
+
+For manual data fetching (original method), weather data is produced by the [Global Forecast System](http://en.wikipedia.org/wiki/Global_Forecast_System) (GFS),
 operated by the US National Weather Service. Forecasts are produced four times daily and made available for
 download from [NOMADS](http://nomads.ncep.noaa.gov/). The files are in [GRIB2](http://en.wikipedia.org/wiki/GRIB)
 format and contain over [300 records](http://www.nco.ncep.noaa.gov/pmb/products/gfs/gfs.t00z.pgrbf00.grib2.shtml).
-We need only a few of these records to visualize wind data at a particular isobar. The following commands download
-the 1000 hPa wind vectors and convert them to JSON format using the [grib2json](https://github.com/cambecc/grib2json)
-utility:
-
-    YYYYMMDD=<a date, for example: 20140101>
-    curl "http://nomads.ncep.noaa.gov/cgi-bin/filter_gfs.pl?file=gfs.t00z.pgrb2.1p00.f000&lev_10_m_above_ground=on&var_UGRD=on&var_VGRD=on&dir=%2Fgfs.${YYYYMMDD}00" -o gfs.t00z.pgrb2.1p00.f000
-    grib2json -d -n -o current-wind-surface-level-gfs-1.0.json gfs.t00z.pgrb2.1p00.f000
-    cp current-wind-surface-level-gfs-1.0.json <earth-git-repository>/public/data/weather/current
+We need only a few of these records to visualize wind data at a particular isobar.
 
 font subsetting
 ---------------
@@ -115,8 +129,25 @@ Building this project required solutions to some interesting problems. Here are 
      sometimes causing visual artifacts that (usually) quickly disappear.
    * There's gotta be a better way to do this. Any ideas?
 
+earth-clock features
+--------------------
+
+### Day/Night Terminator Overlay
+
+Real-time visualization of the day/night terminator line showing which parts of the Earth are currently in daylight or darkness. The calculation uses solar position algorithms to determine sun elevation for each geographic coordinate. See [DAY_NIGHT_CALCULATION.md](DAY_NIGHT_CALCULATION.md) for technical details.
+
+### Current Weather Data
+
+Automatic fetching and display of current GFS weather data with no Java dependency. The weather service uses native JavaScript GRIB2 parsing. See [WEATHER_SERVICE.md](WEATHER_SERVICE.md) for architecture and setup details.
+
+### Time Display
+
+Shows current time with UTC/Local toggle, updating every second when day/night overlay is active.
+
 inspiration
 -----------
 
-The awesome [hint.fm wind map](http://hint.fm/wind/) and [D3.js visualization library](http://d3js.org) provided
-the main inspiration for this project.
+This project is inspired by:
+- [World Clock](https://www.worldclock.ws/index.html) - World clock with time zone displays
+- The original [earth](https://github.com/cambecc/earth) project - Global weather visualization
+- The awesome [hint.fm wind map](http://hint.fm/wind/) and [D3.js visualization library](http://d3js.org)

@@ -82,6 +82,7 @@
     var fieldAgent = newAgent();     // the interpolated wind vector field
     var animatorAgent = newAgent();  // the wind animator
     var overlayAgent = newAgent();   // color overlay over the animation
+    var dayNightAgent = newAgent();  // day/night overlay
 
     /**
      * The input controller is an object that translates move operations (drag and/or zoom) into mutations of the
@@ -693,6 +694,120 @@
     }
 
     /**
+     * Calculate if a geographic coordinate is in daylight or darkness based on current UTC time.
+     * @param {Number} λ longitude in degrees
+     * @param {Number} φ latitude in degrees
+     * @param {Date} date the date/time to calculate for (defaults to current UTC time)
+     * @returns {Boolean} true if the point is in daylight, false if in darkness
+     */
+    function calculateDayNightStatus(λ, φ, date) {
+        // Always use current real-time UTC date, never use weather data date
+        // This ensures day/night overlay is always live regardless of weather data date
+        date = new Date(); // Force current time, ignore any passed date
+
+        // Convert to radians
+        var lon = λ * Math.PI / 180;
+        var lat = φ * Math.PI / 180;
+
+        // Calculate day of year (1-365)
+        var startOfYear = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+        var dayOfYear = Math.floor((date - startOfYear) / (24 * 60 * 60 * 1000)) + 1;
+
+        // Calculate solar declination (angle of sun above/below equator)
+        // Using simplified formula: δ ≈ 23.45° * sin(360° * (284 + n) / 365)
+        var declination = 23.45 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + dayOfYear) / 365);
+
+        // Calculate hour angle
+        // The sun is at 0° longitude at 12:00 UTC (solar noon at Greenwich)
+        // For any location, we need to find the time difference from solar noon
+        // Earth rotates 360° in 24 hours = 15° per hour
+        // Hour angle = (UTC hours - 12) * 15° + longitude
+        var hours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+        var hourAngle = ((hours - 12) * 15 + λ) * Math.PI / 180;
+
+        // Calculate sun's elevation angle at this location
+        // sin(elevation) = sin(lat) * sin(declination) + cos(lat) * cos(declination) * cos(hourAngle)
+        var sinElevation = Math.sin(lat) * Math.sin(declination) +
+                          Math.cos(lat) * Math.cos(declination) * Math.cos(hourAngle);
+        
+        // Clamp to valid range for asin
+        sinElevation = Math.max(-1, Math.min(1, sinElevation));
+        var elevation = Math.asin(sinElevation);
+
+        // If elevation is negative, the sun is below the horizon (night)
+        return elevation > 0;
+    }
+
+    /**
+     * Draw the day/night overlay on the daynight canvas.
+     * @param {Object} globe the globe object with projection
+     * @param {Object} mask the mask object for visible pixels
+     */
+    function drawDayNightOverlay(globe, mask) {
+        if (!globe || !mask) return;
+
+        var canvas = d3.select("#daynight").node();
+        if (!canvas) return;
+
+        µ.clearCanvas(canvas);
+        var ctx = canvas.getContext("2d");
+        var width = view.width;
+        var height = view.height;
+        var projection = globe.projection;
+        var bounds = globe.bounds(view);
+        // Always use current real-time UTC date for day/night overlay
+        // This is independent of weather data date - overlay should always be live
+        var currentDate = new Date(); // Current browser time (will be converted to UTC in calculation)
+
+        // Create ImageData for efficient pixel manipulation
+        var imageData = ctx.createImageData(width, height);
+        var data = imageData.data;
+        var DAYNIGHT_ALPHA = Math.floor(0.4 * 255);  // 40% opacity for night overlay (10% darker than before)
+
+        // Iterate through visible pixels (sample every 2 pixels for performance, similar to interpolation)
+        var point = [];
+        var nightPixelCount = 0;
+        var isFirstIteration = true;
+        for (var y = bounds.y; y <= bounds.yMax; y += 2) {
+            for (var x = bounds.x; x <= bounds.xMax; x += 2) {
+                if (mask.isVisible(x, y)) {
+                    point[0] = x;
+                    point[1] = y;
+                    var coord = projection.invert(point);
+                    if (coord && _.isFinite(coord[0]) && _.isFinite(coord[1])) {
+                        var λ = coord[0], φ = coord[1];
+                        if (_.isFinite(λ) && _.isFinite(φ)) {
+                            var isDay = calculateDayNightStatus(λ, φ, currentDate);
+                            if (!isDay) {
+                                nightPixelCount++;
+                                // Apply dark overlay to night regions (fill 2x2 pixel block for smoother appearance)
+                                var baseIndex = (y * width + x) * 4;
+                                var indices = [
+                                    baseIndex,                    // (x, y)
+                                    baseIndex + 4,                // (x+1, y)
+                                    baseIndex + width * 4,        // (x, y+1)
+                                    baseIndex + width * 4 + 4     // (x+1, y+1)
+                                ];
+                                indices.forEach(function(i) {
+                                    if (i >= 0 && i < data.length - 3) {
+                                        data[i] = 0;      // R
+                                        data[i + 1] = 0;  // G
+                                        data[i + 2] = 0;  // B
+                                        data[i + 3] = DAYNIGHT_ALPHA;  // A
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        log.debug("day/night overlay: " + nightPixelCount + " night pixels drawn, date: " + currentDate.toISOString());
+    }
+
+    /**
      * Extract the date the grids are valid, or the current date if no grid is available.
      * UNDONE: if the grids hold unloaded products, then the date can be extracted from them.
      *         This function would simplify nicely.
@@ -886,6 +1001,8 @@
         });
 
         d3.selectAll(".fill-screen").attr("width", view.width).attr("height", view.height);
+        // Ensure daynight canvas is properly sized
+        d3.select("#daynight").attr("width", view.width).attr("height", view.height);
         // Adjust size of the scale canvas to fill the width of the menu to the right of the label.
         var label = d3.select("#scale-label").node();
         d3.select("#scale")
@@ -964,6 +1081,10 @@
         d3.select("#toggle-zone").on("click", function() {
             d3.select("#data-date").classed("local", !d3.select("#data-date").classed("local"));
             showDate(gridAgent.cancel.requested ? null : gridAgent.value());
+            // Update time display when UTC/LOCAL toggle changes (if day/night is enabled)
+            if (dayNightEnabled) {
+                updateDayNightTime();
+            }
         });
 
         function startRendering() {
@@ -1004,10 +1125,251 @@
             }
         });
 
+        // Day/night overlay setup
+        var dayNightUpdateInterval = null;
+        var dayNightMaskInterval = null;
+        var dayNightTimeInterval = null;
+        var dayNightEnabled = true; // Default to enabled
+        var cachedMask = null;
+        var cachedGlobe = null;
+        
+        function getMask(globe) {
+            // Only recreate mask if globe has changed or cache is invalid
+            if (!globe) return null;
+            if (cachedGlobe !== globe || !cachedMask) {
+                cachedGlobe = globe;
+                cachedMask = createMask(globe);
+            }
+            return cachedMask;
+        }
+        
+        function invalidateMask() {
+            cachedMask = null;
+            cachedGlobe = null;
+        }
+        
+        function updateDayNight() {
+            if (!dayNightEnabled) {
+                // Clear the canvas if disabled
+                var canvas = d3.select("#daynight").node();
+                if (canvas) {
+                    µ.clearCanvas(canvas);
+                }
+                return;
+            }
+            
+            var globe = globeAgent.value();
+            if (globe) {
+                var mask = getMask(globe);
+                if (mask) {
+                    // Ensure canvas is ready before drawing
+                    var canvas = d3.select("#daynight").node();
+                    if (canvas && canvas.width > 0 && canvas.height > 0) {
+                        drawDayNightOverlay(globe, mask);
+                    } else {
+                        // Canvas not ready yet, try again on next frame
+                        setTimeout(updateDayNight, 100);
+                    }
+                } else {
+                    // Mask not ready yet, try again shortly
+                    setTimeout(updateDayNight, 100);
+                }
+            }
+        }
+
+        // Update day/night overlay when globe/projection changes (this will recreate the mask)
+        dayNightAgent.listenTo(globeAgent, "update", function() {
+            invalidateMask(); // Invalidate cache when globe changes
+            // Delay slightly to ensure renderer is ready
+            setTimeout(updateDayNight, 50);
+        });
+        dayNightAgent.listenTo(rendererAgent, "render", function() {
+            // Ensure mask is created and canvas is ready before rendering
+            setTimeout(updateDayNight, 50);
+        });
+        dayNightAgent.listenTo(rendererAgent, "redraw", function() {
+            invalidateMask(); // Invalidate cache on redraw (projection might have changed)
+            // Delay slightly to ensure renderer is ready
+            setTimeout(updateDayNight, 50);
+        });
+        dayNightAgent.listenTo(inputController, "moveEnd", updateDayNight);
+
+        // Update time display in separate element
+        function updateDayNightTime() {
+            if (!dayNightEnabled) {
+                // Clear time display if day/night is disabled
+                clearTimeDisplay();
+                return;
+            }
+            
+            // Only update if time display is visible (has content)
+            var timeValue = d3.select("#time-value");
+            var timeDisplay = d3.select("#time-display");
+            
+            if (timeValue.text() === "") {
+                // Time display was closed, don't update
+                return;
+            }
+            
+            // Ensure time display is visible (in case something hid it)
+            timeDisplay.classed("invisible", false);
+            
+            var isLocal = d3.select("#data-date").classed("local");
+            var now = new Date();
+            var hours = isLocal ? now.getHours() : now.getUTCHours();
+            var minutes = isLocal ? now.getMinutes() : now.getUTCMinutes();
+            var seconds = isLocal ? now.getSeconds() : now.getUTCSeconds();
+            var timeStr = µ.zeroPad(hours, 2) + ":" + µ.zeroPad(minutes, 2) + ":" + µ.zeroPad(seconds, 2);
+            var zoneStr = isLocal ? "Local" : "UTC";
+            
+            // Update time value and zone (zone is clickable)
+            timeValue.text(timeStr + " ");
+            d3.select("#time-zone").text(zoneStr);
+        }
+        
+        // Clear time display (like clearLocationDetails)
+        function clearTimeDisplay() {
+            d3.select("#time-value").text("");
+            d3.select("#time-zone").text("");
+            d3.select("#time-close").classed("invisible", true);
+            d3.select("#time-display").classed("invisible", true);
+        }
+        
+        // Toggle time zone (Local/UTC)
+        function toggleTimeZone() {
+            // Toggle the same setting that controls date display
+            d3.select("#data-date").classed("local", !d3.select("#data-date").classed("local"));
+            // Update date display
+            showDate(gridAgent.cancel.requested ? null : gridAgent.value());
+            // Update time display
+            updateDayNightTime();
+        }
+        
+        // Close time display (like clearLocationDetails)
+        function closeTimeDisplay() {
+            clearTimeDisplay();
+            updateTimeDisplayButton();
+        }
+        
+        // Show time display (like showLocationDetails)
+        function showTimeDisplay() {
+            if (!dayNightEnabled) {
+                return; // Can't show time if day/night is disabled
+            }
+            // Make display visible and show close button
+            d3.select("#time-display").classed("invisible", false);
+            d3.select("#time-close").classed("invisible", false);
+            // Populate the content immediately
+            var isLocal = d3.select("#data-date").classed("local");
+            var now = new Date();
+            var hours = isLocal ? now.getHours() : now.getUTCHours();
+            var minutes = isLocal ? now.getMinutes() : now.getUTCMinutes();
+            var seconds = isLocal ? now.getSeconds() : now.getUTCSeconds();
+            var timeStr = µ.zeroPad(hours, 2) + ":" + µ.zeroPad(minutes, 2) + ":" + µ.zeroPad(seconds, 2);
+            var zoneStr = isLocal ? "Local" : "UTC";
+            d3.select("#time-value").text(timeStr + " ");
+            d3.select("#time-zone").text(zoneStr);
+            updateTimeDisplayButton();
+        }
+        
+        // Toggle time display visibility
+        function toggleTimeDisplay() {
+            var timeValue = d3.select("#time-value");
+            if (timeValue.text() !== "") {
+                // Time display is visible, close it
+                closeTimeDisplay();
+            } else {
+                // Time display is hidden, show it
+                showTimeDisplay();
+            }
+        }
+        
+        // Update time display button state
+        function updateTimeDisplayButton() {
+            var timeValue = d3.select("#time-value");
+            var isVisible = timeValue.text() !== "";
+            d3.select("#option-display-time").classed("highlighted", isVisible);
+        }
+        
+        // Start continuous real-time updates (every second for day/night, every minute for mask)
+        function startDayNightUpdates() {
+            if (dayNightUpdateInterval) {
+                clearInterval(dayNightUpdateInterval);
+            }
+            if (dayNightMaskInterval) {
+                clearInterval(dayNightMaskInterval);
+            }
+            if (dayNightTimeInterval) {
+                clearInterval(dayNightTimeInterval);
+            }
+            // Update day/night overlay every second
+            dayNightUpdateInterval = setInterval(updateDayNight, SECOND);
+            // Update time display every second (only updates if content exists)
+            dayNightTimeInterval = setInterval(updateDayNightTime, SECOND);
+            // Recalculate mask every minute
+            dayNightMaskInterval = setInterval(function() {
+                invalidateMask();
+                updateDayNight();
+            }, MINUTE);
+            updateDayNight(); // Initial update
+            // Show time display by default
+            if (dayNightEnabled) {
+                showTimeDisplay();
+            } else {
+                updateTimeDisplayButton(); // Initial button state
+            }
+        }
+
+        // Stop updates when needed
+        function stopDayNightUpdates() {
+            if (dayNightUpdateInterval) {
+                clearInterval(dayNightUpdateInterval);
+                dayNightUpdateInterval = null;
+            }
+            if (dayNightMaskInterval) {
+                clearInterval(dayNightMaskInterval);
+                dayNightMaskInterval = null;
+            }
+            if (dayNightTimeInterval) {
+                clearInterval(dayNightTimeInterval);
+                dayNightTimeInterval = null;
+            }
+            // Clear time display
+            clearTimeDisplay();
+        }
+        
+        // Toggle day/night overlay
+        function updateDayNightButton() {
+            d3.select("#option-daynight").classed("highlighted", dayNightEnabled);
+        }
+        d3.select("#option-daynight").on("click", function() {
+            dayNightEnabled = !dayNightEnabled;
+            if (dayNightEnabled) {
+                startDayNightUpdates();
+            } else {
+                stopDayNightUpdates();
+                updateDayNight();
+                clearTimeDisplay(); // Clear time display when day/night is disabled
+            }
+            updateDayNightButton();
+        });
+        updateDayNightButton(); // Initial state
+
+        // Start updates after initialization
+        when(true).then(function() {
+            startDayNightUpdates();
+        });
+
         // Add event handlers for showing, updating, and removing location details.
         inputController.on("click", showLocationDetails);
         fieldAgent.on("update", updateLocationDetails);
         d3.select("#location-close").on("click", _.partial(clearLocationDetails, true));
+        
+        // Set up time display event handlers
+        d3.select("#time-zone").on("click", toggleTimeZone);
+        d3.select("#time-close").on("click", closeTimeDisplay);
+        d3.select("#option-display-time").on("click", toggleTimeDisplay);
+        updateTimeDisplayButton(); // Initial state - time display starts visible
 
         // Modify menu depending on what mode we're in.
         configuration.on("change:param", function(context, mode) {
@@ -1110,6 +1472,8 @@
         // When touch device changes between portrait and landscape, rebuild globe using the new view size.
         d3.select(window).on("orientationchange", function() {
             view = µ.view();
+            d3.selectAll(".fill-screen").attr("width", view.width).attr("height", view.height);
+            d3.select("#daynight").attr("width", view.width).attr("height", view.height);
             globeAgent.submit(buildGlobe, configuration.get("projection"));
         });
     }

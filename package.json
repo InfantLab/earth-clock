@@ -14,12 +14,18 @@
     },
     "engine": "node >= 0.10.21",
     "dependencies": {
-        "when": "2.6.0",
-        "swig": "1.2.2",
+        "express": "3.4.4",
+        "grib-js": "^1.0.0",
         "mkdirp": "0.3.5",
-        "express": "3.4.4"
+        "swig": "1.2.2",
+        "when": "2.6.0"
+    },
+    "scripts": {
+        "start": "node dev-server.js 8080",
+        "weather-service": "node weather-service.js"
     },
     "devDependencies": {
+        "grib2-simple": "^1.1.1",
         "grunt": "~0.4.1",
         "grunt-contrib-jshint": "~0.7.1"
     }
