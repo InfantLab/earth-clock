@@ -22,7 +22,7 @@ The solar declination (δ) is the angle of the sun above or below the celestial 
 
 Where:
 - `n` = day of year (1-365)
-- The formula uses day 284 (October 11) as a reference point
+- Day 284 (October 11) is a commonly used phase offset that best fits the sinusoid to the actual declination curve; it is not an equinox anchor but an empirical offset that minimizes error across the year.
 
 #### 2. Hour Angle
 

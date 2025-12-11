@@ -31,42 +31,42 @@ var mimeTypes = {
     ".woff2": "font/woff2"
 };
 
-var server = http.createServer(function(req, res) {
+var server = http.createServer(function (req, res) {
     // Extract pathname from URL (handle query strings)
     var urlPath = req.url;
     var queryIndex = urlPath.indexOf('?');
     var pathname = queryIndex >= 0 ? urlPath.substring(0, queryIndex) : urlPath;
-    
+
     // Default to index.html for root
     if (pathname === "/") {
         pathname = "/index.html";
     }
-    
+
     // Resolve absolute path and guard against path traversal (CVE-2025-23084 / CVE-2025-27210)
     var filePath = path.resolve(publicDirResolved, "." + pathname);
-    
+
     // Security check - ensure file is within public directory
     if (filePath !== publicDirResolved && !filePath.startsWith(publicDirResolved + path.sep)) {
         res.writeHead(403);
         res.end("Forbidden");
         return;
     }
-    
-    fs.stat(filePath, function(err, stats) {
+
+    fs.stat(filePath, function (err, stats) {
         if (err || !stats.isFile()) {
             res.writeHead(404);
             res.end("Not Found");
             return;
         }
-        
+
         var ext = path.extname(filePath).toLowerCase();
         var contentType = mimeTypes[ext] || "application/octet-stream";
-        
+
         res.setHeader("Content-Type", contentType);
         res.setHeader("Cache-Control", "public, max-age=300");
-        
+
         var stream = fs.createReadStream(filePath);
-        stream.on("error", function() {
+        stream.on("error", function () {
             res.writeHead(500);
             res.end("Internal Server Error");
         });

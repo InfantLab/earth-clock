@@ -21,7 +21,8 @@
         "when": "2.6.0"
     },
     "scripts": {
-        "start": "node dev-server.js 8080",
+        "start": "node server.js",
+        "dev": "node dev-server.js 8080",
         "weather-service": "node weather-service.js"
     },
     "devDependencies": {
