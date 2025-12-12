@@ -33,7 +33,7 @@ Ensure all files are committed and pushed to your Git repository:
 #### Method A: Deploy from Git (Recommended)
 
 1. In the app settings, go to "Deployment" tab
-2. Select "Method 3: Deploy from GitHub/Bitbucket/GitLab"
+2. Select "Method 1: Deploy from GitHub/Bitbucket/GitLab"
 3. Enter your repository URL
 4. Select branch (usually `master` or `main`)
 5. Click "Save & Update"
@@ -41,7 +41,7 @@ Ensure all files are committed and pushed to your Git repository:
 #### Method B: Deploy from Dockerfile
 
 1. In the app settings, go to "Deployment" tab
-2. Select "Method 1: Deploy from Dockerfile"
+2. Select "Method 2: Deploy from Dockerfile"
 3. Upload or paste your `Dockerfile` and `captain-definition`
 4. Click "Save & Update"
 
