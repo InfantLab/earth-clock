@@ -1,15 +1,17 @@
 earth-clock
 ===========
 
-**NOTE: the location of `dev-server.js` has changed from `{repository}/server/` to `{repository}/`**
+![earth-clock](https://earth-clock.onemonkey.org/cover.jpg)
 
-**earth-clock** is a fork of [earth](https://github.com/cambecc/earth) that transforms the classic Earth weather visualization into a world clock with real-time day/night terminator overlay, inspired by [World Clock](https://www.worldclock.ws/index.html).
+**[earth-clock](https://earth-clock.onemonkey.org/)** is a fork of [earth](https://github.com/cambecc/earth) that transforms the classic Earth weather visualization into a world clock with real-time day/night terminator overlay, inspired by [World Clock](https://www.worldclock.ws/index.html).
 
 This project extends the original earth visualization with:
 - **Real-time day/night terminator overlay** - Shows which parts of the Earth are currently in daylight or darkness
 - **Current weather data integration** - Automatically fetches and displays current GFS weather data
 - **Time display** - Shows current time with UTC/Local toggle
 - **Native JavaScript weather service** - No Java dependency required for weather data processing
+
+You can view the live version at [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/).
 
 The original "earth" project visualizes global weather conditions and is available at http://earth.nullschool.net. The original project is based on the earlier [Tokyo Wind Map](https://github.com/cambecc/air) project.
 
@@ -18,8 +20,8 @@ building and launching
 
 After installing node.js and npm, clone "earth" and install dependencies:
 
-    git clone https://github.com/cambecc/earth
-    cd earth
+    git clone https://github.com/infantlab/earth-clock
+    cd earth-clock  
     npm install
 
 Next, launch the development web server:

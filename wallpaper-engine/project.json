@@ -1,0 +1,192 @@
+{
+  "contentrating": "Everyone",
+  "description": "Animated global weather visualization with real-time day/night terminator overlay. Based on earth-clock with full projection control.",
+  "file": "index.html",
+  "general": {
+    "properties": {
+      "projection": {
+        "text": "Projection",
+        "type": "combo",
+        "value": "orthographic",
+        "order": 1,
+        "options": [
+          {
+            "label": "Orthographic",
+            "value": "orthographic"
+          },
+          {
+            "label": "Equirectangular",
+            "value": "equirectangular"
+          },
+          {
+            "label": "Azimuthal Equidistant",
+            "value": "azimuthal_equidistant"
+          },
+          {
+            "label": "Conic Equidistant",
+            "value": "conic_equidistant"
+          },
+          {
+            "label": "Stereographic",
+            "value": "stereographic"
+          },
+          {
+            "label": "Waterman Butterfly",
+            "value": "waterman"
+          },
+          {
+            "label": "Winkel Tripel",
+            "value": "winkel3"
+          },
+          {
+            "label": "Atlantis",
+            "value": "atlantis"
+          }
+        ]
+      },
+      "overlay": {
+        "text": "Overlay",
+        "type": "combo",
+        "value": "off",
+        "order": 2,
+        "options": [
+          {
+            "label": "None",
+            "value": "off"
+          },
+          {
+            "label": "Wind Speed",
+            "value": "wind"
+          },
+          {
+            "label": "Temperature",
+            "value": "temp"
+          },
+          {
+            "label": "Relative Humidity",
+            "value": "relative_humidity"
+          },
+          {
+            "label": "Air Density",
+            "value": "air_density"
+          },
+          {
+            "label": "Wind Power Density",
+            "value": "wind_power_density"
+          },
+          {
+            "label": "Total Precipitable Water",
+            "value": "total_precipitable_water"
+          },
+          {
+            "label": "Total Cloud Water",
+            "value": "total_cloud_water"
+          },
+          {
+            "label": "Mean Sea Level Pressure",
+            "value": "mean_sea_level_pressure"
+          }
+        ]
+      },
+      "height": {
+        "text": "Height Level",
+        "type": "combo",
+        "value": "level",
+        "order": 3,
+        "options": [
+          {
+            "label": "Surface",
+            "value": "level"
+          },
+          {
+            "label": "1000 hPa",
+            "value": "1000hPa"
+          },
+          {
+            "label": "850 hPa",
+            "value": "850hPa"
+          },
+          {
+            "label": "700 hPa",
+            "value": "700hPa"
+          },
+          {
+            "label": "500 hPa",
+            "value": "500hPa"
+          },
+          {
+            "label": "250 hPa",
+            "value": "250hPa"
+          },
+          {
+            "label": "70 hPa",
+            "value": "70hPa"
+          },
+          {
+            "label": "10 hPa",
+            "value": "10hPa"
+          }
+        ]
+      },
+      "longitude": {
+        "text": "Longitude",
+        "type": "slider",
+        "min": -180,
+        "max": 180,
+        "step": 1,
+        "value": 0,
+        "order": 4
+      },
+      "latitude": {
+        "text": "Latitude",
+        "type": "slider",
+        "min": -90,
+        "max": 90,
+        "step": 1,
+        "value": 0,
+        "order": 5
+      },
+      "zoom": {
+        "text": "Zoom/Scale",
+        "type": "slider",
+        "min": 100,
+        "max": 2000,
+        "step": 10,
+        "value": 600,
+        "order": 6
+      },
+      "daynight": {
+        "text": "Day/Night Overlay",
+        "type": "bool",
+        "value": true,
+        "order": 7
+      },
+      "datasource": {
+        "text": "Data Source",
+        "type": "combo",
+        "value": "live",
+        "order": 8,
+        "options": [
+          {
+            "label": "Live Server",
+            "value": "live"
+          },
+          {
+            "label": "Bundled",
+            "value": "bundled"
+          }
+        ]
+      }
+    }
+  },
+  "preview": "preview.jpg",
+  "tags": [
+    "Nature",
+    "Weather",
+    "Interactive",
+    "Animated"
+  ],
+  "title": "Earth Clock - Global Weather",
+  "type": "web",
+  "version": 1
+}

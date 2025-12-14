@@ -1,6 +1,6 @@
 # Deployment Guide for CapRover
 
-This guide explains how to deploy earth-clock to CapRover at `onemonkey.org/earth-clock`.
+This guide explains how to deploy earth-clock to CapRover at `earth-clock.onemonkey.org/`.
 
 ## Prerequisites
 
@@ -75,7 +75,7 @@ Alternatively, if CapRover handles path routing automatically, you may need to c
 
 ### 7. Verify Deployment
 
-1. Visit `https://onemonkey.org/earth-clock` in your browser
+1. Visit `https://earth-clock.onemonkey.org/` in your browser
 2. Check browser console for any 404 errors
 3. Verify weather data loads (check Network tab for `/earth-clock/data/weather/current/` requests)
 4. Verify day/night mask renders
