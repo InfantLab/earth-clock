@@ -37,9 +37,17 @@
                 // Convert relative path to live server URL
                 var liveUrl = "https://earth-clock.onemonkey.org/" + url;
                 console.log("Data Source Wrapper: Loading from live server:", liveUrl);
-                return originalLoadJson(liveUrl);
+                // Try live server first, but fallback to bundled on error
+                var livePromise = originalLoadJson(liveUrl);
+                return livePromise.then(
+                    function (result) { return result; },
+                    function (error) {
+                        console.warn("Data Source Wrapper: Live server failed, falling back to bundled:", error);
+                        return originalLoadJson(url);
+                    }
+                );
             } else {
-                // Use bundled data (relative path)
+                // Use bundled data (relative path) - default for offline compatibility
                 console.log("Data Source Wrapper: Loading bundled data:", url);
                 return originalLoadJson(url);
             }
