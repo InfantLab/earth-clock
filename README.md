@@ -1,7 +1,7 @@
 earth-clock
 ===========
 
-![earth-clock](https://earth-clock.onemonkey.org/cover.jpg)
+![earth-clock](https://github.com/InfantLab/earth-clock/raw/master/public/cover.jpg)
 
 **[earth-clock](https://earth-clock.onemonkey.org/)** is a fork of [earth](https://github.com/cambecc/earth) that transforms the classic Earth weather visualization into a world clock with real-time day/night terminator overlay, inspired by [World Clock](https://www.worldclock.ws/index.html).
 
