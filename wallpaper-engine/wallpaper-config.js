@@ -31,6 +31,9 @@
         var configuration = window.configuration;
         var globes = window.globes;
 
+        // Track if we've applied initial properties
+        var initialPropertiesApplied = false;
+
         // Helper function to update configuration
         function updateConfig(attrs) {
             if (configuration) {
@@ -91,85 +94,129 @@
             applyUserProperties: function (properties) {
                 console.log("Wallpaper Engine: Applying user properties", properties);
 
-                // Handle projection change
-                if (properties.hasOwnProperty('projection')) {
-                    var projection = properties.projection.value;
-                    updateConfig({ projection: projection, orientation: "" });
-                }
-
-                // Handle overlay change
-                if (properties.hasOwnProperty('overlay')) {
-                    var overlay = properties.overlay.value;
-                    var overlayAttrs = mapOverlay(overlay);
-                    updateConfig(overlayAttrs);
-                }
-
-                // Handle height level change
-                if (properties.hasOwnProperty('height')) {
-                    var height = properties.height.value;
-                    var heightAttrs = mapHeightLevel(height);
-                    // Merge with param: "wind"
-                    var mergedAttrs = { param: "wind" };
-                    for (var key in heightAttrs) {
-                        if (heightAttrs.hasOwnProperty(key)) {
-                            mergedAttrs[key] = heightAttrs[key];
+                // If this is the first time properties are applied, wait a bit for earth.js to finish initializing
+                if (!initialPropertiesApplied) {
+                    initialPropertiesApplied = true;
+                    // Longer delay to ensure earth.js has finished its initial setup and default hash has been processed
+                    setTimeout(function () {
+                        applyProperties(properties);
+                        // Double-check projection was applied correctly
+                        if (properties.hasOwnProperty('projection')) {
+                            setTimeout(function () {
+                                var currentProjection = configuration.get("projection");
+                                var desiredProjection = properties.projection.value;
+                                if (currentProjection !== desiredProjection) {
+                                    console.warn("Wallpaper Engine: Projection mismatch, reapplying. Current:", currentProjection, "Desired:", desiredProjection);
+                                    updateConfig({ projection: desiredProjection, orientation: "" });
+                                }
+                            }, 200);
                         }
-                    }
-                    updateConfig(mergedAttrs);
-                }
-
-                // Handle longitude change
-                if (properties.hasOwnProperty('longitude')) {
-                    var lon = properties.longitude.value;
-                    var current = getCurrentOrientation();
-                    updateOrientation(lon, current.lat, current.zoom);
-                }
-
-                // Handle latitude change
-                if (properties.hasOwnProperty('latitude')) {
-                    var lat = properties.latitude.value;
-                    var current = getCurrentOrientation();
-                    updateOrientation(current.lon, lat, current.zoom);
-                }
-
-                // Handle zoom change
-                if (properties.hasOwnProperty('zoom')) {
-                    var zoom = properties.zoom.value;
-                    var current = getCurrentOrientation();
-                    updateOrientation(current.lon, current.lat, zoom);
-                }
-
-                // Handle day/night overlay toggle
-                if (properties.hasOwnProperty('daynight')) {
-                    var enabled = properties.daynight.value;
-                    window.wallpaperSettings.dayNightEnabled = enabled;
-
-                    // Toggle day/night by clicking the button if it exists
-                    var dayNightButton = document.querySelector("#option-daynight");
-                    if (dayNightButton) {
-                        var isCurrentlyEnabled = dayNightButton.classList.contains("highlighted");
-                        if (enabled !== isCurrentlyEnabled) {
-                            dayNightButton.click();
-                        }
-                    } else {
-                        // Fallback: try to trigger update directly
-                        // This will work if dayNightEnabled is accessible
-                        setTimeout(function () {
-                            if (typeof updateDayNight === 'function') {
-                                updateDayNight();
-                            }
-                        }, 100);
-                    }
-                }
-
-                // Handle data source change
-                if (properties.hasOwnProperty('datasource')) {
-                    var source = properties.datasource.value;
-                    window.wallpaperSettings.dataSource = source;
-                    // Data source change will be handled by products.js modification
+                    }, 300);
+                } else {
+                    applyProperties(properties);
                 }
             }
         };
+
+        // Helper function to apply properties
+        function applyProperties(properties) {
+            // Handle projection change - this must happen first and separately
+            if (properties.hasOwnProperty('projection')) {
+                var projection = properties.projection.value;
+                var currentProjection = configuration.get("projection");
+                console.log("Wallpaper Engine: Setting projection to", projection, "(current:", currentProjection + ")");
+
+                // Only update if different to avoid unnecessary rebuilds
+                if (currentProjection !== projection) {
+                    // Set projection and clear orientation to force rebuild
+                    updateConfig({ projection: projection, orientation: "" });
+
+                    // Verify it was applied
+                    setTimeout(function () {
+                        var newProjection = configuration.get("projection");
+                        if (newProjection !== projection) {
+                            console.error("Wallpaper Engine: Projection not applied correctly! Expected:", projection, "Got:", newProjection);
+                            // Force it again
+                            configuration.save({ projection: projection, orientation: "" });
+                        } else {
+                            console.log("Wallpaper Engine: Projection successfully set to", newProjection);
+                        }
+                    }, 100);
+                }
+            }
+
+            // Handle overlay change
+            if (properties.hasOwnProperty('overlay')) {
+                var overlay = properties.overlay.value;
+                var overlayAttrs = mapOverlay(overlay);
+                updateConfig(overlayAttrs);
+            }
+
+            // Handle height level change
+            if (properties.hasOwnProperty('height')) {
+                var height = properties.height.value;
+                var heightAttrs = mapHeightLevel(height);
+                // Merge with param: "wind"
+                var mergedAttrs = { param: "wind" };
+                for (var key in heightAttrs) {
+                    if (heightAttrs.hasOwnProperty(key)) {
+                        mergedAttrs[key] = heightAttrs[key];
+                    }
+                }
+                updateConfig(mergedAttrs);
+            }
+
+            // Handle longitude change
+            if (properties.hasOwnProperty('longitude')) {
+                var lon = properties.longitude.value;
+                var current = getCurrentOrientation();
+                updateOrientation(lon, current.lat, current.zoom);
+            }
+
+            // Handle latitude change
+            if (properties.hasOwnProperty('latitude')) {
+                var lat = properties.latitude.value;
+                var current = getCurrentOrientation();
+                updateOrientation(current.lon, lat, current.zoom);
+            }
+
+            // Handle zoom change
+            if (properties.hasOwnProperty('zoom')) {
+                var zoom = properties.zoom.value;
+                var current = getCurrentOrientation();
+                updateOrientation(current.lon, current.lat, zoom);
+            }
+
+            // Handle day/night overlay toggle
+            if (properties.hasOwnProperty('daynight')) {
+                var enabled = properties.daynight.value;
+                window.wallpaperSettings.dayNightEnabled = enabled;
+
+                // Toggle day/night by clicking the button if it exists
+                var dayNightButton = document.querySelector("#option-daynight");
+                if (dayNightButton) {
+                    var isCurrentlyEnabled = dayNightButton.classList.contains("highlighted");
+                    if (enabled !== isCurrentlyEnabled) {
+                        dayNightButton.click();
+                    }
+                } else {
+                    // Fallback: try to trigger update directly
+                    // This will work if dayNightEnabled is accessible
+                    setTimeout(function () {
+                        if (typeof updateDayNight === 'function') {
+                            updateDayNight();
+                        }
+                    }, 100);
+                }
+            }
+
+            // Handle data source change
+            if (properties.hasOwnProperty('datasource')) {
+                var source = properties.datasource.value;
+                window.wallpaperSettings.dataSource = source;
+                // Data source change will be handled by products.js modification
+            }
+        }
 
         console.log("Wallpaper Engine: Property listener initialized");
     }
