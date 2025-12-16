@@ -5,3 +5,7 @@ target
 scratch
 private
 *.iml
+
+
+# Generated runtime data (refreshed by services)
+public/data/weather/current/current-*.json

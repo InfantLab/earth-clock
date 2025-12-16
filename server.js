@@ -9,6 +9,11 @@ var http = require("http");
 var fs = require("fs");
 var path = require("path");
 
+// Background data updaters (weather overlays + OSCAR currents).
+// These are started from the main server process so Docker/CapRover runs a single long-lived process.
+var weatherService = require("./weather-service");
+var oscarService = require("./oscar-service");
+
 var port = process.env.PORT || 80;
 var basePath = process.env.BASE_PATH || "/";
 // Ensure base path starts with / and ends without /
@@ -120,4 +125,18 @@ server.listen(port, function () {
     console.log("BASE_PATH env var: " + (process.env.BASE_PATH || "(not set)"));
     console.log("Listening on port " + port + "...");
 });
+
+// Start background services after the HTTP server is up.
+setTimeout(function () {
+    try {
+        weatherService.startWeatherService();
+    } catch (e) {
+        console.error("Failed to start weather service:", e && e.message ? e.message : e);
+    }
+    try {
+        oscarService.startOscarService();
+    } catch (e2) {
+        console.error("Failed to start OSCAR service:", e2 && e2.message ? e2.message : e2);
+    }
+}, 0);
 

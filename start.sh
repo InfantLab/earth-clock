@@ -1,10 +1,7 @@
 #!/bin/sh
 # Start script for earth-clock
-# Runs weather service in background and web server in foreground
+# Runs a single Node process (server.js), which starts background services internally.
 
-echo "Starting weather service..."
-node weather-service.js &
-
-echo "Starting web server..."
-node server.js
+echo "Starting earth-clock server (includes data updaters)..."
+exec node server.js
 

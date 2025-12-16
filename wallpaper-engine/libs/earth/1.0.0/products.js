@@ -6,7 +6,7 @@
  *
  * https://github.com/cambecc/earth
  */
-var products = function() {
+var products = function () {
     "use strict";
 
     var WEATHER_PATH = "data/weather";
@@ -22,12 +22,12 @@ var products = function() {
             description: "",
             paths: [],
             date: null,
-            navigate: function(step) {
+            navigate: function (step) {
                 return gfsStep(this.date, step);
             },
-            load: function(cancel) {
+            load: function (cancel) {
                 var me = this;
-                return when.map(this.paths, µ.loadJson).then(function(files) {
+                return when.map(this.paths, µ.loadJson).then(function (files) {
                     return cancel.requested ? null : _.extend(me, buildGrid(me.builder.apply(me, files)));
                 });
             }
@@ -98,9 +98,9 @@ var products = function() {
      *     {foo: "あ", bar: "い"}
      */
     function localize(table) {
-        return function(langCode) {
+        return function (langCode) {
             var result = {};
-            _.each(table, function(value, key) {
+            _.each(table, function (value, key) {
                 result[key] = value[langCode] || value.en || value;
             });
             return result;
@@ -110,85 +110,85 @@ var products = function() {
     var FACTORIES = {
 
         "wind": {
-            matches: _.matches({param: "wind"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind" }),
+            create: function (attr) {
                 return buildProduct({
                     field: "vector",
                     type: "wind",
                     description: localize({
-                        name: {en: "Wind", ja: "風速"},
-                        qualifier: {en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr)}
+                        name: { en: "Wind", ja: "風速" },
+                        qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
                     }),
                     paths: [gfs1p0degPath(attr, "wind", attr.surface, attr.level)],
                     date: gfsDate(attr),
-                    builder: function(file) {
+                    builder: function (file) {
                         var uData = file[0].data, vData = file[1].data;
                         return {
                             header: file[0].header,
                             interpolate: bilinearInterpolateVector,
-                            data: function(i) {
+                            data: function (i) {
                                 return [uData[i], vData[i]];
                             }
                         }
                     },
                     units: [
-                        {label: "km/h", conversion: function(x) { return x * 3.6; },      precision: 0},
-                        {label: "m/s",  conversion: function(x) { return x; },            precision: 1},
-                        {label: "kn",   conversion: function(x) { return x * 1.943844; }, precision: 0},
-                        {label: "mph",  conversion: function(x) { return x * 2.236936; }, precision: 0}
+                        { label: "km/h", conversion: function (x) { return x * 3.6; }, precision: 0 },
+                        { label: "m/s", conversion: function (x) { return x; }, precision: 1 },
+                        { label: "kn", conversion: function (x) { return x * 1.943844; }, precision: 0 },
+                        { label: "mph", conversion: function (x) { return x * 2.236936; }, precision: 0 }
                     ],
                     scale: {
                         bounds: [0, 100],
-                        gradient: function(v, a) {
+                        gradient: function (v, a) {
                             return µ.extendedSinebowColor(Math.min(v, 100) / 100, a);
                         }
                     },
-                    particles: {velocityScale: 1/60000, maxIntensity: 17}
+                    particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
                 });
             }
         },
 
         "temp": {
-            matches: _.matches({param: "wind", overlayType: "temp"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind", overlayType: "temp" }),
+            create: function (attr) {
                 return buildProduct({
                     field: "scalar",
                     type: "temp",
                     description: localize({
-                        name: {en: "Temp", ja: "気温"},
-                        qualifier: {en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr)}
+                        name: { en: "Temp", ja: "気温" },
+                        qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
                     }),
                     paths: [gfs1p0degPath(attr, "temp", attr.surface, attr.level)],
                     date: gfsDate(attr),
-                    builder: function(file) {
+                    builder: function (file) {
                         var record = file[0], data = record.data;
                         return {
                             header: record.header,
                             interpolate: bilinearInterpolateScalar,
-                            data: function(i) {
+                            data: function (i) {
                                 return data[i];
                             }
                         }
                     },
                     units: [
-                        {label: "°C", conversion: function(x) { return x - 273.15; },       precision: 1},
-                        {label: "°F", conversion: function(x) { return x * 9/5 - 459.67; }, precision: 1},
-                        {label: "K",  conversion: function(x) { return x; },                precision: 1}
+                        { label: "°C", conversion: function (x) { return x - 273.15; }, precision: 1 },
+                        { label: "°F", conversion: function (x) { return x * 9 / 5 - 459.67; }, precision: 1 },
+                        { label: "K", conversion: function (x) { return x; }, precision: 1 }
                     ],
                     scale: {
                         bounds: [193, 328],
                         gradient: µ.segmentedColorScale([
-                            [193,     [37, 4, 42]],
-                            [206,     [41, 10, 130]],
-                            [219,     [81, 40, 40]],
-                            [233.15,  [192, 37, 149]],  // -40 C/F
+                            [193, [37, 4, 42]],
+                            [206, [41, 10, 130]],
+                            [219, [81, 40, 40]],
+                            [233.15, [192, 37, 149]],  // -40 C/F
                             [255.372, [70, 215, 215]],  // 0 F
-                            [273.15,  [21, 84, 187]],   // 0 C
-                            [275.15,  [24, 132, 14]],   // just above 0 C
-                            [291,     [247, 251, 59]],
-                            [298,     [235, 167, 21]],
-                            [311,     [230, 71, 39]],
-                            [328,     [88, 27, 67]]
+                            [273.15, [21, 84, 187]],   // 0 C
+                            [275.15, [24, 132, 14]],   // just above 0 C
+                            [291, [247, 251, 59]],
+                            [298, [235, 167, 21]],
+                            [311, [230, 71, 39]],
+                            [328, [88, 27, 67]]
                         ])
                     }
                 });
@@ -196,35 +196,33 @@ var products = function() {
         },
 
         "relative_humidity": {
-            matches: _.matches({param: "wind", overlayType: "relative_humidity"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind", overlayType: "relative_humidity" }),
+            create: function (attr) {
                 return buildProduct({
                     field: "scalar",
                     type: "relative_humidity",
                     description: localize({
-                        name: {en: "Relative Humidity", ja: "相対湿度"},
-                        qualifier: {en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr)}
+                        name: { en: "Relative Humidity", ja: "相対湿度" },
+                        qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
                     }),
                     paths: [gfs1p0degPath(attr, "relative_humidity", attr.surface, attr.level)],
                     date: gfsDate(attr),
-                    builder: function(file) {
-                        var vars = file.variables;
-                        var rh = vars.Relative_humidity_isobaric || vars.Relative_humidity_height_above_ground;
-                        var data = rh.data;
+                    builder: function (file) {
+                        var record = file[0], data = record.data;
                         return {
-                            header: netcdfHeader(vars.time, vars.lat, vars.lon, file.Originating_or_generating_Center),
+                            header: record.header,
                             interpolate: bilinearInterpolateScalar,
-                            data: function(i) {
+                            data: function (i) {
                                 return data[i];
                             }
                         };
                     },
                     units: [
-                        {label: "%", conversion: function(x) { return x; }, precision: 0}
+                        { label: "%", conversion: function (x) { return x; }, precision: 0 }
                     ],
                     scale: {
                         bounds: [0, 100],
-                        gradient: function(v, a) {
+                        gradient: function (v, a) {
                             return µ.sinebowColor(Math.min(v, 100) / 100, a);
                         }
                     }
@@ -233,34 +231,33 @@ var products = function() {
         },
 
         "air_density": {
-            matches: _.matches({param: "wind", overlayType: "air_density"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind", overlayType: "air_density" }),
+            create: function (attr) {
                 return buildProduct({
                     field: "scalar",
                     type: "air_density",
                     description: localize({
-                        name: {en: "Air Density", ja: "空気密度"},
-                        qualifier: {en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr)}
+                        name: { en: "Air Density", ja: "空気密度" },
+                        qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
                     }),
                     paths: [gfs1p0degPath(attr, "air_density", attr.surface, attr.level)],
                     date: gfsDate(attr),
-                    builder: function(file) {
-                        var vars = file.variables;
-                        var air_density = vars.air_density, data = air_density.data;
+                    builder: function (file) {
+                        var record = file[0], data = record.data;
                         return {
-                            header: netcdfHeader(vars.time, vars.lat, vars.lon, file.Originating_or_generating_Center),
+                            header: record.header,
                             interpolate: bilinearInterpolateScalar,
-                            data: function(i) {
+                            data: function (i) {
                                 return data[i];
                             }
                         };
                     },
                     units: [
-                        {label: "kg/m³", conversion: function(x) { return x; }, precision: 2}
+                        { label: "kg/m³", conversion: function (x) { return x; }, precision: 2 }
                     ],
                     scale: {
                         bounds: [0, 1.5],
-                        gradient: function(v, a) {
+                        gradient: function (v, a) {
                             return µ.sinebowColor(Math.min(v, 1.5) / 1.5, a);
                         }
                     }
@@ -269,39 +266,41 @@ var products = function() {
         },
 
         "wind_power_density": {
-            matches: _.matches({param: "wind", overlayType: "wind_power_density"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind", overlayType: "wind_power_density" }),
+            create: function (attr) {
                 var windProduct = FACTORIES.wind.create(attr);
                 var airdensProduct = FACTORIES.air_density.create(attr);
                 return buildProduct({
                     field: "scalar",
                     type: "wind_power_density",
                     description: localize({
-                        name: {en: "Wind Power Density", ja: "風力エネルギー密度"},
-                        qualifier: {en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr)}
+                        name: { en: "Wind Power Density", ja: "風力エネルギー密度" },
+                        qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
                     }),
                     paths: [windProduct.paths[0], airdensProduct.paths[0]],
                     date: gfsDate(attr),
-                    builder: function(windFile, airdensFile) {
+                    builder: function (windFile, airdensFile) {
                         var windBuilder = windProduct.builder(windFile);
                         var airdensBuilder = airdensProduct.builder(airdensFile);
                         var windData = windBuilder.data, windInterpolate = windBuilder.interpolate;
                         var airdensData = airdensBuilder.data, airdensInterpolate = airdensBuilder.interpolate;
                         return {
                             header: _.clone(airdensBuilder.header),
-                            interpolate: function(x, y, g00, g10, g01, g11) {
+                            interpolate: function (x, y, g00, g10, g01, g11) {
                                 var m = windInterpolate(x, y, g00[0], g10[0], g01[0], g11[0])[2];
                                 var ρ = airdensInterpolate(x, y, g00[1], g10[1], g01[1], g11[1]);
                                 return 0.5 * ρ * m * m * m;
                             },
-                            data: function(i) {
-                                return [windData(i), airdensData(i)];
+                            data: function (i) {
+                                var w = windData(i);
+                                var ρ = airdensData(i);
+                                return µ.isValue(w) && µ.isValue(w[0]) && µ.isValue(w[1]) && µ.isValue(ρ) ? [w, ρ] : null;
                             }
                         };
                     },
                     units: [
-                        {label: "kW/m²", conversion: function(x) { return x / 1000; }, precision: 1},
-                        {label: "W/m²", conversion: function(x) { return x; }, precision: 0}
+                        { label: "kW/m²", conversion: function (x) { return x / 1000; }, precision: 1 },
+                        { label: "W/m²", conversion: function (x) { return x; }, precision: 0 }
                     ],
                     scale: {
                         bounds: [0, 80000],
@@ -322,29 +321,29 @@ var products = function() {
         },
 
         "total_cloud_water": {
-            matches: _.matches({param: "wind", overlayType: "total_cloud_water"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind", overlayType: "total_cloud_water" }),
+            create: function (attr) {
                 return buildProduct({
                     field: "scalar",
                     type: "total_cloud_water",
                     description: localize({
-                        name: {en: "Total Cloud Water", ja: "雲水量"},
+                        name: { en: "Total Cloud Water", ja: "雲水量" },
                         qualifier: ""
                     }),
                     paths: [gfs1p0degPath(attr, "total_cloud_water")],
                     date: gfsDate(attr),
-                    builder: function(file) {
+                    builder: function (file) {
                         var record = file[0], data = record.data;
                         return {
                             header: record.header,
                             interpolate: bilinearInterpolateScalar,
-                            data: function(i) {
+                            data: function (i) {
                                 return data[i];
                             }
                         }
                     },
                     units: [
-                        {label: "kg/m²", conversion: function(x) { return x; }, precision: 3}
+                        { label: "kg/m²", conversion: function (x) { return x; }, precision: 3 }
                     ],
                     scale: {
                         bounds: [0, 1],
@@ -359,29 +358,29 @@ var products = function() {
         },
 
         "total_precipitable_water": {
-            matches: _.matches({param: "wind", overlayType: "total_precipitable_water"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind", overlayType: "total_precipitable_water" }),
+            create: function (attr) {
                 return buildProduct({
                     field: "scalar",
                     type: "total_precipitable_water",
                     description: localize({
-                        name: {en: "Total Precipitable Water", ja: "可降水量"},
+                        name: { en: "Total Precipitable Water", ja: "可降水量" },
                         qualifier: ""
                     }),
                     paths: [gfs1p0degPath(attr, "total_precipitable_water")],
                     date: gfsDate(attr),
-                    builder: function(file) {
+                    builder: function (file) {
                         var record = file[0], data = record.data;
                         return {
                             header: record.header,
                             interpolate: bilinearInterpolateScalar,
-                            data: function(i) {
+                            data: function (i) {
                                 return data[i];
                             }
                         }
                     },
                     units: [
-                        {label: "kg/m²", conversion: function(x) { return x; }, precision: 3}
+                        { label: "kg/m²", conversion: function (x) { return x; }, precision: 3 }
                     ],
                     scale: {
                         bounds: [0, 70],
@@ -401,31 +400,31 @@ var products = function() {
         },
 
         "mean_sea_level_pressure": {
-            matches: _.matches({param: "wind", overlayType: "mean_sea_level_pressure"}),
-            create: function(attr) {
+            matches: _.matches({ param: "wind", overlayType: "mean_sea_level_pressure" }),
+            create: function (attr) {
                 return buildProduct({
                     field: "scalar",
                     type: "mean_sea_level_pressure",
                     description: localize({
-                        name: {en: "Mean Sea Level Pressure", ja: "海面更正気圧"},
+                        name: { en: "Mean Sea Level Pressure", ja: "海面更正気圧" },
                         qualifier: ""
                     }),
                     paths: [gfs1p0degPath(attr, "mean_sea_level_pressure")],
                     date: gfsDate(attr),
-                    builder: function(file) {
+                    builder: function (file) {
                         var record = file[0], data = record.data;
                         return {
                             header: record.header,
                             interpolate: bilinearInterpolateScalar,
-                            data: function(i) {
+                            data: function (i) {
                                 return data[i];
                             }
                         }
                     },
                     units: [
-                        {label: "hPa", conversion: function(x) { return x / 100; }, precision: 0},
-                        {label: "mmHg", conversion: function(x) { return x / 133.322387415; }, precision: 0},
-                        {label: "inHg", conversion: function(x) { return x / 3386.389; }, precision: 1}
+                        { label: "hPa", conversion: function (x) { return x / 100; }, precision: 0 },
+                        { label: "mmHg", conversion: function (x) { return x / 133.322387415; }, precision: 0 },
+                        { label: "inHg", conversion: function (x) { return x / 3386.389; }, precision: 1 }
                     ],
                     scale: {
                         bounds: [92000, 105000],
@@ -445,37 +444,37 @@ var products = function() {
         },
 
         "currents": {
-            matches: _.matches({param: "ocean", surface: "surface", level: "currents"}),
-            create: function(attr) {
-                return when(catalogs.oscar).then(function(catalog) {
+            matches: _.matches({ param: "ocean", surface: "surface", level: "currents" }),
+            create: function (attr) {
+                return when(catalogs.oscar).then(function (catalog) {
                     return buildProduct({
                         field: "vector",
                         type: "currents",
                         description: localize({
-                            name: {en: "Ocean Currents", ja: "海流"},
-                            qualifier: {en: " @ Surface", ja: " @ 地上"}
+                            name: { en: "Ocean Currents", ja: "海流" },
+                            qualifier: { en: " @ Surface", ja: " @ 地上" }
                         }),
                         paths: [oscar0p33Path(catalog, attr)],
                         date: oscarDate(catalog, attr),
-                        navigate: function(step) {
+                        navigate: function (step) {
                             return oscarStep(catalog, this.date, step);
                         },
-                        builder: function(file) {
+                        builder: function (file) {
                             var uData = file[0].data, vData = file[1].data;
                             return {
                                 header: file[0].header,
                                 interpolate: bilinearInterpolateVector,
-                                data: function(i) {
+                                data: function (i) {
                                     var u = uData[i], v = vData[i];
                                     return µ.isValue(u) && µ.isValue(v) ? [u, v] : null;
                                 }
                             }
                         },
                         units: [
-                            {label: "m/s",  conversion: function(x) { return x; },            precision: 2},
-                            {label: "km/h", conversion: function(x) { return x * 3.6; },      precision: 1},
-                            {label: "kn",   conversion: function(x) { return x * 1.943844; }, precision: 1},
-                            {label: "mph",  conversion: function(x) { return x * 2.236936; }, precision: 1}
+                            { label: "m/s", conversion: function (x) { return x; }, precision: 2 },
+                            { label: "km/h", conversion: function (x) { return x * 3.6; }, precision: 1 },
+                            { label: "kn", conversion: function (x) { return x * 1.943844; }, precision: 1 },
+                            { label: "mph", conversion: function (x) { return x * 2.236936; }, precision: 1 }
                         ],
                         scale: {
                             bounds: [0, 1.5],
@@ -488,15 +487,15 @@ var products = function() {
                                 [1.5, [255, 15, 15]]
                             ])
                         },
-                        particles: {velocityScale: 1/4400, maxIntensity: 0.7}
+                        particles: { velocityScale: 1 / 4400, maxIntensity: 0.7 }
                     });
                 });
             }
         },
 
         "off": {
-            matches: _.matches({overlayType: "off"}),
-            create: function() {
+            matches: _.matches({ overlayType: "off" }),
+            create: function () {
                 return null;
             }
         }
@@ -571,7 +570,7 @@ var products = function() {
     function bilinearInterpolateVector(x, y, g00, g10, g01, g11) {
         var rx = (1 - x);
         var ry = (1 - y);
-        var a = rx * ry,  b = x * ry,  c = rx * y,  d = x * y;
+        var a = rx * ry, b = x * ry, c = rx * y, d = x * y;
         var u = g00[0] * a + g10[0] * b + g01[0] * c + g11[0] * d;
         var v = g00[1] * a + g10[1] * b + g01[1] * c + g11[1] * d;
         return [u, v, Math.sqrt(u * u + v * v)];
@@ -667,7 +666,7 @@ var products = function() {
             source: dataSource(header),
             date: date,
             interpolate: interpolate,
-            forEachPoint: function(cb) {
+            forEachPoint: function (cb) {
                 for (var j = 0; j < nj; j++) {
                     var row = grid[j] || [];
                     for (var i = 0; i < ni; i++) {
@@ -680,7 +679,7 @@ var products = function() {
 
     function productsFor(attributes) {
         var attr = _.clone(attributes), results = [];
-        _.values(FACTORIES).forEach(function(factory) {
+        _.values(FACTORIES).forEach(function (factory) {
             if (factory.matches(attr)) {
                 results.push(factory.create(attr));
             }

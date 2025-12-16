@@ -29,7 +29,19 @@ var nomadsDownloader = require("./lib/nomads-downloader");
 
 var WEATHER_DATA_DIR = path.join(__dirname, "public", "data", "weather", "current");
 var GFS_BASE_URL = "https://nomads.ncep.noaa.gov";
-var UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours (GFS updates 4x daily)
+// Use NOAA's public S3 mirror by default (more reliable and supports .idx + Range requests).
+// Override with GFS_DATA_BASE_URL and (optionally) GFS_DATA_PREFIX if needed.
+var GFS_DATA_BASE_URL = (process.env.GFS_DATA_BASE_URL || "https://noaa-gfs-bdp-pds.s3.amazonaws.com").replace(/\/+$/, "");
+var GFS_DATA_PREFIX = (process.env.GFS_DATA_PREFIX || "").replace(/\/+$/, "");
+var UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL_MS || "", 10);
+if (isNaN(UPDATE_INTERVAL) || UPDATE_INTERVAL <= 0) {
+    UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours (GFS updates 4x daily)
+}
+var RETRY_INTERVAL = parseInt(process.env.RETRY_INTERVAL_MS || "", 10);
+if (isNaN(RETRY_INTERVAL) || RETRY_INTERVAL <= 0) {
+    RETRY_INTERVAL = 30 * 60 * 1000; // 30 minutes
+}
+var ENABLED = (process.env.WEATHER_SERVICE_ENABLED || "true").toLowerCase() !== "false";
 
 // Ensure data directory exists
 if (!fs.existsSync(WEATHER_DATA_DIR)) {
@@ -125,47 +137,45 @@ function getLatestGFSRun() {
 }
 
 /**
- * Download GFS GRIB2 file using index-based partial transfer method
+ * Download GFS GRIB2 fields using index-based partial transfer method
  * This is the recommended approach per NOMADS documentation:
  * https://nomads.ncep.noaa.gov/info.php?page=fastdownload
  * https://www.cpc.ncep.noaa.gov/products/wesley/fast_downloading_grib.html
  * 
  * Falls back to filter_gfs.pl method if index-based download fails
  */
-function downloadGFSFile(dateStr, run, outputPath) {
+function downloadGFSFile(dateStr, run, fieldPatterns, outputPath, gfsFileName) {
     var runHour = run.substring(0, 2);
 
     // Use index-based method as primary (recommended fast download approach)
     // Filter script method as fallback
-    // URL format: https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.YYYYMMDD/{cycle}/atmos/gfs.t{cycle}z.pgrb2.1p00.f000
+    // Supported URL formats:
+    // - AWS S3 mirror (default): https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.YYYYMMDD/{cycle}/atmos/gfs.t{cycle}z.pgrb2.1p00.f000
+    // - NOMADS: https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.YYYYMMDD/{cycle}/atmos/gfs.t{cycle}z.pgrb2.1p00.f000
 
     var gfsDir = "gfs." + dateStr;
-    var gfsFile = "gfs.t" + run + ".pgrb2.1p00.f000";
-    var baseUrl = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/" + gfsDir + "/" + runHour + "/atmos/" + gfsFile;
-
-    // Download U and V wind components at 10m above ground
-    // Try multiple pattern variations to match inventory format
-    var fieldPatterns = [
-        ":UGRD:10 m above ground:",
-        ":VGRD:10 m above ground:",
-        ":UGRD:10 m",
-        ":VGRD:10 m",
-        "UGRD:10 m above ground",
-        "VGRD:10 m above ground",
-        "UGRD:10 m",
-        "VGRD:10 m"
-    ];
+    var gfsFile = gfsFileName || ("gfs.t" + run + ".pgrb2.1p00.f000");
+    var baseUrl = [GFS_DATA_BASE_URL, GFS_DATA_PREFIX, gfsDir, runHour, "atmos", gfsFile]
+        .filter(function (x) { return x && x.length > 0; })
+        .join("/");
 
     console.log("Attempting download using index-based method (fast download - recommended)");
     console.log("GRIB URL:", baseUrl);
 
     return nomadsDownloader.downloadGrib2Fields(baseUrl, fieldPatterns, outputPath)
         .catch(function (err) {
+            // Only fall back for the original wind use-case. The CGI filter script supports a limited
+            // set of parameters and is not a general solution for arbitrary overlays.
+            var allowFallback = fieldPatterns.some(function (p) { return (p || "").indexOf("UGRD") >= 0 || (p || "").indexOf("VGRD") >= 0; });
+            if (!allowFallback) {
+                throw err;
+            }
+
             console.log("Index-based method failed, trying filter script method (fallback)...");
             console.log("Error:", err.message);
 
-            // Fallback to filter script method
-            return downloadGFSFileFallback(dateStr, run, outputPath);
+            // Fallback to filter script method (wind only)
+            return downloadGFSFileFallback(dateStr, run, fieldPatterns, outputPath);
         });
 }
 
@@ -174,7 +184,7 @@ function downloadGFSFile(dateStr, run, outputPath) {
  * This uses the current NOMADS filter script format
  * Tries multiple directory format variants
  */
-function downloadGFSFileFallback(dateStr, run, outputPath) {
+function downloadGFSFileFallback(dateStr, run, fieldPatterns, outputPath) {
     return new Promise(function (resolve, reject) {
         var runHour = run.substring(0, 2);
         // Based on investigation: Correct format is /gfs.YYYYMMDD/{cycle}/atmos
@@ -192,6 +202,9 @@ function downloadGFSFileFallback(dateStr, run, outputPath) {
             }
 
             var gfsDir = gfsDirs[dirIndex];
+            // Fallback filter method: we can only filter by the CGI's built-in params.
+            // This implementation is tailored for the original wind use-case. For any other
+            // fields we rely on the index-based method.
             var nomadsUrl = GFS_BASE_URL + "/cgi-bin/filter_gfs_1p00.pl" +
                 "?file=" + gfsFile +
                 "&lev_10_m_above_ground=on" +
@@ -279,26 +292,110 @@ function downloadGFSFileFallback(dateStr, run, outputPath) {
  * Convert GRIB2 file to JSON using native JavaScript parser (grib-js)
  * No Java dependency required!
  */
-function convertGrib2ToJson(gribFile, jsonFile) {
+function convertGrib2ToJson(gribFile) {
     return new Promise(function (resolve, reject) {
         console.log("Converting GRIB2 to JSON using native parser: " + gribFile);
 
-        grib2Converter.convertGrib2ToJsonFile(gribFile, jsonFile, function (err) {
+        grib2Converter.convertGrib2ToJson(gribFile, function (err, jsonData) {
             if (err) {
                 console.error("Conversion error:", err.message);
                 reject(err);
                 return;
             }
 
-            console.log("Converted to JSON: " + jsonFile);
-            resolve(jsonFile);
+            resolve(jsonData);
         });
     });
 }
 
 /**
- * Fetch and process current GFS data
- * Tries multiple dates and GFS runs in order until one succeeds
+ * Write JSON atomically (temp file then rename).
+ */
+function writeJsonAtomic(outputPath, jsonData) {
+    var dir = path.dirname(outputPath);
+    var tmpPath = path.join(dir, path.basename(outputPath) + ".tmp-" + process.pid + "-" + Date.now());
+    fs.writeFileSync(tmpPath, JSON.stringify(jsonData));
+    fs.renameSync(tmpPath, outputPath);
+}
+
+function safeUnlink(filePath) {
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+    } catch (e) {
+        // ignore
+    }
+}
+
+function recordIsNamed(record, names) {
+    var name = (record && record.header && record.header.parameterNumberName) || "";
+    for (var i = 0; i < names.length; i++) {
+        if (name.toLowerCase().indexOf(names[i].toLowerCase()) >= 0) return true;
+    }
+    return false;
+}
+
+function findRecord(records, predicate) {
+    for (var i = 0; i < records.length; i++) {
+        if (predicate(records[i])) return records[i];
+    }
+    return null;
+}
+
+function deriveAirDensity(tempRecord, pressureRecord) {
+    var Rd = 287.05; // J/(kg·K)
+    var t = tempRecord.data;
+    var p = pressureRecord.data;
+    if (!t || !p || t.length !== p.length) {
+        throw new Error("Cannot derive air density: temperature and pressure grids do not align");
+    }
+    var rho = new Array(t.length);
+    for (var i = 0; i < t.length; i++) {
+        var Ti = t[i];
+        var pi = p[i];
+        if (typeof Ti === "number" && typeof pi === "number" && Ti > 0) {
+            rho[i] = pi / (Rd * Ti);
+        } else {
+            rho[i] = null;
+        }
+    }
+    var header = {};
+    // Copy grid + timing from pressure record to keep date/source consistent.
+    Object.keys(pressureRecord.header || {}).forEach(function (k) { header[k] = pressureRecord.header[k]; });
+    header.parameterCategoryName = "Derived";
+    header.parameterNumberName = "Air Density";
+    header.parameterUnit = "kg m-3";
+    return [{ header: header, data: rho }];
+}
+
+function downloadConvertWrite(dateStr, run, fieldPatterns, outputPath) {
+    var tempGribFile = path.join(__dirname, "temp_" + path.basename(outputPath).replace(/[^a-zA-Z0-9_.-]/g, "_") + "_" + process.pid + "_" + Date.now() + ".grib2");
+    return downloadGFSFile(dateStr, run, fieldPatterns, tempGribFile).then(function () {
+        return convertGrib2ToJson(tempGribFile);
+    }).then(function (jsonData) {
+        writeJsonAtomic(outputPath, jsonData);
+        return outputPath;
+    }).finally(function () {
+        safeUnlink(tempGribFile);
+    });
+}
+
+function downloadConvertWriteWithFile(dateStr, run, fieldPatterns, outputPath, gfsFileName) {
+    var tempGribFile = path.join(__dirname, "temp_" + path.basename(outputPath).replace(/[^a-zA-Z0-9_.-]/g, "_") + "_" + process.pid + "_" + Date.now() + ".grib2");
+    return downloadGFSFile(dateStr, run, fieldPatterns, tempGribFile, gfsFileName).then(function () {
+        return convertGrib2ToJson(tempGribFile);
+    }).then(function (jsonData) {
+        writeJsonAtomic(outputPath, jsonData);
+        return outputPath;
+    }).finally(function () {
+        safeUnlink(tempGribFile);
+    });
+}
+
+/**
+ * Fetch and process current GFS data for all supported overlays (current + surface only)
+ * Tries multiple dates and GFS runs in order until one succeeds.
  */
 function fetchCurrentGFSData(callback) {
     // Try both today and yesterday since today's data may not be available yet
@@ -317,9 +414,39 @@ function fetchCurrentGFSData(callback) {
     var datesToTry = [todayStr, yesterdayStr];
     var runsToTry = getLatestGFSRuns();
 
-    // Temporary files
-    var tempGribFile = path.join(__dirname, "temp_gfs.grib2");
-    var outputJsonFile = path.join(WEATHER_DATA_DIR, "current-wind-surface-level-gfs-1.0.json");
+    // Output files (surface only)
+    var outWind = path.join(WEATHER_DATA_DIR, "current-wind-surface-level-gfs-1.0.json");
+    var outTemp = path.join(WEATHER_DATA_DIR, "current-temp-surface-level-gfs-1.0.json");
+    var outRH = path.join(WEATHER_DATA_DIR, "current-relative_humidity-surface-level-gfs-1.0.json");
+    var outAD = path.join(WEATHER_DATA_DIR, "current-air_density-surface-level-gfs-1.0.json");
+    // These overlays are not height-dependent in products.js, so filenames omit surface/level.
+    var outTPW = path.join(WEATHER_DATA_DIR, "current-total_precipitable_water-gfs-1.0.json");
+    var outTCW = path.join(WEATHER_DATA_DIR, "current-total_cloud_water-gfs-1.0.json");
+    var outMSLP = path.join(WEATHER_DATA_DIR, "current-mean_sea_level_pressure-gfs-1.0.json");
+
+    // Field patterns (inventory substring matches; multiple variants for robustness)
+    // NOTE: patterns are substring matches. Use leading colons (":TMP:") to avoid matching
+    // related-but-different variables (e.g. APTMP contains TMP as a substring).
+    var patternsWind = [
+        ":UGRD:10 m above ground:",
+        ":VGRD:10 m above ground:"
+    ];
+    var patternsTmp2mAndPresSfc = [
+        ":TMP:2 m above ground:",
+        ":PRES:surface:"
+    ];
+    var patternsRH2m = [
+        ":RH:2 m above ground:"
+    ];
+    var patternsPWAT = [
+        ":PWAT:entire atmosphere"
+    ];
+    // GFS 1p00 uses CWAT (cloud water) for this overlay.
+    var patternsTCWAT = [
+        ":CWAT:entire atmosphere"
+    ];
+    // Mean sea level pressure (PRMSL) uses complex packing in GFS and is not decoded by grib-js.
+    // We generate MSLP from the decoded surface pressure record instead.
 
     console.log("Fetching GFS data");
     console.log("Will try dates:", datesToTry.join(", "));
@@ -330,9 +457,6 @@ function fetchCurrentGFSData(callback) {
         if (dateIndex >= datesToTry.length) {
             var error = new Error("All dates and runs failed. Tried dates: " + datesToTry.join(", ") + " with runs: " + runsToTry.join(", ") + ". Data may not be available yet.");
             console.error("Error fetching GFS data:", error.message);
-            if (fs.existsSync(tempGribFile)) {
-                fs.unlinkSync(tempGribFile);
-            }
             if (callback) callback(error);
             return;
         }
@@ -352,16 +476,56 @@ function fetchCurrentGFSData(callback) {
             var run = runsToTry[runIndex];
             console.log("Trying date " + dateStr + ", run: " + run + " (" + (runIndex + 1) + "/" + runsToTry.length + ")");
 
-            // Download GFS data using index-based method, then convert
-            downloadGFSFile(dateStr, run, tempGribFile).then(function () {
-                return convertGrib2ToJson(tempGribFile, outputJsonFile);
+            // Download & generate each overlay. If any fails, try next run.
+            // Do wind first to validate the run.
+            downloadConvertWrite(dateStr, run, patternsWind, outWind).then(function () {
+                // Download TMP(2m)+PRES(surface) once, use it for temp + derived air density.
+                var tmpGrib = path.join(__dirname, "temp_tmp_pres_" + process.pid + "_" + Date.now() + ".grib2");
+                return downloadGFSFile(dateStr, run, patternsTmp2mAndPresSfc, tmpGrib).then(function () {
+                    return convertGrib2ToJson(tmpGrib).then(function (records) {
+                        // Identify records
+                        var tempRec = findRecord(records, function (r) {
+                            var h = r && r.header;
+                            return h &&
+                                ((h.parameterCategoryName === "Temperature") || (h.parameterCategory === 0)) &&
+                                (h.surface1TypeName || "").toLowerCase().indexOf("above ground") >= 0 &&
+                                h.surface1Value === 2;
+                        });
+                        var presRec = findRecord(records, function (r) {
+                            var h = r && r.header;
+                            return h &&
+                                ((h.parameterCategoryName === "Mass") || (h.parameterCategory === 3)) &&
+                                h.parameterNumber === 0 &&
+                                (h.surface1TypeName || "").toLowerCase().indexOf("surface") >= 0;
+                        });
+                        if (!tempRec || !presRec) {
+                            throw new Error("TMP/PRES download did not contain expected records");
+                        }
+                        // Write temp directly
+                        writeJsonAtomic(outTemp, [tempRec]);
+                        // Derive air density and write
+                        var rhoJson = deriveAirDensity(tempRec, presRec);
+                        writeJsonAtomic(outAD, rhoJson);
+                        // Generate MSLP overlay from surface pressure (PRMSL is complex-packed in GFS).
+                        var mslHeader = {};
+                        Object.keys(presRec.header || {}).forEach(function (k) { mslHeader[k] = presRec.header[k]; });
+                        mslHeader.parameterNumberName = "Mean Sea Level Pressure";
+                        writeJsonAtomic(outMSLP, [{ header: mslHeader, data: presRec.data }]);
+                    });
+                }).finally(function () {
+                    safeUnlink(tmpGrib);
+                });
             }).then(function () {
-                // Clean up temp file
-                if (fs.existsSync(tempGribFile)) {
-                    fs.unlinkSync(tempGribFile);
-                }
-                console.log("Successfully updated weather data: " + outputJsonFile + " (using date " + dateStr + ", run " + run + ")");
-                if (callback) callback(null, outputJsonFile);
+                return downloadConvertWrite(dateStr, run, patternsRH2m, outRH);
+            }).then(function () {
+                // PWAT is decodable from the 0.25° file (simple packing). Use it for TPW.
+                var file025 = "gfs.t" + run + ".pgrb2.0p25.f000";
+                return downloadConvertWriteWithFile(dateStr, run, patternsPWAT, outTPW, file025);
+            }).then(function () {
+                return downloadConvertWrite(dateStr, run, patternsTCWAT, outTCW);
+            }).then(function () {
+                console.log("Successfully updated weather overlays (using date " + dateStr + ", run " + run + ")");
+                if (callback) callback(null, outWind);
             }).catch(function (error) {
                 console.error("Date " + dateStr + ", run " + run + " failed:", error.message);
                 // Try next run
@@ -379,27 +543,51 @@ function fetchCurrentGFSData(callback) {
  * Start the weather data service
  */
 function startWeatherService() {
+    if (!ENABLED) {
+        console.log("Weather Data Service disabled (WEATHER_SERVICE_ENABLED=false)");
+        return;
+    }
     console.log("============================================================");
     console.log("Weather Data Service Starting");
     console.log("Data directory: " + WEATHER_DATA_DIR);
     console.log("Update interval: " + (UPDATE_INTERVAL / 1000 / 60 / 60) + " hours");
+    console.log("Retry interval: " + (RETRY_INTERVAL / 1000 / 60) + " minutes");
     console.log("============================================================");
 
-    // Fetch immediately on start
-    fetchCurrentGFSData(function (error) {
-        if (error) {
-            console.error("Initial fetch failed:", error.message);
-            console.error("Service will retry on next interval");
+    var inProgress = false;
+    var retryTimeout = null;
+
+    function runOnce(label) {
+        if (inProgress) {
+            console.log("Weather Data Service: previous run still in progress, skipping (" + label + ")");
+            return;
         }
-    });
+        inProgress = true;
+        fetchCurrentGFSData(function (error) {
+            inProgress = false;
+            if (error) {
+                console.error(label + " fetch failed:", error.message);
+                if (!retryTimeout) {
+                    retryTimeout = setTimeout(function () {
+                        retryTimeout = null;
+                        runOnce("Retry");
+                    }, RETRY_INTERVAL);
+                }
+                return;
+            }
+            if (retryTimeout) {
+                clearTimeout(retryTimeout);
+                retryTimeout = null;
+            }
+        });
+    }
+
+    // Fetch immediately on start
+    runOnce("Initial");
 
     // Schedule periodic updates
     setInterval(function () {
-        fetchCurrentGFSData(function (error) {
-            if (error) {
-                console.error("Scheduled fetch failed:", error.message);
-            }
-        });
+        runOnce("Scheduled");
     }, UPDATE_INTERVAL);
 }
 
