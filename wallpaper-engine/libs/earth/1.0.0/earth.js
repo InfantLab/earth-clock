@@ -182,9 +182,12 @@
 
         function reorient() {
             var options = arguments[3] || {};
-            if (!globe || options.source === "moveEnd") {
-                // reorientation occurred because the user just finished a move operation, so globe is already
-                // oriented correctly.
+            if (!globe || options.source === "moveEnd" || options.source === "autoRotate") {
+                // reorientation occurred because the user just finished a move operation, or from auto-rotation
+                // globe is already oriented correctly, just trigger redraw for auto-rotation
+                if (options.source === "autoRotate") {
+                    rendererAgent.trigger("redraw");
+                }
                 return;
             }
             dispatch.trigger("moveStart");
@@ -366,7 +369,7 @@
     function createMask(globe) {
         if (!globe) return null;
 
-        log.time("render mask");
+        // log.time("render mask"); // Disabled to reduce console spam
 
         // Create a detached canvas, ask the model to define the mask polygon, then fill with an opaque color.
         var width = view.width, height = view.height;
@@ -378,7 +381,7 @@
 
         var imageData = context.getImageData(0, 0, width, height);
         var data = imageData.data;  // layout: [r, g, b, a, r, g, b, a, ...]
-        log.timeEnd("render mask");
+        // log.timeEnd("render mask"); // Disabled to reduce console spam
         return {
             imageData: imageData,
             isVisible: function (x, y) {
@@ -396,7 +399,7 @@
         };
     }
 
-    function createField(columns, bounds, mask) {
+    function createField(columns, bounds, mask, projection) {
 
         /**
          * @returns {Array} wind vector [u, v, magnitude] at the point (x, y), or [NaN, NaN, null] if wind
@@ -429,15 +432,45 @@
             columns = [];
         };
 
-        field.randomize = function (o) {  // UNDONE: this method is terrible
-            var x, y;
+        field.randomize = function (o) {
+            // Generate random geographic coordinates (λ, φ) that are currently visible in the mask.
+            // NOTE: do NOT initialize any per-particle trail history here. Trails are managed by the animator
+            // using fixed-size typed-array ring buffers for performance.
+            var λ, φ; // longitude, latitude
             var safetyNet = 0;
+            var point = [];
             do {
-                x = Math.round(_.random(bounds.x, bounds.xMax));
-                y = Math.round(_.random(bounds.y, bounds.yMax));
-            } while (!field.isDefined(x, y) && safetyNet++ < 30);
-            o.x = x;
-            o.y = y;
+                // Generate random geographic coordinates
+                λ = _.random(-180, 180);  // longitude
+                φ = _.random(-85, 85);     // latitude (avoid poles where projection may be undefined)
+
+                // Project to screen to check if visible
+                point = projection([λ, φ]);
+                if (point) {
+                    var x = Math.round(point[0]);
+                    var y = Math.round(point[1]);
+                    // Check if projected point is within bounds and visible in mask
+                    if (x >= bounds.x && x <= bounds.xMax &&
+                        y >= bounds.y && y <= bounds.yMax &&
+                        mask.isVisible(x, y)) {
+                        o.λ = λ;
+                        o.φ = φ;
+                        return o;
+                    }
+                }
+                safetyNet++;
+            } while (safetyNet < 100);
+
+            // Fallback: if we can't find a good position, use center of visible area
+            var centerPoint = projection([0, 0]);
+            if (centerPoint) {
+                o.λ = 0;
+                o.φ = 0;
+            } else {
+                // Last resort: random but valid
+                o.λ = _.random(-180, 180);
+                o.φ = _.random(-60, 60);
+            }
             return o;
         };
 
@@ -468,7 +501,7 @@
         var primaryGrid = grids.primaryGrid;
         var overlayGrid = grids.overlayGrid;
 
-        log.time("interpolating field");
+        // log.time("interpolating field"); // Disabled to reduce console spam
         var d = when.defer(), cancel = this.cancel;
 
         var projection = globe.projection;
@@ -533,23 +566,25 @@
                         }
                     }
                 }
-                d.resolve(createField(columns, bounds, mask));
+                d.resolve(createField(columns, bounds, mask, projection));
             }
             catch (e) {
                 d.reject(e);
             }
             report.progress(1);  // 100% complete
-            log.timeEnd("interpolating field");
+            // log.timeEnd("interpolating field"); // Disabled to reduce console spam
         })();
 
         return d.promise;
     }
 
     function animate(globe, field, grids) {
-        if (!globe || !field || !grids) return;
+        if (!globe || !grids) return;
 
         var cancel = this.cancel;
         var bounds = globe.bounds(view);
+        // Don't capture projection in closure - get fresh reference each frame
+        // var projection = globe.projection; // Removed - get fresh reference in evolve/draw
         // maxIntensity is the velocity at which particle color intensity is maximum
         var colorStyles = µ.windIntensityColorScale(INTENSITY_SCALE_STEP, grids.primaryGrid.particles.maxIntensity);
         var buckets = colorStyles.map(function () { return []; });
@@ -558,80 +593,281 @@
             particleCount *= PARTICLE_REDUCTION;
         }
         var fadeFillStyle = µ.isFF() ? "rgba(0, 0, 0, 0.95)" : "rgba(0, 0, 0, 0.97)";  // FF Mac alpha behaves oddly
+        // Historically this code scaled wind vectors into *screen-space pixels* using projection distortion.
+        // For rotating trails we instead evolve particles purely in geographic space (λ, φ) and only project for
+        // rendering. We keep the existing velocityScale knob, but reinterpret it as part of an effective dt.
+        var velocityScale = bounds.height * grids.primaryGrid.particles.velocityScale;
+        var interpolate = grids.primaryGrid.interpolate;
 
-        log.debug("particle count: " + particleCount);
-        var particles = [];
-        for (var i = 0; i < particleCount; i++) {
-            particles.push(field.randomize({ age: _.random(0, MAX_PARTICLE_AGE) }));
+        // ===== Particle state (typed arrays) =====
+        // Store longitude as continuous degrees (can exceed ±180) to avoid introducing artificial discontinuities.
+        var TRAIL_LEN = 16;  // slightly longer, closer to original “continuous” feel
+        var lon = new Float32Array(particleCount);
+        var lat = new Float32Array(particleCount);
+        var age = new Uint16Array(particleCount);
+        var miss = new Uint8Array(particleCount);
+        var trailHead = new Uint16Array(particleCount);      // next write index [0, TRAIL_LEN)
+        var trailSize = new Uint8Array(particleCount);       // valid samples [0, TRAIL_LEN]
+        var trailLon = new Float32Array(particleCount * TRAIL_LEN);
+        var trailLat = new Float32Array(particleCount * TRAIL_LEN);
+
+        // ===== Geo-space advection (RK2/midpoint) =====
+        // In the original implementation, `velocityScale` converts u/v (m/s) into a small angular step per frame,
+        // and projection distortion then maps that angular step into pixels. In geo-space advection we keep the
+        // same interpretation: v contributes degrees latitude per frame, and u contributes degrees longitude per
+        // frame (scaled by 1/cosφ).
+
+        function clampLat(φ) {
+            // Keep away from poles to avoid 1/cos(φ) blowups and projection singularities.
+            return µ.clamp(φ, -85, 85);
         }
 
-        function evolve() {
+        function trailClear(i) {
+            trailHead[i] = 0;
+            trailSize[i] = 0;
+        }
+
+        function trailPush(i, λ, φ) {
+            var base = i * TRAIL_LEN;
+            var h = trailHead[i];
+            trailLon[base + h] = λ;
+            trailLat[base + h] = φ;
+            h = (h + 1) % TRAIL_LEN;
+            trailHead[i] = h;
+            if (trailSize[i] < TRAIL_LEN) {
+                trailSize[i] += 1;
+            }
+        }
+
+        function randomizeParticle(i) {
+            // Pick a random point that has wind defined. Do not require screen visibility; draw() will handle that.
+            var safetyNet = 0;
+            while (safetyNet++ < 80) {
+                var λ = _.random(-180, 180);
+                var φ = _.random(-85, 85);
+                var w = interpolate(λ, φ);
+                if (w && w[2] !== null) {
+                    lon[i] = λ;
+                    lat[i] = φ;
+                    age[i] = 0;
+                    trailClear(i);
+                    trailPush(i, λ, φ);
+                    return;
+                }
+            }
+            // Fallback: center-ish
+            lon[i] = 0;
+            lat[i] = 0;
+            age[i] = 0;
+            trailClear(i);
+            trailPush(i, 0, 0);
+        }
+
+        function resetTrails() {
+            for (var i = 0; i < particleCount; i++) {
+                trailClear(i);
+                trailPush(i, lon[i], lat[i]);
+            }
+        }
+
+        // Expose for rotation/projection state changes.
+        window.resetWindTrails = resetTrails;
+        window._windAnimatorActive = true;
+
+        // init particles
+        for (var i = 0; i < particleCount; i++) {
+            age[i] = _.random(0, MAX_PARTICLE_AGE);
+            randomizeParticle(i);
+        }
+
+        function evolve(frameGlobe) {
             buckets.forEach(function (bucket) { bucket.length = 0; });
-            particles.forEach(function (particle) {
-                if (particle.age > MAX_PARTICLE_AGE) {
-                    field.randomize(particle).age = 0;
+
+            var MAX_AGE = MAX_PARTICLE_AGE * 6; // keep particles around longer to feel continuous
+            // Prevent huge longitude jumps near the poles (1/cosφ blowup) that create map-boundary streaks.
+            var MAX_STEP_DEG_LON = 4.0;
+            var MAX_STEP_DEG_LAT = 2.5;
+            for (var i = 0; i < particleCount; i++) {
+                if (age[i] > MAX_AGE) {
+                    randomizeParticle(i);
                 }
-                var x = particle.x;
-                var y = particle.y;
-                var v = field(x, y);  // vector at current position
-                var m = v[2];
-                if (m === null) {
-                    particle.age = MAX_PARTICLE_AGE;  // particle has escaped the grid, never to return...
-                }
-                else {
-                    var xt = x + v[0];
-                    var yt = y + v[1];
-                    if (field.isDefined(xt, yt)) {
-                        // Path from (x,y) to (xt,yt) is visible, so add this particle to the appropriate draw bucket.
-                        particle.xt = xt;
-                        particle.yt = yt;
-                        buckets[colorStyles.indexFor(m)].push(particle);
+
+                var λ = lon[i];
+                var φ = lat[i];
+
+                // RK2 midpoint integration in geographic space.
+                var w1 = interpolate(λ, φ);
+                if (!w1 || w1[2] === null) {
+                    // undefined data: tolerate a few misses (prevents “popping” resets), then respawn.
+                    miss[i] = (miss[i] + 1) & 255;
+                    if (miss[i] > 8) {
+                        randomizeParticle(i);
                     }
-                    else {
-                        // Particle isn't visible, but it still moves through the field.
-                        particle.x = xt;
-                        particle.y = yt;
-                    }
+                    continue;
                 }
-                particle.age += 1;
-            });
+                miss[i] = 0;
+
+                var φ1 = clampLat(φ);
+                var cosφ1 = Math.cos(φ1 * Math.PI / 180);
+                cosφ1 = Math.max(0.01, Math.abs(cosφ1));
+                var k1λ = µ.clamp((w1[0] * velocityScale) / cosφ1, -MAX_STEP_DEG_LON, MAX_STEP_DEG_LON);
+                var k1φ = µ.clamp((w1[1] * velocityScale), -MAX_STEP_DEG_LAT, MAX_STEP_DEG_LAT);
+
+                var midλ = λ + 0.5 * k1λ;
+                var midφ = clampLat(φ + 0.5 * k1φ);
+
+                var w2 = interpolate(midλ, midφ);
+                if (!w2 || w2[2] === null) {
+                    miss[i] = (miss[i] + 1) & 255;
+                    if (miss[i] > 8) {
+                        randomizeParticle(i);
+                    }
+                    continue;
+                }
+                miss[i] = 0;
+
+                var cosMid = Math.cos(midφ * Math.PI / 180);
+                cosMid = Math.max(0.01, Math.abs(cosMid));
+                var k2λ = µ.clamp((w2[0] * velocityScale) / cosMid, -MAX_STEP_DEG_LON, MAX_STEP_DEG_LON);
+                var k2φ = µ.clamp((w2[1] * velocityScale), -MAX_STEP_DEG_LAT, MAX_STEP_DEG_LAT);
+
+                var newλ = λ + k2λ;
+                var newφ = clampLat(φ + k2φ);
+
+                lon[i] = newλ;
+                lat[i] = newφ;
+                trailPush(i, newλ, newφ);
+
+                var m = w2[2] || w1[2];
+                var b = colorStyles.indexFor(m);
+                buckets[b].push(i);
+
+                age[i] += 1;
+            }
         }
 
         var g = d3.select("#animation").node().getContext("2d");
         g.lineWidth = PARTICLE_LINE_WIDTH;
         g.fillStyle = fadeFillStyle;
 
-        function draw() {
-            // Fade existing particle trails.
-            var prev = g.globalCompositeOperation;
-            g.globalCompositeOperation = "destination-in";
-            g.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
-            g.globalCompositeOperation = prev;
-
-            // Draw new particle trails.
-            buckets.forEach(function (bucket, i) {
-                if (bucket.length > 0) {
-                    g.beginPath();
-                    g.strokeStyle = colorStyles[i];
-                    bucket.forEach(function (particle) {
-                        g.moveTo(particle.x, particle.y);
-                        g.lineTo(particle.xt, particle.yt);
-                        particle.x = particle.xt;
-                        particle.y = particle.yt;
-                    });
-                    g.stroke();
+        function draw(frameGlobe) {
+            // Use globe passed from frame loop to ensure consistent projection state with evolve()
+            // Fallback to getting from agent if not provided
+            var currentGlobe = frameGlobe || globeAgent.value();
+            if (!currentGlobe || !currentGlobe.projection) {
+                currentGlobe = globe;
+                if (!currentGlobe || !currentGlobe.projection) {
+                    return; // Can't draw without valid globe/projection
                 }
-            });
+            }
+            var currentProjection = currentGlobe.projection;
+            var currentBounds = currentGlobe.bounds(view);
+
+            // Geo-anchored trails must be re-projected during drag/rotation, so we redraw them each frame.
+            // (Screen-space fading via destination-in leaves stale pixels when the projection changes.)
+            g.clearRect(0, 0, g.canvas.width, g.canvas.height);
+
+            // For globe-like projections (clipAngle ~ 90), prevent drawing points on the far side of the globe.
+            var clipAngle = currentProjection.clipAngle && currentProjection.clipAngle();
+            var hemisphereClip = !!clipAngle && clipAngle <= 90.01;
+            var centerCoord = null;
+            if (hemisphereClip && currentProjection.rotate) {
+                var r = currentProjection.rotate();
+                centerCoord = [-r[0], -r[1]];
+            }
+            function normalizeLon(λ) {
+                return ((λ + 180) % 360 + 360) % 360 - 180;
+            }
+            function isFrontHemisphere(λ, φ) {
+                if (!hemisphereClip || !centerCoord) return true;
+                return d3.geo.distance([normalizeLon(λ), φ], centerCoord) < (Math.PI / 2 - 1e-6);
+            }
+
+            function drawParticleTrail(pIndex) {
+                var size = trailSize[pIndex];
+                if (size < 2) return;
+
+                var maxDist = Math.max(currentBounds.width, currentBounds.height) * 0.35;
+                var pathStarted = false;
+                var lastX = 0, lastY = 0;
+
+                var base = pIndex * TRAIL_LEN;
+                // iterate from oldest -> newest
+                var head = trailHead[pIndex];
+                var start = head - size;
+                for (var j = 0; j < size; j++) {
+                    var idx = (start + j);
+                    while (idx < 0) idx += TRAIL_LEN;
+                    idx = idx % TRAIL_LEN;
+
+                    var λ = trailLon[base + idx];
+                    var φ = trailLat[base + idx];
+                    if (!isFrontHemisphere(λ, φ)) {
+                        pathStarted = false;
+                        continue;
+                    }
+                    var screenPoint = currentProjection([λ, φ]);
+                    if (!screenPoint || !isFinite(screenPoint[0]) || !isFinite(screenPoint[1])) {
+                        pathStarted = false;
+                        continue;
+                    }
+
+                    var x = screenPoint[0], y = screenPoint[1];
+                    var visible = (x >= currentBounds.x && x <= currentBounds.xMax &&
+                        y >= currentBounds.y && y <= currentBounds.yMax);
+                    if (!visible) {
+                        pathStarted = false;
+                        continue;
+                    }
+
+                    if (!pathStarted) {
+                        g.moveTo(x, y);
+                        pathStarted = true;
+                    } else {
+                        var dx = x - lastX;
+                        var dy = y - lastY;
+                        var dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist > maxDist) {
+                            // seam/discontinuity: don't connect across large jumps (dateline, clip edge, polyhedral lobes)
+                            pathStarted = false;
+                            continue;
+                        }
+                        g.lineTo(x, y);
+                    }
+                    lastX = x; lastY = y;
+                }
+            }
+
+            // Draw buckets by intensity.
+            for (var b = 0; b < buckets.length; b++) {
+                var bucket = buckets[b];
+                if (!bucket.length) continue;
+                g.beginPath();
+                g.strokeStyle = colorStyles[b];
+                for (var k = 0; k < bucket.length; k++) {
+                    drawParticleTrail(bucket[k]);
+                }
+                g.stroke();
+            }
         }
 
         (function frame() {
             try {
                 if (cancel.requested) {
-                    field.release();
+                    if (field && field.release) {
+                        field.release();
+                    }
+                    window._windAnimatorActive = false;
                     return;
                 }
-                evolve();
-                draw();
+                // Get projection once at start of frame to ensure evolve() and draw() use same state
+                // This fixes frame dragging during auto-rotation
+                var frameGlobe = globeAgent.value();
+                if (!frameGlobe || !frameGlobe.projection) {
+                    frameGlobe = globe;
+                }
+                evolve(frameGlobe);
+                draw(frameGlobe);
                 setTimeout(frame, FRAME_RATE);
             }
             catch (e) {
@@ -804,7 +1040,7 @@
         }
 
         ctx.putImageData(imageData, 0, 0);
-        log.debug("day/night overlay: " + nightPixelCount + " night pixels drawn, date: " + currentDate.toISOString());
+        // log.debug("day/night overlay: " + nightPixelCount + " night pixels drawn, date: " + currentDate.toISOString()); // Disabled to reduce console spam
     }
 
     /**
@@ -1101,15 +1337,50 @@
         }
         fieldAgent.listenTo(gridAgent, "update", startInterpolation);
         fieldAgent.listenTo(rendererAgent, "render", startInterpolation);
-        fieldAgent.listenTo(rendererAgent, "start", cancelInterpolation);
-        fieldAgent.listenTo(rendererAgent, "redraw", cancelInterpolation);
 
-        animatorAgent.listenTo(fieldAgent, "update", function (field) {
-            animatorAgent.submit(animate, globeAgent.value(), field, gridAgent.value());
+        // Only cancel interpolation during *user* interaction. Auto-rotation emits many redraws and must not
+        // prevent the interpolation from ever completing, otherwise the wind magnitude overlay never appears.
+        var userInteracting = false;
+        inputController.on("moveStart", function () { userInteracting = true; });
+        inputController.on("moveEnd", function () { userInteracting = false; });
+
+        fieldAgent.listenTo(rendererAgent, "start", cancelInterpolation);
+        fieldAgent.listenTo(rendererAgent, "redraw", function () {
+            if (userInteracting) cancelInterpolation();
         });
-        animatorAgent.listenTo(rendererAgent, "start", stopCurrentAnimation.bind(null, true));
+
+        // Track whether a field interpolation is currently running, so auto-rotation doesn't continuously cancel
+        // and restart interpolation (which can result in overlays never being drawn for some projections).
+        var fieldInterpolating = false;
+        fieldAgent.on({
+            submit: function () { fieldInterpolating = true; },
+            update: function () { fieldInterpolating = false; },
+            reject: function () { fieldInterpolating = false; },
+            fail: function () { fieldInterpolating = false; }
+        });
+
+        function startAnimation() {
+            // Decouple animation from field interpolation. Field updates are used for overlays; particles advect
+            // directly from the grid in geographic space and only need a globe+grids.
+            var globe = globeAgent.value();
+            var grids = gridAgent.value();
+            if (!globe || !grids) return;
+            animatorAgent.submit(animate, globe, fieldAgent.value(), grids);
+        }
+        animatorAgent.listenTo(gridAgent, "update", startAnimation);
+        animatorAgent.listenTo(globeAgent, "update", function () {
+            // If an animation is already running, keep particle positions and just clear trails so old history
+            // isn't reinterpreted under a new projection.
+            if (window._windAnimatorActive && window.resetWindTrails) {
+                µ.clearCanvas(d3.select("#animation").node());
+                window.resetWindTrails();
+            } else {
+                startAnimation();
+            }
+        });
+        // Do not cancel animation on renderer start (user drags/zooms). We redraw each frame from geo trails.
         animatorAgent.listenTo(gridAgent, "submit", stopCurrentAnimation.bind(null, false));
-        animatorAgent.listenTo(fieldAgent, "submit", stopCurrentAnimation.bind(null, false));
+        // Do NOT stop animation on field interpolation; overlays can re-render independently.
 
         overlayAgent.listenTo(fieldAgent, "update", function () {
             overlayAgent.submit(drawOverlay, fieldAgent.value(), configuration.get("overlayType"));
@@ -1371,6 +1642,186 @@
         d3.select("#option-display-time").on("click", toggleTimeDisplay);
         updateTimeDisplayButton(); // Initial state - time display starts visible
 
+        // Expose clock control functions to window for Wallpaper Engine integration
+        window.showTimeDisplay = showTimeDisplay;
+        window.closeTimeDisplay = closeTimeDisplay;
+        window.toggleTimeDisplay = toggleTimeDisplay;
+
+        // Auto-rotation feature
+        // Particles are now stored in geographic coordinates, so no field re-interpolation needed during rotation
+        var autoRotateSpeed = 0; // degrees per minute (0 = off)
+        var autoRotateAnimationFrame = null;
+        var autoRotatePaused = false;
+        var lastAutoRotateTime = null;
+        var lastOverlayRenderTime = 0;
+
+        function updateAutoRotation() {
+            if (autoRotatePaused || autoRotateSpeed === 0) {
+                return;
+            }
+
+            var globe = globeAgent.value();
+            if (!globe || !globe.projection) {
+                return;
+            }
+
+            var now = Date.now();
+            if (!lastAutoRotateTime) {
+                lastAutoRotateTime = now;
+                return;
+            }
+
+            // Calculate elapsed time in minutes
+            var elapsedMinutes = (now - lastAutoRotateTime) / 1000 / 60;
+            lastAutoRotateTime = now;
+
+            // Calculate degrees to rotate: speed is in degrees per minute
+            var degreesToRotate = autoRotateSpeed * elapsedMinutes;
+
+            var currentRotate = globe.projection.rotate();
+            var newLongitude = currentRotate[0] - degreesToRotate; // negative for eastward rotation
+            // Wrap longitude to -180 to 180 range
+            newLongitude = ((newLongitude + 180) % 360 + 360) % 360 - 180;
+
+            // Update rotation directly on projection
+            globe.projection.rotate([newLongitude, currentRotate[1], currentRotate[2]]);
+
+            // Update paths - trigger "move" to update SVG paths and day/night overlay
+            // Particles are in geographic coordinates, so they automatically re-project when projection rotates
+            // No field re-interpolation needed!
+            inputController.trigger("move");
+
+            // Trigger overlay update to ensure color overlay rotates with projection
+            // Use "render" instead of "start" - "start" cancels interpolation, "render" triggers it
+            // The overlay is rendered in screen space during field interpolation, so it needs to be re-rendered
+            // Throttle this heavily: re-interpolating the field is expensive and should not run at rAF.
+            if ((!lastOverlayRenderTime || (now - lastOverlayRenderTime) > 600) && !fieldInterpolating) {
+                lastOverlayRenderTime = now;
+                rendererAgent.trigger("render");
+            }
+        }
+
+        function startAutoRotation(speed) {
+            stopAutoRotation();
+            autoRotateSpeed = speed;
+            if (speed > 0) {
+                if (typeof window.resetWindTrails === "function") {
+                    window.resetWindTrails();
+                }
+                lastAutoRotateTime = Date.now();
+                autoRotatePaused = false;
+                // Use requestAnimationFrame for smooth animation (typically 60fps)
+                function animate() {
+                    if (autoRotateSpeed > 0 && !autoRotatePaused) {
+                        updateAutoRotation();
+                        autoRotateAnimationFrame = requestAnimationFrame(animate);
+                    }
+                }
+                autoRotateAnimationFrame = requestAnimationFrame(animate);
+            }
+        }
+
+        function stopAutoRotation() {
+            // Save current orientation to configuration when stopping
+            var globe = globeAgent.value();
+            if (globe && globe.projection) {
+                var currentOrientation = globe.orientation();
+                configuration.save({ orientation: currentOrientation }, { source: "autoRotate" });
+            }
+            if (typeof window.resetWindTrails === "function") {
+                window.resetWindTrails();
+            }
+            if (autoRotateAnimationFrame) {
+                cancelAnimationFrame(autoRotateAnimationFrame);
+                autoRotateAnimationFrame = null;
+            }
+            // Ensure the magnitude overlay is rebuilt for the final stopped orientation.
+            rendererAgent.trigger("render");
+            autoRotateSpeed = 0;
+            autoRotatePaused = false;
+            lastAutoRotateTime = null;
+        }
+
+        function pauseAutoRotation() {
+            autoRotatePaused = true;
+            lastAutoRotateTime = null; // Reset timer so we don't jump when resuming
+        }
+
+        function resumeAutoRotation() {
+            if (autoRotateSpeed > 0) {
+                autoRotatePaused = false;
+                lastAutoRotateTime = Date.now();
+                // Restart animation loop
+                function animate() {
+                    if (autoRotateSpeed > 0 && !autoRotatePaused) {
+                        updateAutoRotation();
+                        requestAnimationFrame(animate);
+                    }
+                }
+                requestAnimationFrame(animate);
+            }
+        }
+
+        // Pause auto-rotation during user interaction
+        inputController.on("moveStart", pauseAutoRotation);
+        inputController.on("moveEnd", function () {
+            // Resume after a short delay to ensure user has finished
+            setTimeout(resumeAutoRotation, 500);
+        });
+
+        // Restart auto-rotation when projection changes (to work with new projection)
+        globeAgent.on("update", function () {
+            if (autoRotateSpeed > 0) {
+                // Restart with current speed to work with new projection
+                var currentSpeed = autoRotateSpeed;
+                autoRotateSpeed = 0; // Stop current animation
+                autoRotatePaused = false;
+                lastAutoRotateTime = null;
+                setTimeout(function () {
+                    startAutoRotation(currentSpeed);
+                }, 100);
+            }
+        });
+
+        // Expose auto-rotation functions to window for Wallpaper Engine integration
+        window.startAutoRotation = startAutoRotation;
+        window.stopAutoRotation = stopAutoRotation;
+        window.setAutoRotateSpeed = function (speed) {
+            if (speed > 0) {
+                startAutoRotation(speed);
+            } else {
+                stopAutoRotation();
+            }
+        };
+
+        // Listen for spinSpeed configuration changes (for web version URL hash support)
+        // Note: This listener is set up AFTER window.setAutoRotateSpeed is defined above
+        configuration.on("change:spinSpeed", function (model, speed) {
+            console.log("spinSpeed changed to:", speed);
+            if (typeof speed === "number" && speed >= 0) {
+                if (typeof window.setAutoRotateSpeed === "function") {
+                    window.setAutoRotateSpeed(speed);
+                } else {
+                    console.warn("window.setAutoRotateSpeed not available yet");
+                }
+            } else {
+                if (typeof window.setAutoRotateSpeed === "function") {
+                    window.setAutoRotateSpeed(0);
+                }
+            }
+        });
+
+        // Also apply initial spinSpeed if present in configuration (from URL hash)
+        setTimeout(function () {
+            if (configuration.has("spinSpeed")) {
+                var speed = configuration.get("spinSpeed");
+                console.log("Applying initial spinSpeed:", speed);
+                if (typeof window.setAutoRotateSpeed === "function") {
+                    window.setAutoRotateSpeed(speed);
+                }
+            }
+        }, 100);
+
         // Modify menu depending on what mode we're in.
         configuration.on("change:param", function (context, mode) {
             d3.selectAll(".ocean-mode").classed("invisible", mode !== "ocean");
@@ -1469,6 +1920,16 @@
             bindButtonToConfiguration("#" + p, { projection: p, orientation: "" }, ["projection"]);
         });
 
+        // Add handlers for auto-rotation speed buttons.
+        [0, 30, 60, 120, 180, 360].forEach(function (speed) {
+            bindButtonToConfiguration("#spin-" + speed, { spinSpeed: speed }, ["spinSpeed"]);
+        });
+        configuration.on("change:spinSpeed", function (x, speed) {
+            [0, 30, 60, 120, 180, 360].forEach(function (s) {
+                d3.select("#spin-" + s).classed("highlighted", speed === s);
+            });
+        });
+
         // When touch device changes between portrait and landscape, rebuild globe using the new view size.
         d3.select(window).on("orientationchange", function () {
             view = µ.view();
@@ -1484,10 +1945,5 @@
     }
 
     when(true).then(init).then(start).otherwise(report.error);
-
-    // Expose configuration, globes, and products to window for Wallpaper Engine integration
-    window.configuration = configuration;
-    window.globes = globes;
-    window.products = products;
 
 })();
