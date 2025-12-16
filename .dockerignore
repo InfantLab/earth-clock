@@ -11,3 +11,5 @@ npm-debug.log
 .DS_Store
 Thumbs.db
 
+# Generated runtime data (re-created by services at runtime)
+public/data/weather/current/current-*.json

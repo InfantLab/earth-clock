@@ -12,13 +12,9 @@
         "type": "git",
         "url": "git://github.com/cambecc/earth.git"
     },
-    "engine": "node >= 0.10.21",
+    "engine": "node >= 18",
     "dependencies": {
-        "express": "3.4.4",
-        "grib-js": "^1.0.0",
-        "mkdirp": "0.3.5",
-        "swig": "1.2.2",
-        "when": "2.6.0"
+        "grib-js": "^1.0.0"
     },
     "scripts": {
         "start": "node server.js",
@@ -27,8 +23,6 @@
         "sync-wallpaper": "node sync-wallpaper.js"
     },
     "devDependencies": {
-        "grib2-simple": "^1.1.1",
-        "grunt": "~0.4.1",
-        "grunt-contrib-jshint": "~0.7.1"
+        "grib2-simple": "^1.1.1"
     }
 }
