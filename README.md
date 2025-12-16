@@ -146,6 +146,21 @@ Automatic fetching and display of current GFS weather data with no Java dependen
 
 Shows current time with UTC/Local toggle, updating every second when day/night overlay is active.
 
+wallpaper engine
+----------------
+
+This project includes a **Wallpaper Engine** version available in the `wallpaper-engine/` directory. The wallpaper version:
+
+- Supports all 8 projections with full control via user properties
+- Configurable overlays, height levels, and orientation
+- Auto-rotation feature (globe spinning)
+- Clock visibility control
+- Live or bundled data sources
+
+See [WALLPAPER_ENGINE.md](WALLPAPER_ENGINE.md) for details on maintaining and updating the wallpaper version.
+
+**Code Sync**: The wallpaper version is a minimal wrapper around the core web version. After making changes to core files, run `node sync-wallpaper.js` to keep versions in sync.
+
 inspiration
 -----------
 

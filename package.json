@@ -23,7 +23,8 @@
     "scripts": {
         "start": "node server.js",
         "dev": "node dev-server.js 8080",
-        "weather-service": "node weather-service.js"
+        "weather-service": "node weather-service.js",
+        "sync-wallpaper": "node sync-wallpaper.js"
     },
     "devDependencies": {
         "grib2-simple": "^1.1.1",

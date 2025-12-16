@@ -35,6 +35,8 @@ All settings are controlled through Wallpaper Engine's property panel:
 - **Zoom/Scale**: Adjust zoom level (100 to 2000)
 - **Day/Night Overlay**: Toggle day/night terminator visualization
 - **Data Source**: Choose "Live Server" for real-time data or "Bundled" for static data
+- **Show Clock**: Toggle time display visibility
+- **Auto-Rotation Speed**: Set globe rotation speed (0 to 360 degrees/minute, 0 = off)
 
 ## Files
 
@@ -60,6 +62,23 @@ Example: `index.html#current/wind/surface/level/orthographic`
 
 Note: When using live server, ensure CORS is properly configured or use Wallpaper Engine's CEF flags for development.
 
+## Code Synchronization
+
+The wallpaper-engine directory contains copies of core files. To keep them in sync after making changes to the main web version:
+
+1. Run the sync script from the project root:
+   ```bash
+   node sync-wallpaper.js
+   ```
+
+2. This copies updated files from `public/libs/earth/` to `wallpaper-engine/libs/earth/`
+
+3. Test the wallpaper in Wallpaper Engine editor
+
+4. Update on Steam Workshop if changes are working
+
+**Note**: Wallpaper Engine requires files to be in the same directory (no parent directory access), so we maintain local copies rather than using relative paths.
+
 ## Credits
 
-Based on the original [earth](https://github.com/cambecc/earth) project by Cameron Beccario, and the [earth-clock](https://github.com/your-repo/earth-clock) fork with day/night terminator overlay.
+Based on the original [earth](https://github.com/cambecc/earth) project by Cameron Beccario, and the [earth-clock](https://github.com/InfantLab/earth-clock) fork with day/night terminator overlay.

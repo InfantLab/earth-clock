@@ -176,6 +176,21 @@
             "value": "bundled"
           }
         ]
+      },
+      "showclock": {
+        "text": "Show Clock",
+        "type": "bool",
+        "value": true,
+        "order": 9
+      },
+      "spinSpeed": {
+        "text": "Auto-Rotation Speed",
+        "type": "slider",
+        "min": 0,
+        "max": 360,
+        "step": 1,
+        "value": 0,
+        "order": 10
       }
     }
   },

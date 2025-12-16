@@ -6,7 +6,7 @@
  *
  * https://github.com/cambecc/earth
  */
-var µ = function() {
+var µ = function () {
     "use strict";
 
     var τ = 2 * Math.PI;
@@ -147,7 +147,7 @@ var µ = function() {
     }
 
     function dateToConfig(date) {
-        return {date: µ.dateToUTCymd(date, "/"), hour: µ.zeroPad(date.getUTCHours(), 2) + "00"};
+        return { date: µ.dateToUTCymd(date, "/"), hour: µ.zeroPad(date.getUTCHours(), 2) + "00" };
     }
 
     /**
@@ -156,11 +156,11 @@ var µ = function() {
     function log() {
         function format(o) { return o && o.stack ? o + "\n" + o.stack : o; }
         return {
-            debug:   function(s) { if (console && console.log) console.log(format(s)); },
-            info:    function(s) { if (console && console.info) console.info(format(s)); },
-            error:   function(e) { if (console && console.error) console.error(format(e)); },
-            time:    function(s) { if (console && console.time) console.time(format(s)); },
-            timeEnd: function(s) { if (console && console.timeEnd) console.timeEnd(format(s)); }
+            debug: function (s) { if (console && console.log) console.log(format(s)); },
+            info: function (s) { if (console && console.info) console.info(format(s)); },
+            error: function (e) { if (console && console.error) console.error(format(e)); },
+            time: function (s) { if (console && console.time) console.time(format(s)); },
+            timeEnd: function (s) { if (console && console.timeEnd) console.timeEnd(format(s)); }
         };
     }
 
@@ -173,7 +173,7 @@ var µ = function() {
         var b = document && document.getElementsByTagName("body")[0];
         var x = w.innerWidth || d.clientWidth || b.clientWidth;
         var y = w.innerHeight || d.clientHeight || b.clientHeight;
-        return {width: x, height: y};
+        return { width: x, height: y };
     }
 
     /**
@@ -196,7 +196,7 @@ var µ = function() {
     function colorInterpolator(start, end) {
         var r = start[0], g = start[1], b = start[2];
         var Δr = end[0] - r, Δg = end[1] - g, Δb = end[2] - b;
-        return function(i, a) {
+        return function (i, a) {
             return [Math.floor(r + i * Δr), Math.floor(g + i * Δg), Math.floor(b + i * Δb), a];
         };
     }
@@ -212,7 +212,7 @@ var µ = function() {
     function sinebowColor(hue, a) {
         // Map hue [0, 1] to radians [0, 5/6τ]. Don't allow a full rotation because that keeps hue == 0 and
         // hue == 1 from mapping to the same color.
-        var rad = hue * τ * 5/6;
+        var rad = hue * τ * 5 / 6;
         rad *= 0.75;  // increase frequency to 2/3 cycle per rad
 
         var s = Math.sin(rad);
@@ -251,7 +251,7 @@ var µ = function() {
         for (var j = 85; j <= 255; j += step) {
             result.push(asColorStyle(j, j, j, 1.0));
         }
-        result.indexFor = function(m) {  // map wind speed to a style
+        result.indexFor = function (m) {  // map wind speed to a style
             return Math.floor(Math.min(m, maxWind) / maxWind * (result.length - 1));
         };
         return result;
@@ -273,12 +273,12 @@ var µ = function() {
     function segmentedColorScale(segments) {
         var points = [], interpolators = [], ranges = [];
         for (var i = 0; i < segments.length - 1; i++) {
-            points.push(segments[i+1][0]);
-            interpolators.push(colorInterpolator(segments[i][1], segments[i+1][1]));
-            ranges.push([segments[i][0], segments[i+1][0]]);
+            points.push(segments[i + 1][0]);
+            interpolators.push(colorInterpolator(segments[i][1], segments[i + 1][1]));
+            ranges.push([segments[i][0], segments[i + 1][0]]);
         }
 
-        return function(point, alpha) {
+        return function (point, alpha) {
             var i;
             for (i = 0; i < points.length - 1; i++) {
                 if (point <= points[i]) {
@@ -321,11 +321,11 @@ var µ = function() {
      */
     function loadJson(resource) {
         var d = when.defer();
-        d3.json(resource, function(error, result) {
+        d3.json(resource, function (error, result) {
             return error ?
                 !error.status ?
-                    d.reject({status: -1, message: "Cannot load resource: " + resource, resource: resource}) :
-                    d.reject({status: error.status, message: error.statusText, resource: resource}) :
+                    d.reject({ status: -1, message: "Cannot load resource: " + resource, resource: resource }) :
+                    d.reject({ status: error.status, message: error.statusText, resource: resource }) :
                 d.resolve(result);
         });
         return d.promise;
@@ -468,7 +468,7 @@ var µ = function() {
             /**
              * @returns {Object} this agent's current value.
              */
-            value: function() {
+            value: function () {
                 return value;
             },
 
@@ -483,7 +483,7 @@ var µ = function() {
              * task, if any, is immediately cancelled.
              * @returns this agent.
              */
-            submit: function(task, arg0, arg1, and_so_on) {
+            submit: function (task, arg0, arg1, and_so_on) {
                 // immediately cancel the previous task
                 this.cancel();
                 // schedule the new task and update the agent with its associated cancel function
@@ -530,9 +530,10 @@ var µ = function() {
                 orientation: "",
                 topology: TOPOLOGY,
                 overlayType: "default",
-                showGridPoints: false
+                showGridPoints: false,
+                spinSpeed: 0                 // auto-rotation speed (degrees per minute, 0 = off)
             };
-            coalesce(tokens[9], "").split("/").forEach(function(segment) {
+            coalesce(tokens[9], "").split("/").forEach(function (segment) {
                 if ((option = /^(\w+)(=([\d\-.,]*))?$/.exec(segment))) {
                     if (projectionNames.has(option[1])) {
                         result.projection = option[1];                 // non-empty alphanumeric _
@@ -547,6 +548,12 @@ var µ = function() {
                 else if ((option = /^grid=(\w+)$/.exec(segment))) {
                     if (option[1] === "on") {
                         result.showGridPoints = true;
+                    }
+                }
+                else if ((option = /^spin=(\d+)$/.exec(segment))) {
+                    var speed = parseInt(option[1], 10);
+                    if (!isNaN(speed) && speed >= 0 && speed <= 360) {
+                        result.spinSpeed = speed;
                     }
                 }
             });
@@ -567,20 +574,21 @@ var µ = function() {
         /**
          * @returns {String} this configuration converted to a hash fragment.
          */
-        toHash: function() {
+        toHash: function () {
             var attr = this.attributes;
             var dir = attr.date === "current" ? "current" : attr.date + "/" + attr.hour + "Z";
             var proj = [attr.projection, attr.orientation].filter(isTruthy).join("=");
             var ol = !isValue(attr.overlayType) || attr.overlayType === "default" ? "" : "overlay=" + attr.overlayType;
             var grid = attr.showGridPoints ? "grid=on" : "";
-            return [dir, attr.param, attr.surface, attr.level, ol, proj, grid].filter(isTruthy).join("/");
+            var spin = (attr.spinSpeed && attr.spinSpeed > 0) ? "spin=" + attr.spinSpeed : "";
+            return [dir, attr.param, attr.surface, attr.level, ol, proj, grid, spin].filter(isTruthy).join("/");
         },
 
         /**
          * Synchronizes between the configuration model and the hash fragment in the URL bar. Invocations
          * caused by "hashchange" events must have the {trigger: "hashchange"} option specified.
          */
-        sync: function(method, model, options) {
+        sync: function (method, model, options) {
             switch (method) {
                 case "read":
                     if (options.trigger === "hashchange" && model._ignoreNextHashChangeEvent) {
