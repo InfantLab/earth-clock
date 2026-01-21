@@ -55,6 +55,10 @@
             "value": "off"
           },
           {
+            "label": "Random (each start)",
+            "value": "random"
+          },
+          {
             "label": "Wind Speed",
             "value": "wind"
           },

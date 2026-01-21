@@ -67,6 +67,32 @@
 
     // Map overlay value
     function mapOverlay(value) {
+        // Handle "random" overlay selection: choose once per wallpaper load, and keep stable
+        // for the rest of the session (until the user selects a non-random overlay).
+        var settings = window.wallpaperSettings = window.wallpaperSettings || {};
+
+        if (value !== "random" && settings.randomOverlayChoice) {
+            delete settings.randomOverlayChoice;
+        }
+
+        if (value === "random") {
+            if (!settings.randomOverlayChoice) {
+                var overlayPool = [
+                    "wind",
+                    "temp",
+                    "relative_humidity",
+                    "air_density",
+                    "wind_power_density",
+                    "total_precipitable_water",
+                    "total_cloud_water",
+                    "mean_sea_level_pressure"
+                ];
+                settings.randomOverlayChoice = overlayPool[Math.floor(Math.random() * overlayPool.length)];
+                console.log("Wallpaper Engine: Random overlay selected:", settings.randomOverlayChoice);
+            }
+            value = settings.randomOverlayChoice;
+        }
+
         if (value === "off") {
             return { overlayType: "off" };
         } else if (value === "wind") {

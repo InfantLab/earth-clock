@@ -85,7 +85,7 @@ This copies updated files from `public/` to `wallpaper-engine/`, keeping the ver
 ### Current Properties
 
 1. **projection** (combo) - Map projection type (8 options)
-2. **overlay** (combo) - Weather overlay type (9 options)
+2. **overlay** (combo) - Weather overlay type (includes `Random (each start)` option)
 3. **height** (combo) - Atmospheric pressure level (8 options)
 4. **longitude** (slider) - Horizontal rotation (-180 to 180)
 5. **latitude** (slider) - Vertical rotation (-90 to 90)
@@ -94,6 +94,21 @@ This copies updated files from `public/` to `wallpaper-engine/`, keeping the ver
 8. **datasource** (combo) - Data source (Live/Bundled)
 9. **showclock** (bool) - Show/hide time display
 10. **spinSpeed** (slider) - Auto-rotation speed (0 to 360 degrees/minute, 0 = off)
+
+### Random Overlay (each start)
+
+If the user selects **Overlay → Random (each start)**, the wallpaper will pick one overlay at startup from:
+
+- Wind Speed
+- Temperature
+- Relative Humidity
+- Air Density
+- Wind Power Density
+- Total Precipitable Water
+- Total Cloud Water
+- Mean Sea Level Pressure
+
+The choice is made **once per wallpaper load** and stays stable until the wallpaper is restarted (or the user picks a non-random overlay).
 
 ### Adding New Properties
 
@@ -172,3 +187,20 @@ wallpaper-engine/
 - Consider build script to automate sync and validation
 - Add automated tests for property handling
 - Create deployment checklist script
+
+## Windows Screensaver (classic .scr) feasibility note
+
+It’s very feasible to turn this project into a “classic” Windows screensaver while keeping it lightweight by hosting the existing HTML wallpaper in a native wrapper:
+
+- **Best lightweight option**: a small Win32/.NET host using **Microsoft Edge WebView2** that loads `wallpaper-engine/index.html` (or a screensaver-specific copy) from disk.
+- **Required screensaver modes**:
+  - `/s` fullscreen on the selected monitor
+  - `/p <HWND>` render into the preview window handle (Control Panel)
+  - `/c` optional config dialog (could reuse a simple INI/JSON or launch a small UI)
+- **Exit behavior**: close on any key press, mouse move beyond a small threshold, or mouse click.
+- **Size expectations**:
+  - Your `.scr` host can be only a few MB.
+  - Total install size is dominated by bundled assets (your `data/`, `libs/`, images) and by the WebView2 runtime availability on the target machine.
+- **Performance knobs**:
+  - Cap FPS (requestAnimationFrame throttling) and/or reduce particle count.
+  - Prefer “bundled” data mode (no network) for predictable behavior.

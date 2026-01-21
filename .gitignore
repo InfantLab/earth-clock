@@ -6,6 +6,10 @@ scratch
 private
 *.iml
 
+# C# / .NET build outputs
+screensaver/**/bin/
+screensaver/**/obj/
+*.user
 
 # Generated runtime data (refreshed by services)
 public/data/weather/current/current-*.json

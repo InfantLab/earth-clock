@@ -382,3 +382,25 @@ body {
 .wallpaper-mode #status {
     display: none !important;
 }
+
+/* Time display should be visible in wallpaper mode when not .invisible */
+.wallpaper-mode #time-display {
+    display: table;
+    visibility: visible;
+    opacity: 1;
+    pointer-events: all;
+    position: fixed;
+    bottom: 2rem;
+    left: 2rem;
+    margin-top: 0;
+    font-size: 3.5rem;
+}
+
+.wallpaper-mode #time-display.invisible {
+    display: none !important;
+}
+
+/* Hide close button in wallpaper mode - user uses settings instead */
+.wallpaper-mode #time-close {
+    display: none !important;
+}

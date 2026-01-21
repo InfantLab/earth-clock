@@ -19,6 +19,13 @@
         <svg id="foreground" class="fill-screen" xmlns="http://www.w3.org/2000/svg" version="1.1"></svg>
     </div>
 
+    <!-- Time display visible in wallpaper mode -->
+    <div id="time-display" class="invisible">
+        <span id="time-value"></span>
+        <span id="time-zone" class="text-button"></span>
+        <span id="time-close" class="invisible text-button"> ✕ </span>
+    </div>
+
     <!-- UI controls hidden in wallpaper mode -->
     <div id="sponsor" class="invisible wallpaper-hidden">
         <p><span id="sponsor-hide" class="text-button invisible"> ✕ </span>community</p>
@@ -27,11 +34,6 @@
 
     <div id="details" class="wallpaper-hidden">
         <p id="status"></p>
-        <div id="time-display" class="invisible">
-            <span id="time-value"></span>
-            <span id="time-zone" class="text-button"></span>
-            <span id="time-close" class="invisible text-button"> ✕ </span>
-        </div>
         <div id="location">
             <p>
                 <span id="location-coord"></span>

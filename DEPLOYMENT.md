@@ -131,3 +131,38 @@ If you prefer to run the weather service as a separate app:
 3. Share the `public/data/weather/current/` directory via a volume or network storage
 4. This provides better isolation but requires shared storage configuration
 
+## Windows Screensaver (.scr)
+
+This repo also contains a **classic Windows screensaver** wrapper that hosts the existing web wallpaper using **WinForms + WebView2**.
+
+### Build
+
+```bash
+dotnet build "screensaver\\EarthClock.Screensaver\\EarthClock.Screensaver.csproj" -c Release
+```
+
+Build output (important):
+
+- `screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\EarthClock.Screensaver.exe`
+- `screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\wallpaper-engine\\...` (must sit next to the executable)
+
+### Run (for testing)
+
+```bash
+"screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\EarthClock.Screensaver.exe" /c
+"screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\EarthClock.Screensaver.exe" /s
+```
+
+### Install
+
+1. Copy the entire output folder somewhere permanent (it must include the `wallpaper-engine\\` subfolder).
+2. Rename `EarthClock.Screensaver.exe` to `EarthClock.Screensaver.scr`.
+3. Install via either:
+   - Right-click the `.scr` file → **Install**, or
+   - Copy it into `%WINDIR%\\System32` and select it in **Screen Saver Settings**.
+
+### Requirements / notes
+
+- Requires the **Microsoft Edge WebView2 runtime** (commonly present on Windows 10/11).
+- Data mode is **live with fallback to bundled** (uses the existing `wallpaper-engine/data-source-wrapper.js`).
+

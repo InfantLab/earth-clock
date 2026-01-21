@@ -74,6 +74,12 @@
 
     var configuration =
         µ.buildConfiguration(globes, products.overlayTypes);  // holds the page's current configuration settings
+
+    // Expose core objects to window for Wallpaper Engine integration
+    window.configuration = configuration;
+    window.globes = globes;
+    window.products = products;
+
     var inputController = buildInputController();             // interprets drag/zoom operations
     var meshAgent = newAgent();      // map data for the earth
     var globeAgent = newAgent();     // the model of the globe
