@@ -286,10 +286,11 @@ public sealed class ScreensaverForm : Form
                 // Only handle requests to our live server
                 if (uri.Host.Equals("earth-clock.onemonkey.org", StringComparison.OrdinalIgnoreCase))
                 {
-                    args.GetDeferral();
+                    var deferral = args.GetDeferral();
                     try
                     {
                         using var httpClient = new System.Net.Http.HttpClient();
+                        httpClient.Timeout = TimeSpan.FromSeconds(10);
                         var response = await httpClient.GetAsync(args.Request.Uri);
                         var content = await response.Content.ReadAsByteArrayAsync();
                         var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
@@ -301,11 +302,23 @@ public sealed class ScreensaverForm : Form
                             response.ReasonPhrase ?? "OK",
                             $"Content-Type: {contentType}\nAccess-Control-Allow-Origin: *");
                         args.Response = webResponse;
+                        AppendLog($"Proxy OK: {args.Request.Uri} -> {response.StatusCode}");
                     }
                     catch (Exception ex)
                     {
                         AppendLog($"Proxy error for {args.Request.Uri}: {ex.Message}");
-                        // Let it fail naturally
+                        // Return a 502 error response so the JS knows to fall back
+                        try
+                        {
+                            var errorStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes($"{{\"error\": \"{ex.Message}\"}}"));
+                            args.Response = _webView.CoreWebView2.Environment.CreateWebResourceResponse(
+                                errorStream, 502, "Bad Gateway", "Content-Type: application/json");
+                        }
+                        catch { /* ignore */ }
+                    }
+                    finally
+                    {
+                        deferral.Complete();
                     }
                 }
             };
