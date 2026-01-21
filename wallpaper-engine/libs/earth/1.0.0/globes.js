@@ -74,7 +74,9 @@ var globes = function() {
                 var bounds = d3.geo.path().projection(defaultProjection).bounds({type: "Sphere"});
                 var hScale = (bounds[1][0] - bounds[0][0]) / defaultProjection.scale();
                 var vScale = (bounds[1][1] - bounds[0][1]) / defaultProjection.scale();
-                return Math.min(view.width / hScale, view.height / vScale) * 0.9;
+                // Use full scale in wallpaper mode, otherwise 90% to leave margin for UI
+                var scaleFactor = document.body.classList.contains('wallpaper-mode') ? 1.0 : 0.9;
+                return Math.min(view.width / hScale, view.height / vScale) * scaleFactor;
             },
 
             /**

@@ -19,15 +19,10 @@ public sealed class ScreensaverConfigForm : Form
         {
             AutoSize = false,
             Dock = DockStyle.Top,
-            Height = 90,
+            Height = 40,
             TextAlign = ContentAlignment.MiddleLeft,
             Padding = new Padding(12),
-            Text =
-                "This is the Earth Clock screensaver.\r\n\r\n" +
-                "Run modes:\r\n" +
-                "  /s  Fullscreen screensaver\r\n" +
-                "  /p <HWND>  Preview mode\r\n\r\n" +
-                "Tip: build the project, then rename the .exe to .scr to install."
+            Text = "This is the Earth Clock screensaver."
         };
 
         var table = new TableLayoutPanel
@@ -35,11 +30,16 @@ public sealed class ScreensaverConfigForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(12, 0, 12, 0),
             ColumnCount = 2,
-            RowCount = 6,
-            AutoSize = true
+            RowCount = 7,
+            AutoSize = false
         };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        // Set row heights
+        for (int i = 0; i < 7; i++)
+        {
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+        }
 
         var dataSource = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
         foreach (var (label, value) in ScreensaverSettings.DataSourceOptions)
@@ -137,10 +137,11 @@ public sealed class ScreensaverConfigForm : Form
         buttons.Controls.Add(save);
         buttons.Controls.Add(openFolder);
 
-        ClientSize = new Size(640, 340);
-        Controls.Add(info);
+        ClientSize = new Size(450, 380);
+        // Add in reverse order: Fill-docked control must be added LAST
         Controls.Add(table);
         Controls.Add(buttons);
+        Controls.Add(info);
     }
 
     private sealed record ComboItem(string Label, string Value)

@@ -6,6 +6,13 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Publish as self-contained so the .scr works without separate runtime -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Suppress WindowsBase version conflict warning from WebView2 -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +32,17 @@
       SourceFiles="$(TargetPath)"
       DestinationFiles="$(TargetDir)$(AssemblyName).scr"
       SkipUnchangedFiles="true" />
+    <!-- Also copy the runtime config files so .NET can find them -->
+    <Copy
+      SourceFiles="$(TargetDir)$(AssemblyName).runtimeconfig.json"
+      DestinationFiles="$(TargetDir)$(AssemblyName).scr.runtimeconfig.json"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(TargetDir)$(AssemblyName).runtimeconfig.json')" />
+    <Copy
+      SourceFiles="$(TargetDir)$(AssemblyName).deps.json"
+      DestinationFiles="$(TargetDir)$(AssemblyName).scr.deps.json"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(TargetDir)$(AssemblyName).deps.json')" />
   </Target>
 
 </Project>

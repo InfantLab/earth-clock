@@ -292,6 +292,19 @@
                     }
                 }, 300);
             }
+
+            // Also apply spinSpeed from wallpaperSettings (for screensaver mode)
+            // This handles the case where spinSpeed is injected directly rather than via properties
+            if (window.wallpaperSettings && window.wallpaperSettings.spinSpeed > 0 &&
+                window.wallpaperSettings.pendingSpinSpeed === undefined) {
+                var injectedSpeed = window.wallpaperSettings.spinSpeed;
+                console.log("Wallpaper Engine: Applying injected spinSpeed:", injectedSpeed);
+                setTimeout(function () {
+                    if (typeof window.setAutoRotateSpeed === 'function') {
+                        window.setAutoRotateSpeed(injectedSpeed);
+                    }
+                }, 400);
+            }
         } else {
             // Keep checking
             setTimeout(checkEarthJsReady, 100);

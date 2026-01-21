@@ -390,8 +390,8 @@ body {
     opacity: 1;
     pointer-events: all;
     position: fixed;
-    bottom: 2rem;
-    left: 2rem;
+    bottom: 5.5rem;
+    left: 5.5rem;
     margin-top: 0;
     font-size: 3.5rem;
 }

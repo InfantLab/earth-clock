@@ -6,24 +6,12 @@
 (function () {
     "use strict";
 
-    // Wait for products to be loaded
-    var initAttempts = 0;
-    var maxInitAttempts = 100;
-
     function initializeDataSourceWrapper() {
-        // Check if products is available
-        if (typeof window.products === 'undefined' || typeof window.µ === 'undefined') {
-            initAttempts++;
-            if (initAttempts < maxInitAttempts) {
-                setTimeout(initializeDataSourceWrapper, 100);
-            } else {
-                console.warn("Data Source Wrapper: products.js not found after " + maxInitAttempts + " attempts");
-            }
+        // products.js and micro.js should already be loaded (this script is loaded after them)
+        if (typeof window.µ === 'undefined' || typeof window.µ.loadJson !== 'function') {
+            console.error("Data Source Wrapper: µ.loadJson not available - cannot hook data loading");
             return;
         }
-
-        // Get the original gfs1p0degPath function from products
-        // We need to patch the path generation to support live server
 
         // Store original loadJson function
         var originalLoadJson = window.µ.loadJson;
@@ -40,7 +28,10 @@
                 // Try live server first, but fallback to bundled on error
                 var livePromise = originalLoadJson(liveUrl);
                 return livePromise.then(
-                    function (result) { return result; },
+                    function (result) { 
+                        console.log("Data Source Wrapper: Live server success for:", url);
+                        return result; 
+                    },
                     function (error) {
                         console.warn("Data Source Wrapper: Live server failed, falling back to bundled:", error);
                         return originalLoadJson(url);
@@ -53,16 +44,11 @@
             }
         };
 
-        console.log("Data Source Wrapper: Initialized");
+        console.log("Data Source Wrapper: Initialized successfully, dataSource =", 
+            (window.wallpaperSettings && window.wallpaperSettings.dataSource) || "live (default)");
     }
 
-    // Start initialization
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            setTimeout(initializeDataSourceWrapper, 500);
-        });
-    } else {
-        setTimeout(initializeDataSourceWrapper, 500);
-    }
+    // Initialize immediately since products.js should already be loaded
+    initializeDataSourceWrapper();
 
 })();

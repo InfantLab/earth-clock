@@ -47,7 +47,7 @@
       "overlay": {
         "text": "Overlay",
         "type": "combo",
-        "value": "off",
+        "value": "random",
         "order": 2,
         "options": [
           {
@@ -193,7 +193,7 @@
         "min": 0,
         "max": 360,
         "step": 1,
-        "value": 0,
+        "value": 15,
         "order": 10
       }
     }

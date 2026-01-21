@@ -130,8 +130,38 @@ public sealed class ScreensaverForm : Form
             _exitFilter = null;
         }
 
+        // Clean up old WebView2 session folders (older than 1 hour)
+        CleanupOldWebView2Sessions();
+
         ShowCursor();
         base.OnFormClosed(e);
+    }
+
+    private static void CleanupOldWebView2Sessions()
+    {
+        try
+        {
+            var webView2Dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "EarthClock.Screensaver",
+                "WebView2");
+            if (!Directory.Exists(webView2Dir)) return;
+
+            var cutoff = DateTime.UtcNow.AddHours(-1);
+            foreach (var dir in Directory.GetDirectories(webView2Dir))
+            {
+                try
+                {
+                    var info = new DirectoryInfo(dir);
+                    if (info.CreationTimeUtc < cutoff)
+                    {
+                        info.Delete(recursive: true);
+                    }
+                }
+                catch { /* ignore locked folders */ }
+            }
+        }
+        catch { /* ignore */ }
     }
 
     private void ArmExitOnInput()
@@ -223,10 +253,14 @@ public sealed class ScreensaverForm : Form
 
         try
         {
+            // Use a unique session ID to avoid "resource in use" conflicts when
+            // multiple instances try to use the same WebView2 user data folder.
+            var sessionId = Guid.NewGuid().ToString("N")[..8];
             var userDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "EarthClock.Screensaver",
-                "WebView2");
+                "WebView2",
+                sessionId);
             Directory.CreateDirectory(userDataDir);
 
             var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
@@ -244,11 +278,50 @@ public sealed class ScreensaverForm : Form
                 contentDir,
                 CoreWebView2HostResourceAccessKind.Allow);
 
+            // Enable cross-origin requests by intercepting and proxying live server requests.
+            // WebView2 blocks cross-origin XHR from virtual hosts, so we need to handle this.
+            _webView.CoreWebView2.WebResourceRequested += async (sender, args) =>
+            {
+                var uri = new Uri(args.Request.Uri);
+                // Only handle requests to our live server
+                if (uri.Host.Equals("earth-clock.onemonkey.org", StringComparison.OrdinalIgnoreCase))
+                {
+                    args.GetDeferral();
+                    try
+                    {
+                        using var httpClient = new System.Net.Http.HttpClient();
+                        var response = await httpClient.GetAsync(args.Request.Uri);
+                        var content = await response.Content.ReadAsByteArrayAsync();
+                        var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
+
+                        var memStream = new MemoryStream(content);
+                        var webResponse = _webView.CoreWebView2.Environment.CreateWebResourceResponse(
+                            memStream,
+                            (int)response.StatusCode,
+                            response.ReasonPhrase ?? "OK",
+                            $"Content-Type: {contentType}\nAccess-Control-Allow-Origin: *");
+                        args.Response = webResponse;
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendLog($"Proxy error for {args.Request.Uri}: {ex.Message}");
+                        // Let it fail naturally
+                    }
+                }
+            };
+
+            // Add filter for live server requests
+            _webView.CoreWebView2.AddWebResourceRequestedFilter(
+                "https://earth-clock.onemonkey.org/*",
+                CoreWebView2WebResourceContext.All);
+
             // Set wallpaperSettings before any scripts run (used by data-source-wrapper.js).
             var initScript =
                 "window.wallpaperSettings = window.wallpaperSettings || {};\n" +
                 $"window.wallpaperSettings.dataSource = {ToJsString(_settings.DataSource)};\n" +
-                $"window.wallpaperSettings.dayNightEnabled = {(_settings.DayNight ? "true" : "false")};\n";
+                $"window.wallpaperSettings.dayNightEnabled = {(_settings.DayNight ? "true" : "false")};\n" +
+                $"window.wallpaperSettings.spinSpeed = {_settings.SpinSpeed};\n" +
+                "console.log('Screensaver settings injected:', JSON.stringify(window.wallpaperSettings));\n";
             await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(initScript);
 
             // Capture JS errors for debugging via chrome.webview.postMessage
@@ -367,7 +440,7 @@ public sealed class ScreensaverForm : Form
                 }
             };
 
-            _webView.CoreWebView2.WebResourceResponseReceived += async (_, ev) =>
+            _webView.CoreWebView2.WebResourceResponseReceived += (_, ev) =>
             {
                 try
                 {
