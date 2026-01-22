@@ -6,12 +6,11 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- For development: use framework-dependent build (smaller, may bypass Smart App Control) -->
-    <!-- For distribution: uncomment SelfContained for standalone .scr -->
-    <!-- <SelfContained>true</SelfContained> -->
-    <!-- <RuntimeIdentifier>win-x64</RuntimeIdentifier> -->
-    <!-- <PublishSingleFile>true</PublishSingleFile> -->
-    <!-- <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract> -->
+    <!-- Self-contained single-file build for proper screensaver operation -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- Suppress WindowsBase version conflict warning from WebView2 -->
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>

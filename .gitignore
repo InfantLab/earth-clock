@@ -9,6 +9,7 @@ private
 # C# / .NET build outputs
 screensaver/**/bin/
 screensaver/**/obj/
+screensaver/**/Deploy/
 *.user
 
 # Generated runtime data (refreshed by services)

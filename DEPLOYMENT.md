@@ -137,32 +137,61 @@ This repo also contains a **classic Windows screensaver** wrapper that hosts the
 
 ### Build
 
-```bash
-dotnet build "screensaver\\EarthClock.Screensaver\\EarthClock.Screensaver.csproj" -c Release
+The screensaver uses a self-contained single-file build for best compatibility with Windows Control Panel:
+
+```powershell
+cd screensaver\EarthClock.Screensaver
+dotnet publish -c Release
 ```
 
-Build output (important):
+After publishing, manually create the .scr file (MSBuild target doesn't run for publish):
 
-- `screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\EarthClock.Screensaver.exe`
-- `screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\wallpaper-engine\\...` (must sit next to the executable)
-
-### Run (for testing)
-
-```bash
-"screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\EarthClock.Screensaver.exe" /c
-"screensaver\\EarthClock.Screensaver\\bin\\Release\\net8.0-windows\\EarthClock.Screensaver.exe" /s
+```powershell
+$publishDir = "bin\Release\net8.0-windows\win-x64\publish"
+Copy-Item "$publishDir\EarthClock.Screensaver.exe" "$publishDir\EarthClock.Screensaver.scr"
 ```
+
+Build output:
+
+- `bin\Release\net8.0-windows\win-x64\publish\EarthClock.Screensaver.scr` (~162 MB, self-contained)
+- `bin\Release\net8.0-windows\win-x64\publish\wallpaper-engine\` (must be alongside the .scr)
 
 ### Install
 
-1. Copy the entire output folder somewhere permanent (it must include the `wallpaper-engine\\` subfolder).
-2. Rename `EarthClock.Screensaver.exe` to `EarthClock.Screensaver.scr`.
-3. Install via either:
-   - Right-click the `.scr` file → **Install**, or
-   - Copy it into `%WINDIR%\\System32` and select it in **Screen Saver Settings**.
+Copy the .scr file and wallpaper-engine folder to a permanent location:
+
+```powershell
+$publishDir = "screensaver\EarthClock.Screensaver\bin\Release\net8.0-windows\win-x64\publish"
+$installDir = "$env:USERPROFILE\EarthClockScreensaver"
+
+# Create install directory
+New-Item -ItemType Directory -Path $installDir -Force
+
+# Copy files
+Copy-Item "$publishDir\EarthClock.Screensaver.scr" $installDir
+Copy-Item "$publishDir\wallpaper-engine" "$installDir\wallpaper-engine" -Recurse
+```
+
+Then register with Windows:
+
+- Right-click the `.scr` file → **Install**, or
+- Run: `rundll32.exe desk.cpl,InstallScreenSaver "$env:USERPROFILE\EarthClockScreensaver\EarthClock.Screensaver.scr"`
+
+### Run (for testing)
+
+```powershell
+# Settings dialog
+& "$env:USERPROFILE\EarthClockScreensaver\EarthClock.Screensaver.scr" /c
+
+# Fullscreen screensaver
+& "$env:USERPROFILE\EarthClockScreensaver\EarthClock.Screensaver.scr" /s
+```
 
 ### Requirements / notes
 
+- **Self-contained**: No .NET runtime required (bundled in the .scr file).
 - Requires the **Microsoft Edge WebView2 runtime** (commonly present on Windows 10/11).
 - Data mode is **live with fallback to bundled** (uses the existing `wallpaper-engine/data-source-wrapper.js`).
+- CORS proxy built-in for fetching live weather data.
+- **Smart App Control**: If Windows blocks the .scr, you may need to allow it in Windows Security settings.
 

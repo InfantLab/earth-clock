@@ -188,19 +188,34 @@ wallpaper-engine/
 - Add automated tests for property handling
 - Create deployment checklist script
 
-## Windows Screensaver (classic .scr) feasibility note
+## Windows Screensaver (.scr)
 
-It’s very feasible to turn this project into a “classic” Windows screensaver while keeping it lightweight by hosting the existing HTML wallpaper in a native wrapper:
+A classic Windows screensaver has been implemented in `screensaver/EarthClock.Screensaver/`. It uses **WinForms + WebView2** to host the existing HTML wallpaper.
 
-- **Best lightweight option**: a small Win32/.NET host using **Microsoft Edge WebView2** that loads `wallpaper-engine/index.html` (or a screensaver-specific copy) from disk.
-- **Required screensaver modes**:
-  - `/s` fullscreen on the selected monitor
-  - `/p <HWND>` render into the preview window handle (Control Panel)
-  - `/c` optional config dialog (could reuse a simple INI/JSON or launch a small UI)
-- **Exit behavior**: close on any key press, mouse move beyond a small threshold, or mouse click.
-- **Size expectations**:
-  - Your `.scr` host can be only a few MB.
-  - Total install size is dominated by bundled assets (your `data/`, `libs/`, images) and by the WebView2 runtime availability on the target machine.
-- **Performance knobs**:
-  - Cap FPS (requestAnimationFrame throttling) and/or reduce particle count.
-  - Prefer “bundled” data mode (no network) for predictable behavior.
+### Features
+
+- **Self-contained build**: Single ~162 MB .scr file with no .NET runtime dependency
+- **Live data with fallback**: Fetches current weather from live server, falls back to bundled data
+- **Built-in CORS proxy**: Handles cross-origin requests for live weather data
+- **All screensaver modes**:
+  - `/s` - Fullscreen on primary monitor
+  - `/p <HWND>` - Preview (shows static image in Control Panel preview)
+  - `/c` - Settings dialog
+- **Exit behavior**: Closes on any key press, mouse move beyond threshold, or mouse click
+- **Anti-throttling**: Browser flags to prevent animation slowdown
+
+### Build & Install
+
+See [DEPLOYMENT.md](DEPLOYMENT.md#windows-screensaver-scr) for detailed build and installation instructions.
+
+### Configuration
+
+Settings are stored in `%LOCALAPPDATA%\EarthClock.Screensaver\settings.json`:
+
+- **Data Source**: Live server or bundled data
+- **Projection**: orthographic, equirectangular, etc.
+- **Overlay**: wind, temperature, humidity, etc.
+- **Day/Night**: Toggle terminator overlay
+- **Show Clock**: Toggle time display
+- **Spin Speed**: Auto-rotation in degrees per minute
+

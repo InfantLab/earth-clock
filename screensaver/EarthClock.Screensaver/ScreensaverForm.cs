@@ -6,7 +6,7 @@ namespace EarthClock.Screensaver;
 public sealed class ScreensaverForm : Form
 {
     private readonly ScreensaverOptions _options;
-    private readonly WebView2 _webView;
+    private WebView2? _webView;
     private InputExitMessageFilter? _exitFilter;
     private System.Windows.Forms.Timer? _previewResizeTimer;
     private System.Windows.Forms.Timer? _exitPollTimer;
@@ -16,6 +16,12 @@ public sealed class ScreensaverForm : Form
     private bool _exitRequested;
     private Point _initialCursorPos;
     private DateTime _exitStartTimeUtc;
+    
+    // Shared HttpClient for CORS proxy - reuse connections for better performance
+    private static readonly System.Net.Http.HttpClient _sharedHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(30)
+    };
 
     public ScreensaverForm(ScreensaverOptions options)
     {
@@ -30,19 +36,20 @@ public sealed class ScreensaverForm : Form
         {
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
+            
+            // Only create WebView2 for fullscreen mode
+            _webView = new WebView2
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Black
+            };
+            Controls.Add(_webView);
         }
         else if (_options.Mode == ScreensaverMode.Preview)
         {
             FormBorderStyle = FormBorderStyle.None;
             TopMost = false;
         }
-
-        _webView = new WebView2
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.Black
-        };
-        Controls.Add(_webView);
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -93,9 +100,54 @@ public sealed class ScreensaverForm : Form
             HideCursor();
             ArmExitOnInput();
             ArmExitPollingFallback();
+            await InitializeWebViewAsync();
         }
+        else if (_options.Mode == ScreensaverMode.Preview)
+        {
+            // WebView2 doesn't work reliably when embedded in Control Panel preview.
+            // Show a static preview image instead.
+            ShowStaticPreview();
+        }
+    }
 
-        await InitializeWebViewAsync();
+    private void ShowStaticPreview()
+    {
+        // WebView2 is not created for preview mode, so just set up static content
+
+        // Try to load a preview image
+        var baseDir = AppContext.BaseDirectory;
+        var previewPath = Path.Combine(baseDir, "wallpaper-engine", "preview.jpg");
+        
+        if (File.Exists(previewPath))
+        {
+            try
+            {
+                var pictureBox = new PictureBox
+                {
+                    Dock = DockStyle.Fill,
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    BackColor = Color.Black,
+                    Image = Image.FromFile(previewPath)
+                };
+                Controls.Add(pictureBox);
+                return;
+            }
+            catch { /* fall through to colored background */ }
+        }
+        
+        // Fallback: just show a dark blue background with the title
+        BackColor = Color.FromArgb(0, 20, 40);
+        var label = new Label
+        {
+            Text = "Earth Clock",
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 8f, FontStyle.Regular),
+            AutoSize = false,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter
+        };
+        Controls.Add(label);
     }
 
     protected override void OnDeactivate(EventArgs e)
@@ -263,8 +315,26 @@ public sealed class ScreensaverForm : Form
                 sessionId);
             Directory.CreateDirectory(userDataDir);
 
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-            await _webView.EnsureCoreWebView2Async(env);
+            // Create environment with options to prevent throttling
+            var options = new CoreWebView2EnvironmentOptions
+            {
+                // Disable background throttling so animations run at full speed
+                // Also disable occlusion detection and enable high-performance rendering
+                AdditionalBrowserArguments = string.Join(" ",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=CalculateNativeWinOcclusion",
+                    "--disable-hang-monitor",
+                    "--disable-ipc-flooding-protection",
+                    "--enable-features=UseSkiaRenderer",
+                    "--force-gpu-rasterization",
+                    "--enable-gpu-rasterization",
+                    "--enable-zero-copy",
+                    "--ignore-gpu-blocklist")
+            };
+            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir, options);
+            await _webView!.EnsureCoreWebView2Async(env);
 
             // Harden a bit for screensaver mode.
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
@@ -278,22 +348,30 @@ public sealed class ScreensaverForm : Form
                 contentDir,
                 CoreWebView2HostResourceAccessKind.Allow);
 
+            // Add filter for live server requests BEFORE subscribing to the event
+            _webView.CoreWebView2.AddWebResourceRequestedFilter(
+                "https://earth-clock.onemonkey.org/*",
+                CoreWebView2WebResourceContext.All);
+            AppendLog("CORS proxy filter registered for earth-clock.onemonkey.org");
+
             // Enable cross-origin requests by intercepting and proxying live server requests.
             // WebView2 blocks cross-origin XHR from virtual hosts, so we need to handle this.
             _webView.CoreWebView2.WebResourceRequested += async (sender, args) =>
             {
                 var uri = new Uri(args.Request.Uri);
+                AppendLog($"WebResourceRequested: {args.Request.Uri}");
                 // Only handle requests to our live server
                 if (uri.Host.Equals("earth-clock.onemonkey.org", StringComparison.OrdinalIgnoreCase))
                 {
                     var deferral = args.GetDeferral();
+                    AppendLog($"Proxy start: {args.Request.Uri}");
                     try
                     {
-                        using var httpClient = new System.Net.Http.HttpClient();
-                        httpClient.Timeout = TimeSpan.FromSeconds(10);
-                        var response = await httpClient.GetAsync(args.Request.Uri);
+                        // Use shared HttpClient for connection reuse
+                        var response = await _sharedHttpClient.GetAsync(args.Request.Uri);
                         var content = await response.Content.ReadAsByteArrayAsync();
                         var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
+                        AppendLog($"Proxy fetched: {args.Request.Uri} -> {content.Length} bytes");
 
                         var memStream = new MemoryStream(content);
                         var webResponse = _webView.CoreWebView2.Environment.CreateWebResourceResponse(
@@ -322,11 +400,6 @@ public sealed class ScreensaverForm : Form
                     }
                 }
             };
-
-            // Add filter for live server requests
-            _webView.CoreWebView2.AddWebResourceRequestedFilter(
-                "https://earth-clock.onemonkey.org/*",
-                CoreWebView2WebResourceContext.All);
 
             // Set wallpaperSettings before any scripts run (used by data-source-wrapper.js).
             var initScript =
@@ -589,7 +662,7 @@ public sealed class ScreensaverForm : Form
 
         try
         {
-            await _webView.CoreWebView2.ExecuteScriptAsync(watermarkJs);
+            await _webView!.CoreWebView2.ExecuteScriptAsync(watermarkJs);
             await _webView.CoreWebView2.ExecuteScriptAsync(showClockJs);
             await _webView.CoreWebView2.ExecuteScriptAsync(dayNightJs);
         }
