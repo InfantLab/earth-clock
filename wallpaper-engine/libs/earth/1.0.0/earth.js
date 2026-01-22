@@ -25,6 +25,11 @@
     var PARTICLE_REDUCTION = 0.75;            // reduce particle count to this much of normal for mobile devices
     var FRAME_RATE = 40;                      // desired milliseconds per frame
 
+    // Heartbeat system for clock/day-night updates (avoids setInterval throttling in screensavers)
+    var lastClockUpdate = 0;                  // timestamp of last clock update
+    var lastDayNightUpdate = 0;               // timestamp of last day/night update
+    var heartbeatCallbacks = [];              // functions to call from animation loop
+
     var NULL_WIND_VECTOR = [NaN, NaN, null];  // singleton for undefined location outside the vector field [u, v, mag]
     var HOLE_VECTOR = [NaN, NaN, null];       // singleton that signifies a hole in the vector field
     var TRANSPARENT_BLACK = [0, 0, 0, 0];     // singleton 0 rgba
@@ -874,6 +879,18 @@
                 }
                 evolve(frameGlobe);
                 draw(frameGlobe);
+                
+                // Call heartbeat callbacks (clock/day-night updates) from animation loop
+                // This avoids setInterval throttling in screensavers/background tabs
+                var now = Date.now();
+                for (var i = 0; i < heartbeatCallbacks.length; i++) {
+                    try {
+                        heartbeatCallbacks[i](now);
+                    } catch (e) {
+                        log.error("Heartbeat callback error: " + e);
+                    }
+                }
+                
                 setTimeout(frame, FRAME_RATE);
             }
             catch (e) {
@@ -1588,6 +1605,31 @@
                 invalidateMask();
                 updateDayNight();
             }, MINUTE);
+            
+            // Register heartbeat callback for animation-loop-driven updates
+            // This prevents clock/day-night lag in screensavers where setInterval is throttled
+            var heartbeatCallback = function(now) {
+                // Update clock every second
+                if (now - lastClockUpdate >= SECOND) {
+                    lastClockUpdate = now;
+                    updateDayNightTime();
+                }
+                // Update day/night overlay every second
+                if (now - lastDayNightUpdate >= SECOND) {
+                    lastDayNightUpdate = now;
+                    if (dayNightEnabled) {
+                        updateDayNight();
+                    }
+                }
+            };
+            // Remove any existing heartbeat callback and add new one
+            heartbeatCallbacks = heartbeatCallbacks.filter(function(cb) {
+                return cb !== heartbeatCallback;
+            });
+            heartbeatCallbacks.push(heartbeatCallback);
+            // Store reference for removal later
+            window._dayNightHeartbeat = heartbeatCallback;
+            
             updateDayNight(); // Initial update
             // Show time display by default
             if (dayNightEnabled) {
@@ -1610,6 +1652,13 @@
             if (dayNightTimeInterval) {
                 clearInterval(dayNightTimeInterval);
                 dayNightTimeInterval = null;
+            }
+            // Remove heartbeat callback
+            if (window._dayNightHeartbeat) {
+                heartbeatCallbacks = heartbeatCallbacks.filter(function(cb) {
+                    return cb !== window._dayNightHeartbeat;
+                });
+                window._dayNightHeartbeat = null;
             }
             // Clear time display
             clearTimeDisplay();
@@ -1716,14 +1765,15 @@
                 }
                 lastAutoRotateTime = Date.now();
                 autoRotatePaused = false;
-                // Use requestAnimationFrame for smooth animation (typically 60fps)
+                // Use setTimeout instead of requestAnimationFrame - rAF is throttled in screensavers
+                // setTimeout chains are less affected by background throttling
                 function animate() {
                     if (autoRotateSpeed > 0 && !autoRotatePaused) {
                         updateAutoRotation();
-                        autoRotateAnimationFrame = requestAnimationFrame(animate);
+                        autoRotateAnimationFrame = setTimeout(animate, FRAME_RATE);
                     }
                 }
-                autoRotateAnimationFrame = requestAnimationFrame(animate);
+                autoRotateAnimationFrame = setTimeout(animate, FRAME_RATE);
             }
         }
 
@@ -1738,7 +1788,7 @@
                 window.resetWindTrails();
             }
             if (autoRotateAnimationFrame) {
-                cancelAnimationFrame(autoRotateAnimationFrame);
+                clearTimeout(autoRotateAnimationFrame);
                 autoRotateAnimationFrame = null;
             }
             // Ensure the magnitude overlay is rebuilt for the final stopped orientation.
@@ -1757,14 +1807,14 @@
             if (autoRotateSpeed > 0) {
                 autoRotatePaused = false;
                 lastAutoRotateTime = Date.now();
-                // Restart animation loop
+                // Restart animation loop using setTimeout (less throttled than rAF in screensavers)
                 function animate() {
                     if (autoRotateSpeed > 0 && !autoRotatePaused) {
                         updateAutoRotation();
-                        requestAnimationFrame(animate);
+                        setTimeout(animate, FRAME_RATE);
                     }
                 }
-                requestAnimationFrame(animate);
+                setTimeout(animate, FRAME_RATE);
             }
         }
 

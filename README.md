@@ -7,7 +7,6 @@ earth-clock
 
 This project extends the original earth visualization with:
 - **Real-time day/night terminator overlay** - Shows which parts of the Earth are currently in daylight or darkness
-- **Current weather data integration** - Automatically fetches and displays current GFS weather data
 - **Time display** - Shows current time with UTC/Local toggle
 - **Native JavaScript weather service** - No Java dependency required for weather data processing
 
