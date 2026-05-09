@@ -173,7 +173,11 @@
         if (properties.hasOwnProperty('zoom')) {
             var zoom = properties.zoom.value;
             var current = getCurrentOrientation();
-            updateOrientation(current.lon, current.lat, zoom);
+            // Slider values were calibrated for a 1200px-tall screen; scale to actual screen height
+            // so that zoom=600 means "fill the screen" on any resolution.
+            var screenHeight = window.innerHeight || 1080;
+            var actualScale = Math.round(zoom * screenHeight / 1200);
+            updateOrientation(current.lon, current.lat, actualScale);
         }
 
         // Handle day/night overlay toggle
