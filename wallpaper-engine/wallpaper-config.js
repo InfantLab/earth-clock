@@ -206,6 +206,24 @@
             // Data source change will be handled by products.js modification
         }
 
+        // Handle moon phase toggle
+        if (properties.hasOwnProperty('moonphase')) {
+            var showMoon = properties.moonphase.value;
+            if (typeof window.showMoonPhase === 'function' && typeof window.closeMoonPhase === 'function') {
+                if (showMoon) {
+                    window.showMoonPhase();
+                } else {
+                    window.closeMoonPhase();
+                }
+            } else {
+                var moonButton = document.querySelector("#option-moonphase");
+                if (moonButton) {
+                    var moonHighlighted = moonButton.classList.contains("highlighted");
+                    if (showMoon !== moonHighlighted) moonButton.click();
+                }
+            }
+        }
+
         // Handle clock visibility toggle
         if (properties.hasOwnProperty('showclock')) {
             var showClock = properties.showclock.value;

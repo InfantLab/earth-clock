@@ -181,6 +181,12 @@
           }
         ]
       },
+      "moonphase": {
+        "text": "Show Moon Phase",
+        "type": "bool",
+        "value": false,
+        "order": 8
+      },
       "showclock": {
         "text": "Show Clock",
         "type": "bool",

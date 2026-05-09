@@ -531,7 +531,8 @@ var µ = function () {
                 topology: TOPOLOGY,
                 overlayType: "default",
                 showGridPoints: false,
-                spinSpeed: 0                 // auto-rotation speed (degrees per minute, 0 = off)
+                spinSpeed: 0,                // auto-rotation speed (degrees per minute, 0 = off)
+                moonPhase: false
             };
             coalesce(tokens[9], "").split("/").forEach(function (segment) {
                 if ((option = /^(\w+)(=([\d\-.,]*))?$/.exec(segment))) {
@@ -554,6 +555,11 @@ var µ = function () {
                     var speed = parseInt(option[1], 10);
                     if (!isNaN(speed) && speed >= 0 && speed <= 360) {
                         result.spinSpeed = speed;
+                    }
+                }
+                else if ((option = /^moon=(\w+)$/.exec(segment))) {
+                    if (option[1] === "on") {
+                        result.moonPhase = true;
                     }
                 }
             });
@@ -581,7 +587,8 @@ var µ = function () {
             var ol = !isValue(attr.overlayType) || attr.overlayType === "default" ? "" : "overlay=" + attr.overlayType;
             var grid = attr.showGridPoints ? "grid=on" : "";
             var spin = (attr.spinSpeed && attr.spinSpeed > 0) ? "spin=" + attr.spinSpeed : "";
-            return [dir, attr.param, attr.surface, attr.level, ol, proj, grid, spin].filter(isTruthy).join("/");
+            var moon = attr.moonPhase ? "moon=on" : "";
+            return [dir, attr.param, attr.surface, attr.level, ol, proj, grid, spin, moon].filter(isTruthy).join("/");
         },
 
         /**

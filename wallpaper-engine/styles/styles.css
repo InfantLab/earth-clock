@@ -118,6 +118,7 @@ body {
 #animation,
 #overlay,
 #daynight,
+#moonphase,
 #foreground {
     position: absolute;
     top: 0;

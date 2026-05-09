@@ -94,6 +94,7 @@
     var animatorAgent = newAgent();  // the wind animator
     var overlayAgent = newAgent();   // color overlay over the animation
     var dayNightAgent = newAgent();  // day/night overlay
+    var moonAgent = newAgent();      // moon phase overlay
 
     /**
      * The input controller is an object that translates move operations (drag and/or zoom) into mutations of the
@@ -1067,6 +1068,232 @@
     }
 
     /**
+     * Calculate the moon's current sub-lunar point (geographic coordinates directly beneath the moon)
+     * and illumination phase. Uses Paul Schlyter's simplified orbital elements; accuracy ~1-2°.
+     */
+    function calculateMoonData(date) {
+        var d = date.getTime() / 86400000 - 10957.5; // days since J2000.0
+
+        // Sun orbital elements
+        var w_sun = 282.9404 + 4.70935e-5 * d;
+        var e_sun = 0.016709 - 1.151e-9 * d;
+        var M_sun = ((356.0470 + 0.9856002585 * d) % 360 + 360) % 360;
+        var E_sun = M_sun + (180 / Math.PI) * e_sun * Math.sin(M_sun * Math.PI / 180) *
+                    (1 + e_sun * Math.cos(M_sun * Math.PI / 180));
+        var xv_s = Math.cos(E_sun * Math.PI / 180) - e_sun;
+        var yv_s = Math.sqrt(1 - e_sun * e_sun) * Math.sin(E_sun * Math.PI / 180);
+        var lon_sun = ((Math.atan2(yv_s, xv_s) * 180 / Math.PI + w_sun) % 360 + 360) % 360;
+
+        // Moon orbital elements
+        var N = ((125.1228 - 0.0529538083 * d) % 360 + 360) % 360;
+        var w_moon = ((318.0634 + 0.1643573223 * d) % 360 + 360) % 360;
+        var e_moon = 0.054900;
+        var i_moon = 5.1454;
+        var M_moon = ((115.3654 + 13.0649929509 * d) % 360 + 360) % 360;
+
+        // Solve Kepler's equation iteratively
+        var E_moon = M_moon;
+        for (var k = 0; k < 10; k++) {
+            var dE = (M_moon - E_moon + (180 / Math.PI) * e_moon * Math.sin(E_moon * Math.PI / 180)) /
+                     (1 - e_moon * Math.cos(E_moon * Math.PI / 180));
+            E_moon += dE;
+            if (Math.abs(dE) < 1e-6) break;
+        }
+        var xv = Math.cos(E_moon * Math.PI / 180) - e_moon;
+        var yv = Math.sqrt(1 - e_moon * e_moon) * Math.sin(E_moon * Math.PI / 180);
+        var r_moon = Math.sqrt(xv * xv + yv * yv);
+        var l_moon = ((Math.atan2(yv, xv) * 180 / Math.PI + w_moon) % 360 + 360) % 360;
+
+        // Convert orbital plane → ecliptic XYZ
+        var N_r = N * Math.PI / 180, l_r = l_moon * Math.PI / 180, i_r = i_moon * Math.PI / 180;
+        var x_ecl = r_moon * (Math.cos(N_r) * Math.cos(l_r) - Math.sin(N_r) * Math.sin(l_r) * Math.cos(i_r));
+        var y_ecl = r_moon * (Math.sin(N_r) * Math.cos(l_r) + Math.cos(N_r) * Math.sin(l_r) * Math.cos(i_r));
+        var z_ecl = r_moon * Math.sin(l_r) * Math.sin(i_r);
+        var lon_ecl = Math.atan2(y_ecl, x_ecl) * 180 / Math.PI;
+        var lat_ecl = Math.atan2(z_ecl, Math.sqrt(x_ecl * x_ecl + y_ecl * y_ecl)) * 180 / Math.PI;
+
+        // Ecliptic → equatorial (right ascension and declination)
+        var obl = (23.4393 - 3.563e-7 * d) * Math.PI / 180;
+        var lo = lon_ecl * Math.PI / 180, la = lat_ecl * Math.PI / 180;
+        var x_eq = Math.cos(lo) * Math.cos(la);
+        var y_eq = Math.sin(lo) * Math.cos(la) * Math.cos(obl) - Math.sin(la) * Math.sin(obl);
+        var z_eq = Math.sin(lo) * Math.cos(la) * Math.sin(obl) + Math.sin(la) * Math.cos(obl);
+        var ra  = Math.atan2(y_eq, x_eq) * 180 / Math.PI;
+        var dec = Math.atan2(z_eq, Math.sqrt(x_eq * x_eq + y_eq * y_eq)) * 180 / Math.PI;
+
+        // Greenwich Mean Sidereal Time → sub-lunar geographic longitude
+        var JD = date.getTime() / 86400000 + 2440587.5;
+        var GMST_deg = ((280.46061837 + 360.98564736629 * (JD - 2451545.0)) % 360 + 360) % 360;
+        var subLon = ((ra - GMST_deg) % 360 + 360) % 360;
+        if (subLon > 180) subLon -= 360;
+
+        // Phase: angular separation of moon from sun in ecliptic longitude
+        var phaseAngle = ((lon_ecl - lon_sun) % 360 + 360) % 360;
+        return {
+            phase: phaseAngle / 360,   // 0 = new moon, 0.5 = full moon
+            subLunarLon: subLon,       // geographic longitude of sub-lunar point
+            subLunarLat: dec           // geographic latitude (= declination)
+        };
+    }
+
+    /**
+     * Render a physically correct moon phase disc onto a canvas context.
+     *
+     * Illumination model: a disc pixel at (dx, dy) from centre is lit when
+     *   sin(α)·dx − cos(α)·√(r²−dx²−dy²) > 0,  α = 2π·phase
+     * which is the exact orthographic projection of the 3D illumination condition.
+     * Waxing phases light the right side; waning phases light the left side
+     * (northern hemisphere convention). When displayed at the sub-lunar point on
+     * the globe the east-west axis is flipped relative to sky view — intentional.
+     */
+    var _moonTexData = null, _moonTexWidth = 0, _moonTexHeight = 0;
+
+    function loadMoonTexture(onReady) {
+        if (_moonTexData) { if (onReady) onReady(); return; }
+        var img = new Image();
+        img.onload = function () {
+            var tc = document.createElement("canvas");
+            tc.width = img.width;
+            tc.height = img.height;
+            var tctx = tc.getContext("2d");
+            tctx.drawImage(img, 0, 0);
+            try {
+                var id = tctx.getImageData(0, 0, img.width, img.height);
+                _moonTexData = id.data;
+                _moonTexWidth = img.width;
+                _moonTexHeight = img.height;
+                if (onReady) onReady();
+            } catch (e) { }
+        };
+        img.onerror = function () { };
+        img.src = "/images/moon.jpg";
+    }
+
+    function moonValueNoise(x, y) {
+        var ix = Math.floor(x), iy = Math.floor(y);
+        var fx = x - ix, fy = y - iy;
+        function h(px, py) {
+            var n = ((px * 1619 + py * 31337) ^ (px * 41)) | 0;
+            n = (n ^ (n >>> 13)) * 1000003;
+            return ((n >>> 0) & 0xFFFF) / 65535;
+        }
+        var v00 = h(ix, iy), v10 = h(ix + 1, iy), v01 = h(ix, iy + 1), v11 = h(ix + 1, iy + 1);
+        var ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+        return v00 * (1 - ux) * (1 - uy) + v10 * ux * (1 - uy) + v01 * (1 - ux) * uy + v11 * ux * uy;
+    }
+
+    function drawMoonPhaseOverlay(globe, mask, moonData) {
+        var canvas = d3.select("#moonphase").node();
+        if (!canvas || canvas.width === 0 || canvas.height === 0) return;
+
+        var ctx = canvas.getContext("2d");
+        µ.clearCanvas(canvas);
+        if (!moonData || !globe) return;
+
+        // For globe projections D3 can still return finite coords for back-side points.
+        // Use great-circle distance to reliably reject the far hemisphere.
+        var proj = globe.projection;
+        var clipAngle = proj.clipAngle && proj.clipAngle();
+        if (clipAngle && clipAngle <= 90.01 && proj.rotate) {
+            var r = proj.rotate();
+            var centerCoord = [-r[0], -r[1]];
+            var normLon = ((moonData.subLunarLon + 180) % 360 + 360) % 360 - 180;
+            if (d3.geo.distance([normLon, moonData.subLunarLat], centerCoord) >= (Math.PI / 2 - 1e-6)) {
+                return;
+            }
+        }
+
+        var screenPt = globe.projection([moonData.subLunarLon, moonData.subLunarLat]);
+        if (!screenPt || !_.isFinite(screenPt[0]) || !_.isFinite(screenPt[1])) return;
+
+        var sx = Math.round(screenPt[0]);
+        var sy = Math.round(screenPt[1]);
+        if (!mask || !mask.isVisible(sx, sy)) return;
+
+        var moonRadius = Math.max(8, Math.round(view.height * 0.013));
+        var r2   = moonRadius * moonRadius;
+        var dim  = moonRadius * 2 + 2;
+
+        var alpha = 2 * Math.PI * moonData.phase;
+        var sinA  = Math.sin(alpha);
+        var cosA  = Math.cos(alpha);
+
+        var imageData = ctx.createImageData(dim, dim);
+        var data = imageData.data;
+
+        for (var row = 0; row < dim; row++) {
+            var dy = row - moonRadius;
+            var canvasY = sy - moonRadius + row;
+            if (canvasY < 0 || canvasY >= canvas.height) continue;
+
+            for (var col = 0; col < dim; col++) {
+                var dx    = col - moonRadius;
+                var dist2 = dx * dx + dy * dy;
+                if (dist2 > r2) continue;
+
+                var canvasX = sx - moonRadius + col;
+                if (canvasX < 0 || canvasX >= canvas.width) continue;
+                if (!mask.isVisible(canvasX, canvasY)) continue;
+
+                var dist = Math.sqrt(dist2);
+                var z    = Math.sqrt(r2 - dist2);
+
+                var e = sinA * dx - cosA * z;
+                var termFactor = 0.5 + 0.5 * Math.tanh(e / (moonRadius * 0.07));
+                // Limb darkening + overall brightness boost
+                var limbDarken = (1.0 - 0.35 * (dist / moonRadius)) * 1.5;
+
+                var litR, litG, litB;
+                if (_moonTexData) {
+                    var plon = Math.atan2(dx / moonRadius, z / moonRadius);
+                    var plat = Math.asin(µ.clamp(dy / moonRadius, -1, 1));
+                    var tu = (plon / (2 * Math.PI) + 0.5) * _moonTexWidth - 0.5;
+                    var tv = (0.5 - plat / Math.PI) * _moonTexHeight - 0.5;
+                    var tx0 = ((Math.floor(tu) % _moonTexWidth) + _moonTexWidth) % _moonTexWidth;
+                    var tx1 = (tx0 + 1) % _moonTexWidth;
+                    var ty0 = Math.max(0, Math.min(_moonTexHeight - 1, Math.floor(tv)));
+                    var ty1 = Math.min(_moonTexHeight - 1, ty0 + 1);
+                    var tfx = tu - Math.floor(tu), tfy = tv - Math.floor(tv);
+                    var i00 = (ty0 * _moonTexWidth + tx0) * 4;
+                    var i10 = (ty0 * _moonTexWidth + tx1) * 4;
+                    var i01 = (ty1 * _moonTexWidth + tx0) * 4;
+                    var i11 = (ty1 * _moonTexWidth + tx1) * 4;
+                    var D = _moonTexData;
+                    var w00 = (1-tfx)*(1-tfy), w10 = tfx*(1-tfy), w01 = (1-tfx)*tfy, w11 = tfx*tfy;
+                    litR = Math.min(255, (D[i00]*w00 + D[i10]*w10 + D[i01]*w01 + D[i11]*w11) * limbDarken);
+                    litG = Math.min(255, (D[i00+1]*w00 + D[i10+1]*w10 + D[i01+1]*w01 + D[i11+1]*w11) * limbDarken);
+                    litB = Math.min(255, (D[i00+2]*w00 + D[i10+2]*w10 + D[i01+2]*w01 + D[i11+2]*w11) * limbDarken);
+                } else {
+                    var nx = dx / moonRadius, ny2 = dy / moonRadius;
+                    var tex = moonValueNoise(nx * 2.5,      ny2 * 2.5)      * 0.22 +
+                              moonValueNoise(nx * 6.5 + 7,  ny2 * 6.5 + 11) * 0.07;
+                    var litBase = 210 * limbDarken * (1.0 - tex * 0.40);
+                    litR = litBase; litG = litBase * 0.985; litB = litBase * 0.86;
+                }
+
+                var earthshine = 0.06 * (z / moonRadius);
+                var darkR = 8  + 20 * earthshine;
+                var darkG = 10 + 26 * earthshine;
+                var darkB = 20 + 44 * earthshine;
+
+                var R = darkR + termFactor * (litR - darkR);
+                var G = darkG + termFactor * (litG - darkG);
+                var B = darkB + termFactor * (litB - darkB);
+
+                var edgeAlpha = Math.min(1, moonRadius - dist) * 255;
+
+                var idx = (row * dim + col) * 4;
+                data[idx]     = R;
+                data[idx + 1] = G;
+                data[idx + 2] = B;
+                data[idx + 3] = edgeAlpha;
+            }
+        }
+
+        ctx.putImageData(imageData, sx - moonRadius, sy - moonRadius);
+    }
+
+    /**
      * Extract the date the grids are valid, or the current date if no grid is available.
      * UNDONE: if the grids hold unloaded products, then the date can be extracted from them.
      *         This function would simplify nicely.
@@ -1260,8 +1487,9 @@
         });
 
         d3.selectAll(".fill-screen").attr("width", view.width).attr("height", view.height);
-        // Ensure daynight canvas is properly sized
+        // Ensure overlay canvases are properly sized
         d3.select("#daynight").attr("width", view.width).attr("height", view.height);
+        d3.select("#moonphase").attr("width", view.width).attr("height", view.height);
         // Adjust size of the scale canvas to fill the width of the menu to the right of the label.
         var label = d3.select("#scale-label").node();
         d3.select("#scale")
@@ -1686,6 +1914,102 @@
             startDayNightUpdates();
         });
 
+        // ---- Moon phase overlay ----
+        var moonEnabled = !!configuration.get("moonPhase");
+        var moonUpdateInterval = null;
+        var cachedMoonData = null;
+        var lastMoonCalcTime = 0;
+
+        function updateMoonPhase() {
+            if (!moonEnabled) {
+                var moonCanvas = d3.select("#moonphase").node();
+                if (moonCanvas) µ.clearCanvas(moonCanvas);
+                return;
+            }
+            var globe = globeAgent.value();
+            if (!globe) return;
+            var moonCanvas = d3.select("#moonphase").node();
+            if (!moonCanvas || moonCanvas.width === 0 || moonCanvas.height === 0) {
+                setTimeout(updateMoonPhase, 100);
+                return;
+            }
+            var now = Date.now();
+            if (!cachedMoonData || (now - lastMoonCalcTime) > 60000) {
+                cachedMoonData = calculateMoonData(new Date());
+                lastMoonCalcTime = now;
+            }
+            var mask = getMask(globe);
+            if (mask) {
+                drawMoonPhaseOverlay(globe, mask, cachedMoonData);
+            } else {
+                setTimeout(updateMoonPhase, 100);
+            }
+        }
+
+        moonAgent.listenTo(globeAgent, "update", function () {
+            cachedMoonData = null;
+            setTimeout(updateMoonPhase, 50);
+        });
+        moonAgent.listenTo(rendererAgent, "render", function () {
+            setTimeout(updateMoonPhase, 50);
+        });
+        moonAgent.listenTo(rendererAgent, "redraw", function () {
+            cachedMoonData = null;
+            setTimeout(updateMoonPhase, 50);
+        });
+        moonAgent.listenTo(inputController, "moveEnd", updateMoonPhase);
+
+        function startMoonUpdates() {
+            if (moonUpdateInterval) clearInterval(moonUpdateInterval);
+            moonUpdateInterval = setInterval(function () {
+                cachedMoonData = null;
+                updateMoonPhase();
+            }, 60 * SECOND);
+            loadMoonTexture(function () {
+                cachedMoonData = null;
+                updateMoonPhase();
+            });
+            updateMoonPhase();
+        }
+
+        function stopMoonUpdates() {
+            if (moonUpdateInterval) {
+                clearInterval(moonUpdateInterval);
+                moonUpdateInterval = null;
+            }
+            cachedMoonData = null;
+            var moonCanvas = d3.select("#moonphase").node();
+            if (moonCanvas) µ.clearCanvas(moonCanvas);
+        }
+
+        function updateMoonButton() {
+            d3.select("#option-moonphase").classed("highlighted", moonEnabled);
+        }
+
+        d3.select("#option-moonphase").on("click", function () {
+            configuration.save({ moonPhase: !moonEnabled });
+        });
+
+        configuration.on("change:moonPhase", function (model, value) {
+            moonEnabled = !!value;
+            if (moonEnabled) {
+                startMoonUpdates();
+            } else {
+                stopMoonUpdates();
+            }
+            updateMoonButton();
+        });
+
+        updateMoonButton();
+        if (moonEnabled) { startMoonUpdates(); }
+
+        window.showMoonPhase = function () {
+            if (!moonEnabled) { configuration.save({ moonPhase: true }); }
+        };
+        window.closeMoonPhase = function () {
+            if (moonEnabled) { configuration.save({ moonPhase: false }); }
+        };
+
         // Add event handlers for showing, updating, and removing location details.
         inputController.on("click", showLocationDetails);
         fieldAgent.on("update", updateLocationDetails);
@@ -1991,6 +2315,7 @@
             view = µ.view();
             d3.selectAll(".fill-screen").attr("width", view.width).attr("height", view.height);
             d3.select("#daynight").attr("width", view.width).attr("height", view.height);
+            d3.select("#moonphase").attr("width", view.width).attr("height", view.height);
             globeAgent.submit(buildGlobe, configuration.get("projection"));
         });
     }
