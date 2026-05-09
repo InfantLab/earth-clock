@@ -1193,7 +1193,8 @@
         if (!mask || !mask.isVisible(sx, sy)) return;
 
         // Small disc that reads as a surface marker, not a floating sphere
-        var moonRadius = Math.max(8, Math.round(view.height * 0.013));
+        // Scale with globe zoom: 2.8% of globe pixel-radius keeps the disc proportional at any zoom level
+        var moonRadius = Math.max(8, Math.round(globe.projection.scale() * 0.028));
         var r2   = moonRadius * moonRadius;
         var dim  = moonRadius * 2 + 2;
 
