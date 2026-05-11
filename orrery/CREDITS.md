@@ -14,6 +14,11 @@ Update this file every time a new external source is introduced. The whole proje
 - **Original earth**: <https://github.com/cambecc/earth> (Cameron Beccario, MIT)
 - `attribution_required`: yes (MIT requires copyright notice retention; in-app credit also planned out of respect for prior work)
 
+### Design-philosophy source
+- **Essay**: [*Eclipses, equinoxes, and everyday awe: telling the time on Spaceship Earth*](https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/) — Caspar Addyman, onemonkey.org.
+- **Role**: canonical statement of the project's *why*. The "Design philosophy" section of [README.md](README.md) summarises and quotes it; every principle there maps to an implementation rule.
+- `attribution_required`: yes — author's own writing, cited.
+
 ---
 
 ## Visual assets

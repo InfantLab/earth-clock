@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import type { AuroraGrid } from "../data/auroraLoader";
 
+const AXIAL_TILT = 23.44 * Math.PI / 180;
+
 /**
  * Aurora oval rendered as an additive point cloud at r=1.008 (just above the cloud layer).
  *
@@ -9,11 +11,14 @@ import type { AuroraGrid } from "../data/auroraLoader";
  * and point size. A sun-direction uniform masks aurora to the night side — in reality auroras
  * can appear in twilight but are invisible in daylight, so the night-side mask looks correct.
  *
- * The oval is NOT tied to Earth's rotation (geomagnetically fixed, not geographically fixed).
- * No setRotationY() call needed.
+ * Ovation's coordinates are *geographic* lat/lon for the forecast time, so the layer shares
+ * Earth's axial tilt and daily spin via `setRotationY` (same as coastlines, fires, etc.).
+ * Between 5-min fetches there will be a tiny rotational drift relative to where the aurora
+ * "really" sits in the sun-magnetospheric frame, but it's <1.3° and gets corrected next fetch.
  */
 export class AuroraLayer {
-  readonly mesh: THREE.Points;
+  readonly mesh: THREE.Group;
+  private readonly points: THREE.Points;
   private readonly material: THREE.ShaderMaterial;
   private readonly posAttr: THREE.BufferAttribute;
   private readonly probAttr: THREE.BufferAttribute;
@@ -45,6 +50,7 @@ export class AuroraLayer {
         uSunDirection: { value: this.sunDirUniform.value },
         uTime:         { value: this.timeUniform.value },
         uOpacity:      { value: 1.0 },
+        uTerminator:   { value: 1.0 }, // 0 = aurora visible globally; 1 = night-side only
       },
       vertexShader: /* glsl */`
         attribute float aProbability;
@@ -55,14 +61,16 @@ export class AuroraLayer {
           vec4 worldPos = modelMatrix * vec4(position, 1.0);
           vWorldPos = worldPos.xyz;
           gl_Position = projectionMatrix * viewMatrix * worldPos;
-          // Size: minimum 1 px for dim cells, up to 4 px for bright ones
-          gl_PointSize = 1.0 + 3.0 * pow(aProbability / 100.0, 1.5);
+          // Size: 3 px floor for dim cells, up to ~9 px for bright ones — large enough to
+          // register as clear auroral dots, small enough that 65 k of them don't paint a haze.
+          gl_PointSize = 3.0 + 6.0 * pow(aProbability / 100.0, 1.5);
         }
       `,
       fragmentShader: /* glsl */`
         uniform vec3 uSunDirection;
         uniform float uTime;
         uniform float uOpacity;
+        uniform float uTerminator;
         varying float vProb;
         varying vec3 vWorldPos;
 
@@ -76,9 +84,10 @@ export class AuroraLayer {
           float p = vProb / 100.0;        // 0..1
           if (p < 0.02) discard;          // skip near-zero cells
 
-          // Night-side mask: aurora is invisible in daylight
+          // Night-side mask: aurora is invisible in daylight — but only when the Terminator
+          // master switch is on. With terminator off, aurora glows globally.
           float ndotl = dot(normalize(vWorldPos), normalize(uSunDirection));
-          float nightMask = smoothstep(0.10, -0.10, ndotl);
+          float nightMask = mix(1.0, smoothstep(0.10, -0.10, ndotl), uTerminator);
           if (nightMask < 0.01) discard;
 
           // Gentle shimmer — very low amplitude so it reads as faint auroral motion
@@ -106,7 +115,13 @@ export class AuroraLayer {
       blending: THREE.AdditiveBlending,
     });
 
-    this.mesh = new THREE.Points(geometry, this.material);
+    this.points = new THREE.Points(geometry, this.material);
+
+    // Same tilted-group pattern as Coastlines/Fires/Hurricanes — axial tilt fixed on parent,
+    // daily spin applied to the inner points via setRotationY.
+    this.mesh = new THREE.Group();
+    this.mesh.rotation.z = AXIAL_TILT;
+    this.mesh.add(this.points);
   }
 
   /** Replace aurora data from a fresh NOAA fetch. */
@@ -121,22 +136,28 @@ export class AuroraLayer {
       const lat  = grid.data[i * 3 + 1];
       const p    = grid.data[i * 3 + 2];
 
-      const phi   = (90 - lat)  * Math.PI / 180;   // colatitude
-      const theta = lon          * Math.PI / 180;   // lon east
-
-      pos[i * 3 + 0] = R * Math.sin(phi) * Math.cos(theta);
-      pos[i * 3 + 1] = R * Math.cos(phi);
-      pos[i * 3 + 2] = R * Math.sin(phi) * Math.sin(theta);
+      const lonRad = lon * Math.PI / 180;
+      const latRad = lat * Math.PI / 180;
+      const cosLat = Math.cos(latRad);
+      // Three.js SphereGeometry convention: Greenwich at +X, +90°E at -Z
+      pos[i * 3 + 0] =  R * cosLat * Math.cos(lonRad);
+      pos[i * 3 + 1] =  R * Math.sin(latRad);
+      pos[i * 3 + 2] = -R * cosLat * Math.sin(lonRad);
       prob[i] = p;
     }
 
     this.posAttr.needsUpdate  = true;
     this.probAttr.needsUpdate = true;
-    this.mesh.geometry.setDrawRange(0, n);
+    this.points.geometry.setDrawRange(0, n);
   }
 
   setSunDirection(dir: THREE.Vector3) {
     this.sunDirUniform.value.copy(dir);
+  }
+
+  /** Earth's daily spin — keeps aurora plotted against the right geographic longitudes. */
+  setRotationY(angle: number) {
+    this.points.rotation.y = angle;
   }
 
   setTime(t: number) {
@@ -146,5 +167,10 @@ export class AuroraLayer {
 
   setOpacity(o: number) {
     this.material.uniforms.uOpacity.value = o;
+  }
+
+  /** Master Terminator switch — when off, aurora renders everywhere (no night-only mask). */
+  setTerminatorEnabled(enabled: boolean) {
+    this.material.uniforms.uTerminator.value = enabled ? 1.0 : 0.0;
   }
 }

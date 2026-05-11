@@ -31,6 +31,8 @@ export class CloudLayer {
         uSoftness:    { value: 0.30 },   // smoothstep width (threshold..threshold+softness)
         uOpacity:     { value: 0.85 },
         uNightFade:   { value: 0.10 },   // smoothstep range around the terminator
+        uNightFloor:  { value: 0.25 },   // night-side cloud brightness floor (clouds stay visible after dark)
+        uTerminator:  { value: 1.0 },    // 1 = day/night gradient on clouds; 0 = uniformly bright
       },
       vertexShader: /* glsl */`
         varying vec2 vUv;
@@ -50,6 +52,8 @@ export class CloudLayer {
         uniform float uSoftness;
         uniform float uOpacity;
         uniform float uNightFade;
+        uniform float uNightFloor;
+        uniform float uTerminator;
         varying vec2 vUv;
         varying vec3 vWorldNormal;
         void main() {
@@ -59,15 +63,18 @@ export class CloudLayer {
           float luma = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
           float cloudAlpha = smoothstep(uThreshold, uThreshold + uSoftness, luma);
 
-          // Day/night fade so clouds don't render over the dark hemisphere
+          // Day → night brightness gradient. Clouds are physically there 24h, so they never
+          // vanish — just dim toward a floor on the dark side. Alpha is untouched, so night
+          // clouds correctly occlude city lights below them. When Terminator is off (uniform
+          // globe lighting), clouds match by rendering uniformly bright.
           float ndotl = dot(vWorldNormal, normalize(uSunDirection));
-          float dayMask = smoothstep(-uNightFade, uNightFade, ndotl);
+          float dayFactor = smoothstep(-uNightFade, uNightFade, ndotl);
+          float brightness = mix(1.0, mix(uNightFloor, 1.0, dayFactor), uTerminator);
 
-          // Output white-tinted cloud color; alpha carries the cloud mask × day mask × opacity.
-          // Keeping color near-white rather than passing the raw tile RGB avoids subtle green/brown
-          // tinting from land features that survive the luma threshold.
-          vec3 col = mix(c.rgb, vec3(1.0), 0.4);
-          gl_FragColor = vec4(col, cloudAlpha * dayMask * uOpacity);
+          // Keep color near-white rather than passing the raw tile RGB to avoid subtle
+          // green/brown tinting from land features that survive the luma threshold.
+          vec3 col = mix(c.rgb, vec3(1.0), 0.4) * brightness;
+          gl_FragColor = vec4(col, cloudAlpha * uOpacity);
         }
       `,
       transparent: true,
@@ -98,7 +105,17 @@ export class CloudLayer {
     this.cloudSphere.rotation.y = angle;
   }
 
-  setThreshold(t: number) { this.material.uniforms.uThreshold.value = t; }
-  setSoftness(s: number)  { this.material.uniforms.uSoftness.value = s; }
-  setOpacity(o: number)   { this.material.uniforms.uOpacity.value = o; }
+  /**
+   * When the global Terminator toggle is on, clouds dim across the day→night gradient
+   * but never vanish (floor controlled by `uNightFloor`). When off, the globe is uniformly
+   * lit and clouds match by rendering uniformly bright everywhere.
+   */
+  setTerminatorEnabled(enabled: boolean) {
+    this.material.uniforms.uTerminator.value = enabled ? 1.0 : 0.0;
+  }
+
+  setThreshold(t: number)  { this.material.uniforms.uThreshold.value = t; }
+  setSoftness(s: number)   { this.material.uniforms.uSoftness.value = s; }
+  setOpacity(o: number)    { this.material.uniforms.uOpacity.value = o; }
+  setNightFloor(f: number) { this.material.uniforms.uNightFloor.value = f; }
 }

@@ -17,6 +17,13 @@ export class Moon {
       map: texture,
       shininess: 2,        // very matte — moon's regolith is dusty
       specular: 0x000000,
+      // Self-illuminate the lunar texture so the moon is visible (a dim disc) even when its
+      // unlit side faces the camera or when it sits far from any other lit object. Lit side
+      // still picks up extra brightness from the directional sun light, so lunar phases
+      // remain visible as a slight gradient across the disc.
+      emissive: 0xffffff,
+      emissiveMap: texture,
+      emissiveIntensity: 0.5,
     });
 
     this.mesh = new THREE.Mesh(geometry, material);

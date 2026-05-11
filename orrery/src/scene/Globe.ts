@@ -8,6 +8,10 @@ export class Globe {
   private readonly earth: THREE.Mesh;
   private readonly nightOverlay: THREE.Mesh;
   private readonly sunDirUniform: { value: THREE.Vector3 };
+  private readonly phongMaterial: THREE.MeshPhongMaterial;
+  private readonly flatMaterial:  THREE.MeshBasicMaterial;
+  private terminatorEnabled = true;
+  private nightLightsEnabled = true;
 
   constructor() {
     const loader = new THREE.TextureLoader();
@@ -21,9 +25,10 @@ export class Globe {
     day.colorSpace = THREE.SRGBColorSpace;
     night.colorSpace = THREE.SRGBColorSpace;
 
-    // Day-side material: Phong gives us free directional-light shading, normal mapping, and ocean specular.
+    // Day-side material (terminator ON): Phong + directional sun light produces the day/night
+    // gradient on the surface texture, plus normal-mapped shading and ocean specular.
     const earthGeom = new THREE.SphereGeometry(1, 128, 64);
-    const earthMat  = new THREE.MeshPhongMaterial({
+    this.phongMaterial = new THREE.MeshPhongMaterial({
       map: day,
       normalMap: normal,
       normalScale: new THREE.Vector2(0.85, 0.85),
@@ -31,7 +36,13 @@ export class Globe {
       specular: new THREE.Color(0x335577),
       shininess: 18,
     });
-    this.earth = new THREE.Mesh(earthGeom, earthMat);
+    // Flat material (terminator OFF): unlit texture, dimmed slightly so it doesn't blow out
+    // the rest of the scene. No day/night, no specular — just the geography.
+    this.flatMaterial = new THREE.MeshBasicMaterial({
+      map: day,
+      color: 0xbbbbbb,
+    });
+    this.earth = new THREE.Mesh(earthGeom, this.phongMaterial);
 
     // Night-side overlay: a second sphere rendered additively, masked to the dark hemisphere.
     // Custom shader uses world-space normal vs. sun direction (passed as uniform from JS).
@@ -90,5 +101,26 @@ export class Globe {
   setRotationY(angle: number) {
     this.earth.rotation.y = angle;
     this.nightOverlay.rotation.y = angle;
+  }
+
+  // Day/night terminator visibility. When OFF, the day surface uses an unlit texture (no
+  // lighting gradient) and the night-lights overlay is forced hidden — the globe appears
+  // uniformly lit, "show me the whole world" mode. When ON, realistic sun-lit surface
+  // with night-lights subject to its own toggle.
+  setTerminatorVisible(visible: boolean) {
+    this.terminatorEnabled = visible;
+    this.earth.material = visible ? this.phongMaterial : this.flatMaterial;
+    this.updateNightOverlay();
+  }
+
+  // Toggle the additive city-lights overlay. Night lights are only meaningful when the
+  // terminator is on; otherwise the whole globe is uniformly lit and "night" doesn't exist.
+  setNightLightsVisible(visible: boolean) {
+    this.nightLightsEnabled = visible;
+    this.updateNightOverlay();
+  }
+
+  private updateNightOverlay() {
+    this.nightOverlay.visible = this.terminatorEnabled && this.nightLightsEnabled;
   }
 }

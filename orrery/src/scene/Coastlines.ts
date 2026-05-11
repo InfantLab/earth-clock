@@ -72,10 +72,11 @@ export class Coastlines {
       const lonRad = lon * Math.PI / 180;
       const latRad = lat * Math.PI / 180;
       const cosLat = Math.cos(latRad);
-      // Match Three.js SphereGeometry's equirectangular convention used elsewhere in the project
-      out[0] =  radius * cosLat * Math.sin(lonRad);
+      // Match Three.js SphereGeometry's default UV winding: Greenwich (lon=0) at +X,
+      // east going CCW from above (lon=+90 lands at -Z).
+      out[0] =  radius * cosLat * Math.cos(lonRad);
       out[1] =  radius * Math.sin(latRad);
-      out[2] = -radius * cosLat * Math.cos(lonRad);
+      out[2] = -radius * cosLat * Math.sin(lonRad);
     };
 
     const positions: number[] = [];
