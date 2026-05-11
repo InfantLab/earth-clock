@@ -20,6 +20,7 @@ import { Clock } from "./ui/Clock";
 import { LocationPanel } from "./ui/LocationPanel";
 import { LiveDataSource } from "./data/DataSource";
 import { fetchAuroraGrid } from "./data/auroraLoader";
+import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoader";
 import { fetchFireDetections } from "./data/firmsLoader";
 import { fetchActiveStorms } from "./data/nhcLoader";
 import { windGridToTexture } from "./data/windToTexture";
@@ -161,6 +162,7 @@ dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",      
 const debug = new Debug(document.body);
 debug.pending("clouds",     "fetching VIIRS mosaic…");
 debug.pending("aurora",     "fetching SWPC Ovation…");
+debug.pending("kp",         "fetching SWPC K-index…");
 debug.pending("fires",      "fetching FIRMS detections…");
 debug.pending("hurricanes", "fetching NHC CurrentStorms…");
 debug.pending("wind",       "fetching GFS surface wind…");
@@ -297,14 +299,20 @@ function loadAurora() {
     .then(grid => {
       aurora.update(grid);
       const fc = grid.forecastTime.toISOString().slice(11, 16);
-      const activity = grid.maxProbability < 10 ? "quiet"
-                     : grid.maxProbability < 40 ? "moderate"
-                     : "active";
+      // Finer-grained activity bands keyed on the Ovation peak probability. (The dedicated
+      // "Kp index" row below shows the authoritative global activity number; this just
+      // describes the brightness of the current auroral oval.)
+      const activity = grid.maxProbability < 5  ? "very quiet"
+                     : grid.maxProbability < 15 ? "quiet"
+                     : grid.maxProbability < 30 ? "moderate"
+                     : grid.maxProbability < 50 ? "active"
+                     : grid.maxProbability < 75 ? "storm"
+                     : "severe";
       debug.info("aurora", `${grid.pointCount} pts, fc ${fc}Z, max ${grid.maxProbability}% (${activity})`);
       dataRegistry.report("aurora", {
         source: "NOAA SWPC · Ovation aurora forecast",
         fetched: new Date(),
-        detail: `fc ${fc}Z · max ${grid.maxProbability}% (${activity})`,
+        detail: `fc ${fc}Z · peak ${grid.maxProbability}% (${activity})`,
         refreshSeconds: 5 * 60,
       });
     })
@@ -315,6 +323,30 @@ function loadAurora() {
 }
 loadAurora();
 setInterval(loadAurora, 5 * 60 * 1000);
+
+// Planetary K-index — the authoritative global geomagnetic-activity number (0-9). Tells
+// users how far south aurora is currently visible. Independent of the Ovation oval which
+// describes spatial distribution; Kp gives the headline.
+function loadKp() {
+  fetchLatestKp()
+    .then(reading => {
+      const label = kpActivityLabel(reading.kp);
+      const lat = kpVisibleLatitude(reading.kp);
+      debug.info("kp", `Kp ${reading.kp.toFixed(1)} (${label}), aurora visible above ~${lat}° mag-lat`);
+      dataRegistry.report("kp", {
+        source: "NOAA SWPC · planetary K-index",
+        fetched: new Date(),
+        detail: `Kp ${reading.kp.toFixed(1)} (${label}) · visible above ~${lat}°`,
+        refreshSeconds: 60,
+      });
+    })
+    .catch(err => {
+      debug.warn("kp", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("kp", { source: "NOAA SWPC planetary K-index", error: String(err.message ?? err) });
+    });
+}
+loadKp();
+setInterval(loadKp, 5 * 60 * 1000);
 
 // Fetch NASA FIRMS active fire detections (last 24 h of VIIRS S-NPP NRT).
 // Free key in .env.local (VITE_FIRMS_MAP_KEY). Rate-limited; refresh hourly is well within budget.
