@@ -11,8 +11,13 @@ import { AuroraLayer } from "./scene/AuroraLayer";
 import { FireLayer } from "./scene/FireLayer";
 import { HurricaneLayer } from "./scene/HurricaneLayer";
 import { FlatMap } from "./scene/FlatMap";
+import { LocationPin } from "./scene/LocationPin";
 import { Menu } from "./ui/Menu";
 import { Debug } from "./ui/Debug";
+import { DataRegistry } from "./ui/DataRegistry";
+import { DataPanel } from "./ui/DataPanel";
+import { Clock } from "./ui/Clock";
+import { LocationPanel } from "./ui/LocationPanel";
 import { LiveDataSource } from "./data/DataSource";
 import { fetchAuroraGrid } from "./data/auroraLoader";
 import { fetchFireDetections } from "./data/firmsLoader";
@@ -80,6 +85,13 @@ scene.add(hurricanes.mesh);
 const flatMap = new FlatMap();
 flatMap.resize(window.innerWidth, window.innerHeight);
 
+// Click-to-pin location marker. The globe-mode mesh is parented to the rotating Earth so it
+// stays glued to its geographic position as Earth spins; the flat-map mesh is parented to
+// the FlatMap scene so it appears at the correct (u, v).
+const locationPin = new LocationPin();
+globe.attachToEarth(locationPin.meshGlobe);
+flatMap.scene.add(locationPin.meshFlat);
+
 // GPU wind particles. Live-tune from the console:
 //   __orrery.particles.setSpeed(0.05) / setPointSize(3) / setAlpha(0.4)
 //   __orrery.trails.setFade(0.99)   // longer trails
@@ -136,7 +148,14 @@ declare global {
 // Expose handles for live tweaking from the JS console
 window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes };
 
-// Diagnostic overlay (top-right). Hidden by default; toggle via the Debug menu entry.
+// Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
+// Static / bundled assets are reported up-front so they appear in the panel without waiting.
+const dataRegistry = new DataRegistry();
+dataRegistry.report("day map",   { source: "Solar System Scope · 2k_earth_daymap.jpg",   bundled: true });
+dataRegistry.report("night map", { source: "Solar System Scope · 2k_earth_nightmap.jpg", bundled: true });
+dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",                 bundled: true });
+
+// Diagnostic overlay (bottom-right). Hidden by default; toggle via the Debug menu entry.
 // Each loader reports its state (✓/✗/⋯) here. The "Use test data" button replaces live
 // fetches with synthetic fixtures so we can isolate "loader broken" vs "renderer broken".
 const debug = new Debug(document.body);
@@ -147,11 +166,61 @@ debug.pending("hurricanes", "fetching NHC CurrentStorms…");
 debug.pending("wind",       "fetching GFS surface wind…");
 debug.pending("coastlines", "fetching Natural Earth…");
 
+// User-facing data sources panel (top-right). Lists source + last-fetched age per layer.
+const dataPanel = new DataPanel(document.body, dataRegistry);
+
+// Clock readout (top-centre). Big monospace UTC/local clock driven by simulatedTime so it
+// reflects time-warp. Click the zone label to flip UTC ⇄ Local.
+const clock = new Clock(document.body);
+
+// Location panel (top-left). Shows pinned-location coords + solar time. Hidden until the
+// user enables Location mode and clicks the globe.
+const locationPanel = new LocationPanel(document.body);
+
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
-const menu = new Menu(document.body, {
-  globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, flatMap,
-}, debug);
+const menu = new Menu(document.body,
+  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, flatMap },
+  { debug, data: dataPanel, clock, location: locationPanel },
+);
+
+locationPanel.onClear(() => {
+  locationPin.setVisible(false);
+  locationPanel.reset();
+});
+
+// Click-to-pin location handler. Only fires on simple clicks (not drags) — OrbitControls
+// uses mousedown+move for orbit and never fires "click" if the pointer moved past its
+// threshold. In globe mode we raycast against the Earth's day mesh and convert the world-
+// space hit point back to (lat, lon) via Globe.worldToLatLon. In map mode we convert the
+// click's NDC to the plane's (u, v) → (lat, lon).
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+renderer.domElement.addEventListener("click", (event) => {
+  if (!menu.isLocationActive()) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1;
+  ndc.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
+
+  let lat: number, lon: number;
+  if (menu.isMapMode()) {
+    // Unproject NDC at z=0 (the plane sits at z=0) → world position on the plane.
+    const planeWorld = new THREE.Vector3(ndc.x, ndc.y, 0).unproject(flatMap.camera);
+    // Plane is 2 wide × 1 tall centred at origin: x ∈ [-1, +1] → lon ∈ [-180, +180].
+    if (Math.abs(planeWorld.x) > 1 || Math.abs(planeWorld.y) > 0.5) return; // clicked outside the map
+    lon = planeWorld.x * 180;
+    lat = planeWorld.y * 180;
+  } else {
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObject(globe.earthMesh, false);
+    if (!hits.length) return;
+    ({ lat, lon } = globe.worldToLatLon(hits[0].point));
+  }
+  locationPin.setLocation(lat, lon);
+  locationPin.setVisible(true);
+  locationPanel.setLocation(lat, lon);
+  console.log(`[orrery] pinned: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
+});
 
 // "Find moon" button: re-position the camera along the moon's direction at 1.5x the moon's
 // distance, so both the moon (closer) and Earth (farther) sit in view. OrbitControls' target
@@ -190,14 +259,24 @@ debug.onUseTestData(() => {
 });
 
 // Fetch real GFS surface wind and hand it to the particles. Mock east-wind keeps running until
-// this resolves, so the scene is never blank.
+// this resolves, so the scene is never blank. No auto-refresh yet (wind GRIB→JSON happens
+// on the server side every 6 h — Phase B will plumb in-browser refresh).
 const dataSource = new LiveDataSource();
 dataSource.getWindGrid(new Date())
   .then(grid => {
     particles.setWindTexture(windGridToTexture(grid));
     debug.info("wind", `${grid.width}×${grid.height}, valid ${grid.validTime.toISOString().slice(0, 16)}Z`);
+    dataRegistry.report("wind", {
+      source: "NOAA GFS surface (via earth-clock weather-service)",
+      fetched: new Date(),
+      detail: `valid ${grid.validTime.toISOString().slice(0, 13)}Z`,
+      refreshSeconds: 6 * 3600,
+    });
   })
-  .catch(err => debug.warn("wind", `load failed: ${err.message ?? err}`));
+  .catch(err => {
+    debug.warn("wind", `load failed: ${err.message ?? err}`);
+    dataRegistry.report("wind", { source: "NOAA GFS surface", error: String(err.message ?? err) });
+  });
 
 // Load Natural Earth coastlines (TopoJSON). Renders empty until this resolves.
 fetch("/data/earth-topo.json")
@@ -205,17 +284,31 @@ fetch("/data/earth-topo.json")
   .then(topo => {
     coastlines.loadFromTopology(topo, "coastline_50m");
     debug.info("coastlines", "Natural Earth 50 m loaded");
+    dataRegistry.report("coastlines", { source: "Natural Earth · 50 m physical", bundled: true });
   })
-  .catch(err => debug.warn("coastlines", `load failed: ${err.message ?? err}`));
+  .catch(err => {
+    debug.warn("coastlines", `load failed: ${err.message ?? err}`);
+    dataRegistry.report("coastlines", { source: "Natural Earth 50 m", error: String(err.message ?? err) });
+  });
 
 // Fetch NOAA SWPC aurora probability grid. CORS-clean, no auth, ~900 KB, refreshes every 5 min.
 function loadAurora() {
   fetchAuroraGrid()
     .then(grid => {
       aurora.update(grid);
-      debug.info("aurora", `${grid.pointCount} pts, fc ${grid.forecastTime.toISOString().slice(11, 16)}Z`);
+      const fc = grid.forecastTime.toISOString().slice(11, 16);
+      debug.info("aurora", `${grid.pointCount} pts, fc ${fc}Z`);
+      dataRegistry.report("aurora", {
+        source: "NOAA SWPC · Ovation aurora forecast",
+        fetched: new Date(),
+        detail: `${grid.pointCount} pts · fc ${fc}Z`,
+        refreshSeconds: 5 * 60,
+      });
     })
-    .catch(err => debug.warn("aurora", `load failed: ${err.message ?? err}`));
+    .catch(err => {
+      debug.warn("aurora", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("aurora", { source: "NOAA SWPC Ovation", error: String(err.message ?? err) });
+    });
 }
 loadAurora();
 setInterval(loadAurora, 5 * 60 * 1000);
@@ -227,8 +320,17 @@ function loadFires() {
     .then(grid => {
       fires.update(grid);
       debug.info("fires", `${grid.detections.length} detections`);
+      dataRegistry.report("fires", {
+        source: "NASA FIRMS · VIIRS S-NPP NRT",
+        fetched: new Date(),
+        detail: `${grid.detections.length} detections · last 24 h`,
+        refreshSeconds: 60 * 60,
+      });
     })
-    .catch(err => debug.warn("fires", `load failed: ${err.message ?? err}`));
+    .catch(err => {
+      debug.warn("fires", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("fires", { source: "NASA FIRMS VIIRS", error: String(err.message ?? err) });
+    });
 }
 loadFires();
 setInterval(loadFires, 60 * 60 * 1000);
@@ -242,11 +344,26 @@ function loadHurricanes() {
       if (grid.storms.length) {
         const summary = grid.storms.map(s => `${s.name || s.id} ${s.intensityKt}kt`).join(", ");
         debug.info("hurricanes", `${grid.storms.length} active: ${summary}`);
+        dataRegistry.report("hurricanes", {
+          source: "NHC · CurrentStorms.json",
+          fetched: new Date(),
+          detail: `${grid.storms.length} active`,
+          refreshSeconds: 15 * 60,
+        });
       } else {
         debug.info("hurricanes", "no active storms (off-season)");
+        dataRegistry.report("hurricanes", {
+          source: "NHC · CurrentStorms.json",
+          fetched: new Date(),
+          detail: "no active storms (off-season)",
+          refreshSeconds: 15 * 60,
+        });
       }
     })
-    .catch(err => debug.warn("hurricanes", `load failed: ${err.message ?? err}`));
+    .catch(err => {
+      debug.warn("hurricanes", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("hurricanes", { source: "NHC CurrentStorms.json", error: String(err.message ?? err) });
+    });
 }
 loadHurricanes();
 setInterval(loadHurricanes, 15 * 60 * 1000);
@@ -265,8 +382,17 @@ fetchGibsTexture({
     clouds.setTexture(tex);
     flatMap.setCloudTexture(tex);
     debug.info("clouds", `VIIRS NOAA-20 ${cloudDate.toISOString().slice(0, 10)}`);
+    dataRegistry.report("clouds", {
+      source: "NASA GIBS · VIIRS NOAA-20 True Color",
+      fetched: new Date(),
+      detail: cloudDate.toISOString().slice(0, 10),
+      refreshSeconds: 24 * 3600,
+    });
   })
-  .catch(err => debug.warn("clouds", `load failed: ${err.message ?? err}`));
+  .catch(err => {
+    debug.warn("clouds", `load failed: ${err.message ?? err}`);
+    dataRegistry.report("clouds", { source: "NASA GIBS VIIRS NOAA-20", error: String(err.message ?? err) });
+  });
 
 function updateAstro() {
   const now = new Date(simulatedTime);
@@ -349,8 +475,11 @@ function animate(t: number) {
   const warp = window.__orreryTimeWarp ?? 1;
   simulatedTime += dtMs * warp;
 
+  const now = new Date(simulatedTime);
   updateAstro();
-  updateDebugAstro(new Date(simulatedTime));
+  updateDebugAstro(now);
+  clock.setTime(now);
+  locationPanel.setNow(now);
   // Use real wall-clock dt for particles (independent of simulated-time warp;
   // wind drift should look the same regardless of how fast Earth is spinning).
   particles.update(dtMs / 1000, t / 1000);

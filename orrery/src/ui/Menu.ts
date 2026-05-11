@@ -21,6 +21,9 @@ import type { FireLayer } from "../scene/FireLayer";
 import type { HurricaneLayer } from "../scene/HurricaneLayer";
 import type { FlatMap } from "../scene/FlatMap";
 import type { Debug } from "./Debug";
+import type { DataPanel } from "./DataPanel";
+import type { Clock } from "./Clock";
+import type { LocationPanel } from "./LocationPanel";
 
 export interface MenuLayers {
   globe: Globe;
@@ -34,16 +37,25 @@ export interface MenuLayers {
   flatMap: FlatMap;
 }
 
+export interface MenuPanels {
+  debug?: Debug;
+  data?: DataPanel;
+  clock?: Clock;
+  location?: LocationPanel;
+}
+
 type LayerKey =
   | "clouds" | "aurora" | "fires" | "hurricanes" | "wind"
   | "coastlines" | "terminator" | "nightLights"
-  | "moon" | "atmosphere" | "map" | "debug";
+  | "moon" | "atmosphere"
+  | "map" | "clock" | "data" | "location" | "debug";
 
 const STORAGE_KEY = "orrery.menu.v1";
 const DEFAULTS: Record<LayerKey, boolean> = {
   clouds: true, aurora: true, fires: true, hurricanes: true, wind: true,
   coastlines: true, terminator: true, nightLights: true,
-  moon: true, atmosphere: true, map: false, debug: false,
+  moon: true, atmosphere: true,
+  map: false, clock: true, data: false, location: false, debug: false,
 };
 
 const LABELS: Record<LayerKey, string> = {
@@ -51,20 +63,32 @@ const LABELS: Record<LayerKey, string> = {
   wind: "Wind", coastlines: "Coastlines",
   terminator: "Terminator", nightLights: "Night lights",
   moon: "Moon", atmosphere: "Atmosphere",
-  map: "Map", debug: "Debug",
+  map: "Map", clock: "Clock", data: "Data", location: "Location", debug: "Debug",
 };
+
+const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
+  {
+    label: "Layers",
+    keys: ["clouds", "aurora", "fires", "hurricanes", "wind", "coastlines",
+           "terminator", "nightLights", "moon", "atmosphere"],
+  },
+  {
+    label: "View",
+    keys: ["map", "clock", "data", "location", "debug"],
+  },
+];
 
 export class Menu {
   private readonly state: Record<LayerKey, boolean>;
   private readonly layers: MenuLayers;
-  private readonly debug: Debug | null;
+  private readonly panels: MenuPanels;
   private readonly buttons: Partial<Record<LayerKey, HTMLElement>> = {};
   private readonly panel: HTMLElement;
   private open: boolean;
 
-  constructor(parent: HTMLElement, layers: MenuLayers, debug?: Debug) {
+  constructor(parent: HTMLElement, layers: MenuLayers, panels: MenuPanels = {}) {
     this.layers = layers;
-    this.debug = debug ?? null;
+    this.panels = panels;
     this.state = { ...DEFAULTS, ...loadState() };
     this.open = loadOpen();
 
@@ -77,10 +101,7 @@ export class Menu {
         <span class="orrery-brand" id="orrery-brand" title="menu">orrery</span>
       </div>
       <div class="orrery-menu${this.open ? "" : " collapsed"}" id="orrery-menu">
-        <p>
-          <span class="orrery-label">Layers</span>
-          <span class="orrery-buttons" id="orrery-layer-buttons"></span>
-        </p>
+        <div id="orrery-menu-categories"></div>
         <p class="orrery-meta">
           <a href="https://github.com/infantlab/earth-clock" target="_blank" rel="noopener">about</a>
         </p>
@@ -92,17 +113,23 @@ export class Menu {
     const brand = root.querySelector("#orrery-brand") as HTMLElement;
     brand.addEventListener("click", () => this.toggleOpen());
 
-    const buttonsHost = root.querySelector("#orrery-layer-buttons") as HTMLElement;
-    (Object.keys(LABELS) as LayerKey[]).forEach((key, i) => {
-      if (i > 0) buttonsHost.appendChild(document.createTextNode(" · "));
-      const btn = document.createElement("span");
-      btn.className = "orrery-tb";
-      btn.textContent = LABELS[key];
-      btn.title = `Toggle ${LABELS[key]}`;
-      btn.addEventListener("click", () => this.toggle(key));
-      buttonsHost.appendChild(btn);
-      this.buttons[key] = btn;
-    });
+    const categoriesHost = root.querySelector("#orrery-menu-categories") as HTMLElement;
+    for (const cat of CATEGORIES) {
+      const row = document.createElement("p");
+      row.innerHTML = `<span class="orrery-label">${cat.label}</span><span class="orrery-buttons"></span>`;
+      const buttonsHost = row.querySelector(".orrery-buttons") as HTMLElement;
+      cat.keys.forEach((key, i) => {
+        if (i > 0) buttonsHost.appendChild(document.createTextNode(" · "));
+        const btn = document.createElement("span");
+        btn.className = "orrery-tb";
+        btn.textContent = LABELS[key];
+        btn.title = `Toggle ${LABELS[key]}`;
+        btn.addEventListener("click", () => this.toggle(key));
+        buttonsHost.appendChild(btn);
+        this.buttons[key] = btn;
+      });
+      categoriesHost.appendChild(row);
+    }
 
     this.applyAll();
   }
@@ -115,6 +142,11 @@ export class Menu {
   /** Read by the animation loop to switch between 3D globe and equirectangular map render. */
   isMapMode(): boolean {
     return this.state.map;
+  }
+
+  /** True when the user has enabled click-to-pin location mode. */
+  isLocationActive(): boolean {
+    return this.state.location;
   }
 
   /**
@@ -177,7 +209,10 @@ export class Menu {
         break;
       case "wind":        /* consumed by main loop via isWindVisible() */ break;
       case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
-      case "debug":       this.debug?.setVisible(on); break;
+      case "clock":       this.panels.clock?.setVisible(on); break;
+      case "data":        this.panels.data?.setVisible(on); break;
+      case "location":    this.panels.location?.setVisible(on); break;
+      case "debug":       this.panels.debug?.setVisible(on); break;
     }
     const btn = this.buttons[key];
     if (btn) btn.classList.toggle("highlighted", on);

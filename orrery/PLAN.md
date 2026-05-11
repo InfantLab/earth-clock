@@ -107,30 +107,23 @@ Architecture decision still open: each existing layer gets a `setMapMode(b)` hoo
 - State persisted in `localStorage` under `orrery.menu.v1` (per-layer bools + open/closed).
 - Future: time controls (Now / time-warp), Phase B mode/altitude switching, an in-app About panel sourced from `CREDITS.md`.
 
-### ⬜ Live-data freshness UI  ← **NEXT**
-- **Goal**: every active layer should advertise its data source and last-fetched age in the UI, so users can tell at a glance "is this live?".
-- **Implementation sketch**:
-  - `src/ui/DataPanel.ts` — small panel toggled by a new "Data" menu entry. Each row: layer name, source label ("VIIRS NOAA-20", "NOAA SWPC Ovation"), last-fetched timestamp, computed age ("2m ago", "8h ago"). Static layers (textures, coastlines) show "bundled".
-  - Shared `src/ui/DataRegistry.ts` (or similar) — loaders push `{ source, fetched, detail? }` per layer. DataPanel + Debug both subscribe; Debug keeps its richer freeform messages, DataPanel renders the formatted source-and-age view.
-  - Per-row colour or icon for stale data (red if older than 2× the expected refresh interval).
-- **Out of scope for v1**: manual refresh buttons, retry-on-failure controls — Phase 2 feature.
+### ✅ Live-data freshness UI  ← landed
+- `src/ui/DataRegistry.ts` — shared status store. Loaders push `{ source, fetched, detail?, error?, bundled?, refreshSeconds? }` per layer; subscribers re-render on change.
+- `src/ui/DataPanel.ts` — top-right panel toggled by the menu's "Data" entry. Three-column grid: layer · source label · age. Colour codes: green (fresh), amber (stale, older than 2× expected refresh), red (fetch failed), grey ("bundled" for static assets). Re-renders on every registry update + a 15 s tick to keep ages live.
+- All loaders wired: clouds (NASA GIBS), aurora (NOAA SWPC), fires (NASA FIRMS), hurricanes (NHC), wind (NOAA GFS), coastlines (Natural Earth, bundled). Day/night/moon textures registered as bundled at startup.
+- **Future**: manual refresh buttons per row, retry-on-failure with backoff, link to source URL.
 
-### ⬜ Clock display  ← **NEXT**
-- **Goal**: port classic earth-clock's central feature — show current time at the chosen location (or UTC), prominently.
-- **Implementation sketch**:
-  - `src/ui/Clock.ts` — HTML overlay, top-left or top-centre, big readable time string. Sources its time from the same `simulatedTime` clock the rest of the scene uses (so time-warp shows up in the display).
-  - Zone toggle: **UTC ⇄ Local (browser)** initially. Later: a selected-location time when the location picker is in use.
-  - Display formats: `HH:MM:SS · UTC`, `HH:MM:SS · Europe/London`, etc. Date underneath in smaller type.
-  - Honour the design philosophy: minimal chrome, monospace font, dim grey on dark background.
+### ✅ Clock display  ← landed
+- `src/ui/Clock.ts` — top-centre, 36 px monospace. Reads `simulatedTime` each frame; time-warp shows up visibly.
+- Zone toggle: **UTC ⇄ Local** (browser zone from `Intl.DateTimeFormat().resolvedOptions().timeZone`, displayed short — "London", "Tokyo", etc.). Click the zone label to flip. Choice persists in `localStorage` under `orrery.clock.v1`.
+- Toggle in menu's "View" row. Default on. Cached string comparison keeps DOM writes to once per second.
+- **Future**: third "selected location" mode that uses the pinned location's solar time. Day-name & date second line is already shown.
 
-### ⬜ Location picker  ← **NEXT**
-- **Goal**: click anywhere on the globe (or map) to pin a point. Show its coordinates + nearby live data.
-- **Implementation sketch**:
-  - Globe mode: `THREE.Raycaster` against the Earth mesh → intersection point → un-rotate by axial tilt + daily spin → recover (lat, lon).
-  - Map mode: convert click (NDC) → plane uv → (lat, lon).
-  - `src/scene/LocationPin.ts` — small mesh / point sprite at the pinned location, follows Earth rotation in 3D mode.
-  - `src/ui/LocationPanel.ts` — shows (lat, lon), local time at that point (sub-solar offset), wind direction/speed sampled from the GFS grid, nearest fire / storm if any.
-  - Click-to-pin in classic earth-clock used reverse-geocoding (city names) — Phase 2; v1 just shows raw lat/lon.
+### 🔄 Location picker  ← v1 landed; data sampling TODO
+- `src/scene/LocationPin.ts` — single class managing both the 3D pin (emissive sphere + ring on the rotating Earth, attached via `Globe.attachToEarth`) and the 2D pin (small disc on the FlatMap plane). `setLocation(lat, lon)` updates both.
+- `src/ui/LocationPanel.ts` — top-left panel toggled by the "Location" menu entry. Shows pinned coordinates and **solar time at that longitude** (UTC + lon/15 hours). ✕ button clears the pin.
+- Click handler in `main.ts`: raycaster against the Earth mesh in globe mode (uses `Globe.worldToLatLon` to undo tilt + daily rotation); unproject NDC onto the plane in map mode. Only fires while Location toggle is on.
+- **Future (v2)**: sample wind from GFS grid at pinned (lat, lon); list nearest fire / storm; show local civil time (proper timezone, not just solar); reverse-geocode → city name; "Use my location" button (browser geolocation API).
 
 ---
 
@@ -193,3 +186,4 @@ Once built, the worker also enables ECMWF AIFS and GraphCast-GFS (AI weather for
 | 2026-05-11 | HurricaneLayer + nhcLoader (NHC CurrentStorms.json); Terminator toggle (Globe swaps between Phong + flat MeshBasic; gates night-lights overlay) | GIBS overlays (NO₂ / AOD / sea ice) next |
 | 2026-05-11 | **Fixed lat/lon→xyz chirality bug** in Coastlines / Fires / Hurricanes / Aurora (Greenwich was at −Z, east going CW; corrected to texture convention: Greenwich at +X, east CCW). Aurora wrapped in tilted Group + setRotationY (was using neither). Debug overlay (`src/ui/Debug.ts`) + static fixtures (`src/data/debugFixtures.ts`) + "Use test data" button for isolating loader-vs-renderer bugs. | GIBS overlays next, then lightning |
 | 2026-05-11 | Hurricane sprite rewrite (NormalBlending, larger eye, bolder color ramp). Cloud night-side: dropped hard day mask, now a brightness gradient with a floor — clouds stay visible at night (master Terminator toggle still scales the gradient). Test-data button now syncs Menu state via public `setLayer()` instead of forcing `mesh.visible`. Find-moon button + on-screen NDC indicator. **FlatMap v1**: equirectangular projection toggle (`src/scene/FlatMap.ts`) — own scene + ortho camera + combined day/night/clouds shader; "Map" toggle in menu. | FlatMap v2 (port aurora/fires/hurricanes/wind/coastlines to 2D) and GIBS overlays |
+| 2026-05-11 | Moon emissive map (dim disc on the dark side, phases still show). Menu reorganized into Layers / View categories. **Three new UI features**: DataRegistry + DataPanel (live source + age per layer, top-right), Clock (top-centre, 36 px monospace, UTC ⇄ local toggle), LocationPin + LocationPanel (click-to-pin coordinates + solar time, 3D and flat-map markers). | Wire wind sampling at pinned location, port more layers to FlatMap, hurricane track / cone geometry |

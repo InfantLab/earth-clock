@@ -123,4 +123,29 @@ export class Globe {
   private updateNightOverlay() {
     this.nightOverlay.visible = this.terminatorEnabled && this.nightLightsEnabled;
   }
+
+  /**
+   * Attach a child object (e.g. a location pin) to the rotating earth mesh so it stays
+   * glued to its geographic position as Earth spins.
+   */
+  attachToEarth(obj: THREE.Object3D) {
+    this.earth.add(obj);
+  }
+
+  /**
+   * Convert a world-space point to geographic (lat, lon) in degrees. Used by the location
+   * picker's raycaster: `intersects[0].point` is in world space; this undoes axial tilt +
+   * daily rotation by transforming through the earth mesh's inverse model matrix.
+   */
+  worldToLatLon(worldPoint: THREE.Vector3): { lat: number; lon: number } {
+    const local = this.earth.worldToLocal(worldPoint.clone()).normalize();
+    const lat = Math.asin(Math.max(-1, Math.min(1, local.y))) * 180 / Math.PI;
+    const lon = Math.atan2(-local.z, local.x) * 180 / Math.PI;
+    return { lat, lon };
+  }
+
+  /** Expose the day-sphere mesh so the location picker's raycaster can target it. */
+  get earthMesh(): THREE.Mesh {
+    return this.earth;
+  }
 }

@@ -97,7 +97,7 @@ function injectStyles() {
   stylesInjected = true;
   const css = `
     #orrery-debug {
-      position: fixed; top: 16px; right: 16px;
+      position: fixed; bottom: 16px; right: 16px;
       background: rgba(5, 10, 30, 0.82);
       color: #cfd6e4;
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
