@@ -42,9 +42,9 @@ Update this file every time a new external source is introduced. The whole proje
 - **License**: Public domain
 - `attribution_required`: no, but credited
 
-### Moon texture (used in classic earth-clock; also planned for orrery moon)
-- **Source**: [Three.js examples](https://github.com/mrdoob/three.js/blob/dev/examples/textures/planets/moon_1024.jpg)
-- **Origin**: NASA / USGS lunar imagery
+### Moon texture ([`moon_1024.jpg`](public/textures/moon_1024.jpg))
+- **Source**: [Three.js examples](https://github.com/mrdoob/three.js/blob/dev/examples/textures/planets/moon_1024.jpg) (originally fetched for the classic earth-clock moon-phase overlay; copied into orrery)
+- **Origin**: NASA / USGS lunar imagery (1024×512 equirectangular)
 - **License**: Public domain
 - `attribution_required`: no, but credited
 
@@ -63,9 +63,10 @@ Update this file every time a new external source is introduced. The whole proje
 - **Reference**: USNO simplified GMST formula (`18.697374558 + 24.06570982441908 × d`)
 - **License**: Public formulation.
 
-### Sub-lunar position (classic earth-clock; planned for orrery)
-- **Method**: Schlyter simplified orbital elements (~1–2° accuracy).
+### Lunar position (`src/astro/lunar.ts`)
+- **Method**: Schlyter simplified orbital elements (~1–2° accuracy). Returns geocentric RA/dec/distance; we use it to place the moon mesh in 3D.
 - **Reference**: Paul Schlyter, [How to compute planetary positions](https://www.stjarnhimlen.se/comp/ppcomp.html).
+- **License**: Mathematical formulae; reference credited courtesy.
 
 ---
 
