@@ -6,6 +6,9 @@ export interface AuroraGrid {
   /** Flat array of triples: [lon, lat, probability, lon, lat, probability, ...] */
   data: Float32Array;
   pointCount: number;
+  /** Peak aurora probability across all grid cells (0-100). Lets the UI hint at
+   *  current geomagnetic activity — low max = quiet sky, high max = active. */
+  maxProbability: number;
 }
 
 /**
@@ -33,5 +36,6 @@ export async function fetchAuroraGrid(): Promise<AuroraGrid> {
     forecastTime: new Date(json["Forecast Time"]),
     data: buf,
     pointCount: coords.length,
+    maxProbability: max,
   };
 }

@@ -1,4 +1,8 @@
-const NHC_URL = "https://www.nhc.noaa.gov/CurrentStorms.json";
+// NHC's `CurrentStorms.json` doesn't ship CORS headers, so the browser blocks direct
+// fetches. In dev we route through a Vite proxy (see vite.config.ts > server.proxy);
+// production needs an equivalent edge proxy (Cloudflare Worker, etc.). The path-rewrite
+// strips `/proxy/nhc` server-side, so the upstream sees `/CurrentStorms.json` as normal.
+const NHC_URL = "/proxy/nhc/CurrentStorms.json";
 
 export interface Storm {
   /** Storm ID, e.g. "AL012024". */

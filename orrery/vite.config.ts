@@ -20,6 +20,17 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     fs: { allow: [resolve(__dirname, ".."), resolve(__dirname)] },
+    // Dev-side CORS proxies for upstream APIs that don't ship Access-Control-Allow-Origin.
+    // Production deployment needs an equivalent edge proxy (Cloudflare Worker, Caddy reverse
+    // proxy, etc.) — see PLAN.md "Production proxy" notes. For now this only helps `npm run dev`.
+    proxy: {
+      "/proxy/nhc": {
+        target: "https://www.nhc.noaa.gov",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/proxy\/nhc/, ""),
+      },
+    },
   },
   plugins: [
     {

@@ -297,11 +297,14 @@ function loadAurora() {
     .then(grid => {
       aurora.update(grid);
       const fc = grid.forecastTime.toISOString().slice(11, 16);
-      debug.info("aurora", `${grid.pointCount} pts, fc ${fc}Z`);
+      const activity = grid.maxProbability < 10 ? "quiet"
+                     : grid.maxProbability < 40 ? "moderate"
+                     : "active";
+      debug.info("aurora", `${grid.pointCount} pts, fc ${fc}Z, max ${grid.maxProbability}% (${activity})`);
       dataRegistry.report("aurora", {
         source: "NOAA SWPC · Ovation aurora forecast",
         fetched: new Date(),
-        detail: `${grid.pointCount} pts · fc ${fc}Z`,
+        detail: `fc ${fc}Z · max ${grid.maxProbability}% (${activity})`,
         refreshSeconds: 5 * 60,
       });
     })

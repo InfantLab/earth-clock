@@ -76,13 +76,18 @@ function drawTile(
 }
 
 /**
- * Get the most recent UTC date for which a daily GIBS mosaic is likely available.
- * Mosaics are typically ready ~3 h after midnight UTC, so for the early hours of
- * a UTC day the previous day's mosaic is the safer choice. Returning yesterday is
- * a conservative default; a more thorough implementation would probe + retry.
+ * Get a UTC date for which a daily GIBS mosaic is definitely fully published.
+ *
+ * NASA publishes the daily VIIRS true-color mosaic region-by-region, so "yesterday" can
+ * still be partial — typically the Pacific / East Asia tiles (col=3 at zoom 1) lag the
+ * Americas tiles by several hours, producing 400 responses on incomplete tiles. Lagging
+ * by 2 days is conservative but reliable. The visual difference between "yesterday" and
+ * "the day before yesterday" is invisible at globe-zoom.
+ *
+ * A more sophisticated implementation would probe the latest available tile and walk back.
  */
 export function bestAvailableDailyDate(now: Date = new Date()): Date {
   const d = new Date(now);
-  d.setUTCDate(d.getUTCDate() - 1);
+  d.setUTCDate(d.getUTCDate() - 2);
   return d;
 }

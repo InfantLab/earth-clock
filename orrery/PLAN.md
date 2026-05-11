@@ -170,6 +170,7 @@ Once built, the worker also enables ECMWF AIFS and GraphCast-GFS (AI weather for
 | Coastlines JSON | ✅ `/data/earth-topo.json` | Bundled, Natural Earth 50m |
 | **Replace-classic cutover** | ⬜ blocked on Phase A | Trigger: Phase A complete + layer-toggle HUD + visual QA. Action: point `vite.config.ts > build.outDir` at `../public`, move classic to `../public/classic/`, update `index.html` redirect. |
 | **Docs polish (repo + web)** | ⬜ paired with cutover | README is currently long-and-dense — fine for now, but before going live: split into shorter top-level README + linked docs (e.g. `docs/architecture.md`, `docs/data-sources.md`, `docs/philosophy.md`); add an in-app About panel sourced from `CREDITS.md`; publish a web docs surface (likely a series on onemonkey.org or a `/docs/` static section) so first-time visitors can read the philosophy without cloning the repo. |
+| **Production CORS proxy** | ⬜ required for cutover | NHC's `CurrentStorms.json` (and any future feeds without CORS headers) needs an edge proxy in production. Dev currently uses Vite's built-in `server.proxy` config to route `/proxy/nhc/*` through. For prod, options: (a) Cloudflare Worker on a custom subdomain that reverse-proxies the upstream and adds `Access-Control-Allow-Origin: *`; (b) Caddy/nginx reverse-proxy on `earth-clock.onemonkey.org/proxy/*`; (c) point loaders at a community CORS proxy (e.g. `corsproxy.io`) — quickest but adds a dependency. Same proxy will eventually unblock OSCAR (Earthdata auth) once we're ready. |
 
 ---
 

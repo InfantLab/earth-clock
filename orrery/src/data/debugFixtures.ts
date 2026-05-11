@@ -29,6 +29,7 @@ export function debugAuroraGrid(): AuroraGrid {
     forecastTime: new Date(),
     data: buf,
     pointCount: points.length / 3,
+    maxProbability: 100,
   };
 }
 
