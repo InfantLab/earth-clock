@@ -7,7 +7,9 @@ import { Particles } from "./scene/Particles";
 import { Trails } from "./scene/Trails";
 import { Coastlines } from "./scene/Coastlines";
 import { CloudLayer } from "./scene/CloudLayer";
+import { AuroraLayer } from "./scene/AuroraLayer";
 import { LiveDataSource } from "./data/DataSource";
+import { fetchAuroraGrid } from "./data/auroraLoader";
 import { windGridToTexture } from "./data/windToTexture";
 import { fetchGibsTexture, bestAvailableDailyDate } from "./data/gibsLoader";
 import { createCamera, attachOrbitControls } from "./scene/Camera";
@@ -45,6 +47,11 @@ scene.add(coastlines.mesh);
 // NASA GIBS VIIRS true-color mosaic. Loaded async; until the texture lands, the shell is invisible.
 const clouds = new CloudLayer(1.003);
 scene.add(clouds.mesh);
+
+// Aurora oval — NOAA SWPC Ovation probability grid, additive point cloud at r=1.008.
+// Geomagnetically fixed (no Earth-rotation applied). Refreshes every 5 min.
+const aurora = new AuroraLayer();
+scene.add(aurora.mesh);
 
 // GPU wind particles. Live-tune from the console:
 //   __orrery.particles.setSpeed(0.05) / setPointSize(3) / setAlpha(0.4)
@@ -91,12 +98,13 @@ declare global {
       trails: Trails;
       coastlines: Coastlines;
       clouds: CloudLayer;
+      aurora: AuroraLayer;
     };
   }
 }
 
 // Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, trails, coastlines, clouds };
+window.__orrery = { particles, globe, trails, coastlines, clouds, aurora };
 
 // Fetch real GFS surface wind and hand it to the particles. Mock east-wind keeps running until
 // this resolves, so the scene is never blank.
@@ -118,6 +126,18 @@ fetch("/data/earth-topo.json")
     console.log("[orrery] coastlines loaded (50m)");
   })
   .catch(err => console.error("[orrery] coastlines load failed:", err));
+
+// Fetch NOAA SWPC aurora probability grid. CORS-clean, no auth, ~900 KB, refreshes every 5 min.
+function loadAurora() {
+  fetchAuroraGrid()
+    .then(grid => {
+      aurora.update(grid);
+      console.log(`[orrery] aurora grid loaded (${grid.forecastTime.toISOString()})`);
+    })
+    .catch(err => console.error("[orrery] aurora load failed:", err));
+}
+loadAurora();
+setInterval(loadAurora, 5 * 60 * 1000);
 
 // Fetch yesterday's global VIIRS true-color mosaic from NASA GIBS (CORS-clean, no auth).
 // 8 tiles at zoom 1 → 2048×1024 final texture, ~700 KB total payload.
@@ -153,6 +173,9 @@ function updateAstro() {
   coastlines.setRotationY(earthY);
   clouds.setRotationY(earthY);
   clouds.setSunDirection(sunDir);
+
+  // Aurora: sun direction drives night-side masking (no rotation needed)
+  aurora.setSunDirection(sunDir);
 }
 
 function animate(t: number) {
@@ -165,6 +188,7 @@ function animate(t: number) {
   // Use real wall-clock dt for particles (independent of simulated-time warp;
   // wind drift should look the same regardless of how fast Earth is spinning).
   particles.update(dtMs / 1000, t / 1000);
+  aurora.setTime(t / 1000);
   controls.update();
   // Main scene first (globe, atmosphere, moon, sky) — depth populated, particles NOT here
   renderer.render(scene, camera);
