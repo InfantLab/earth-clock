@@ -52,7 +52,7 @@ type LayerKey =
   | "clouds" | "aurora" | "fires" | "hurricanes" | "lightning" | "wind"
   | "coastlines" | "terminator" | "nightLights"
   | "moon" | "atmosphere"
-  | "mslp"
+  | "mslp" | "temp" | "rh" | "tpw" | "tcw"
   | "map" | "clock" | "data" | "location" | "debug";
 
 const STORAGE_KEY = "orrery.menu.v1";
@@ -60,7 +60,7 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   clouds: true, aurora: true, fires: true, hurricanes: true, lightning: true, wind: true,
   coastlines: true, terminator: true, nightLights: true,
   moon: true, atmosphere: true,
-  mslp: false,
+  mslp: false, temp: false, rh: false, tpw: false, tcw: false,
   map: false, clock: true, data: false, location: false, debug: false,
 };
 
@@ -69,9 +69,16 @@ const LABELS: Record<LayerKey, string> = {
   lightning: "Lightning", wind: "Wind", coastlines: "Coastlines",
   terminator: "Terminator", nightLights: "Night lights",
   moon: "Moon", atmosphere: "Atmosphere",
-  mslp: "MSLP",
+  mslp: "MSLP", temp: "Temp", rh: "RH", tpw: "TPW", tcw: "TCW",
   map: "Map", clock: "Clock", data: "Data", location: "Location", debug: "Debug",
 };
+
+/**
+ * Overlay-row keys are mutually exclusive — turning one on turns the others off,
+ * matching classic earth-clock's overlay selector. Click an active overlay key
+ * a second time to turn the overlay off entirely.
+ */
+const OVERLAY_KEYS: LayerKey[] = ["mslp", "temp", "rh", "tpw", "tcw"];
 
 const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   {
@@ -81,7 +88,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "Overlay",
-    keys: ["mslp"],
+    keys: OVERLAY_KEYS,
   },
   {
     label: "View",
@@ -96,6 +103,7 @@ export class Menu {
   private readonly buttons: Partial<Record<LayerKey, HTMLElement>> = {};
   private readonly panel: HTMLElement;
   private open: boolean;
+  private overlayChangeHandler: ((active: LayerKey | null) => void) | null = null;
 
   constructor(parent: HTMLElement, layers: MenuLayers, panels: MenuPanels = {}) {
     this.layers = layers;
@@ -161,6 +169,24 @@ export class Menu {
   }
 
   /**
+   * Currently active overlay key, or null if all are off. Useful for main.ts to know
+   * which variable to fetch/cache without subscribing to every toggle event.
+   */
+  activeOverlay(): LayerKey | null {
+    for (const k of OVERLAY_KEYS) if (this.state[k]) return k;
+    return null;
+  }
+
+  /**
+   * Hook for overlay changes. Called with the new active overlay key (or null when the
+   * user clicks an active overlay a second time to turn it off). main.ts uses this to
+   * swap the OverlayLayer's data + palette + range without polling each frame.
+   */
+  onOverlayChange(fn: (active: LayerKey | null) => void) {
+    this.overlayChangeHandler = fn;
+  }
+
+  /**
    * Set a layer's on/off state programmatically (e.g. from the Debug "Use test data" button
    * which wants to force-show layers that the user may have turned off). The menu's button
    * highlight, internal state, and persisted localStorage entry all stay in sync, so a
@@ -177,9 +203,26 @@ export class Menu {
   }
 
   private toggle(key: LayerKey) {
-    this.state[key] = !this.state[key];
+    const wasActive = this.state[key];
+    this.state[key] = !wasActive;
+
+    // Overlay-row keys are mutually exclusive: turning one on turns the others off, so the
+    // OverlayLayer only ever shows one variable at a time (matches classic earth-clock).
+    if (OVERLAY_KEYS.includes(key) && this.state[key]) {
+      for (const other of OVERLAY_KEYS) {
+        if (other !== key && this.state[other]) {
+          this.state[other] = false;
+          this.apply(other);
+        }
+      }
+    }
+
     this.apply(key);
     saveState(this.state);
+
+    if (OVERLAY_KEYS.includes(key)) {
+      this.overlayChangeHandler?.(this.activeOverlay());
+    }
   }
 
   private toggleOpen() {
@@ -204,7 +247,17 @@ export class Menu {
       case "fires":       fires.mesh.visible = on; break;
       case "hurricanes":  hurricanes.mesh.visible = on; break;
       case "lightning":   lightning.mesh.visible = on; break;
-      case "mslp":        overlay.mesh.visible = on; break;
+      // The five overlay-row keys share one OverlayLayer; visibility is just "is any
+      // overlay active?" (the data-swap happens in main.ts via onOverlayChange).
+      case "mslp":
+      case "temp":
+      case "rh":
+      case "tpw":
+      case "tcw":
+        // If this was the most-recently-toggled key, its `on` determines visibility.
+        // The mutex logic in `toggle()` has already turned off any others.
+        overlay.mesh.visible = this.activeOverlay() !== null;
+        break;
       case "coastlines":  coastlines.mesh.visible = on; break;
       case "moon":        moon.mesh.visible = on; break;
       case "atmosphere":  atmosphere.mesh.visible = on; break;

@@ -182,6 +182,10 @@ debug.pending("fires",      "fetching FIRMS detections…");
 debug.pending("hurricanes", "fetching NHC CurrentStorms…");
 debug.pending("wind",       "fetching GFS surface wind…");
 debug.pending("mslp",       "fetching GFS MSLP…");
+debug.pending("temp",       "fetching GFS 2 m temperature…");
+debug.pending("rh",         "fetching GFS 2 m RH…");
+debug.pending("tpw",        "fetching GFS TPW…");
+debug.pending("tcw",        "fetching GFS TCW…");
 debug.pending("coastlines", "fetching Natural Earth…");
 
 // User-facing data sources panel (top-right). Lists source + last-fetched age per layer.
@@ -305,30 +309,104 @@ dataSource.getWindGrid(new Date())
     dataRegistry.report("wind", { source: "NOAA GFS surface", error: String(err.message ?? err) });
   });
 
-// MSLP overlay — same JSON pipeline as wind (produced by weather-service.js, refreshed
-// every 6 h server-side). If the user hasn't run weather-service recently the file might
-// 404; we report that to the DataPanel so it's obvious what's missing.
-dataSource.getScalar("mean_sea_level_pressure", new Date())
-  .then(grid => {
-    // GFS MSLP is in Pa; typical range 96 000-104 000 Pa (= 960-1040 hPa). Tightening the
-    // window emphasises the high/low pattern over the absolute floor of the scale.
-    overlay.setData(grid, 96_000, 104_000, "pressure");
-    const validZ = grid.validTime.toISOString().slice(0, 13);
-    debug.info("mslp", `${grid.width}×${grid.height}, valid ${validZ}Z`);
-    dataRegistry.report("mslp", {
-      source: "NOAA GFS MSLP (via earth-clock weather-service)",
-      fetched: new Date(),
-      detail: `valid ${validZ}Z`,
-      refreshSeconds: 6 * 3600,
+// GFS scalar overlays (MSLP / Temp / RH / TPW / TCW) — all produced by
+// weather-service.js, refreshed every 6 h server-side. Pre-fetched once at startup and
+// cached; the menu's "Overlay" row picks which one is currently rendered (mutually
+// exclusive — only one overlay visible at a time, matching classic earth-clock).
+//
+// If a file 404s the user probably hasn't run `npm run weather-service` recently; we
+// report that clearly in the DataPanel so it's obvious what's missing.
+type OverlayCfg = {
+  type: "mean_sea_level_pressure" | "temp" | "relative_humidity"
+      | "total_precipitable_water" | "total_cloud_water";
+  registryKey: string;
+  sourceLabel: string;
+  vmin: number;
+  vmax: number;
+  palette: "pressure" | "temperature" | "humidity" | "water" | "cloud";
+};
+
+// Ranges chosen to emphasise contrast across the typical global distribution rather than
+// the absolute physical range. Easy to tune later via overlay.setData() from the console.
+const OVERLAY_CFGS: Record<"mslp" | "temp" | "rh" | "tpw" | "tcw", OverlayCfg> = {
+  mslp: {
+    type: "mean_sea_level_pressure",
+    registryKey: "mslp",
+    sourceLabel: "NOAA GFS · MSLP",
+    vmin: 96_000, vmax: 104_000, // Pa  →  960–1040 hPa
+    palette: "pressure",
+  },
+  temp: {
+    type: "temp",
+    registryKey: "temp",
+    sourceLabel: "NOAA GFS · 2 m temperature",
+    vmin: 240, vmax: 310,         // K  →  -33 to +37 °C
+    palette: "temperature",
+  },
+  rh: {
+    type: "relative_humidity",
+    registryKey: "rh",
+    sourceLabel: "NOAA GFS · 2 m relative humidity",
+    vmin: 0, vmax: 100,           // %
+    palette: "humidity",
+  },
+  tpw: {
+    type: "total_precipitable_water",
+    registryKey: "tpw",
+    sourceLabel: "NOAA GFS · total precipitable water",
+    vmin: 0, vmax: 70,            // mm
+    palette: "water",
+  },
+  tcw: {
+    type: "total_cloud_water",
+    registryKey: "tcw",
+    sourceLabel: "NOAA GFS · total cloud water",
+    vmin: 0, vmax: 2,             // kg/m²
+    palette: "cloud",
+  },
+};
+
+type OverlayKey = keyof typeof OVERLAY_CFGS;
+const overlayGrids: Partial<Record<OverlayKey, import("./data/DataSource").ScalarGrid>> = {};
+
+(Object.keys(OVERLAY_CFGS) as OverlayKey[]).forEach(key => {
+  const cfg = OVERLAY_CFGS[key];
+  dataSource.getScalar(cfg.type, new Date())
+    .then(grid => {
+      overlayGrids[key] = grid;
+      const validZ = grid.validTime.toISOString().slice(0, 13);
+      debug.info(cfg.registryKey, `${grid.width}×${grid.height}, valid ${validZ}Z`);
+      dataRegistry.report(cfg.registryKey, {
+        source: cfg.sourceLabel,
+        fetched: new Date(),
+        detail: `valid ${validZ}Z`,
+        refreshSeconds: 6 * 3600,
+      });
+      // If this overlay is the one currently selected in the menu, apply its data now.
+      if (menu.activeOverlay() === key) applyActiveOverlay();
+    })
+    .catch(err => {
+      debug.warn(cfg.registryKey, `load failed: ${err.message ?? err} — run \`npm run weather-service\` from the repo root`);
+      dataRegistry.report(cfg.registryKey, {
+        source: cfg.sourceLabel,
+        error: String(err.message ?? err),
+      });
     });
-  })
-  .catch(err => {
-    debug.warn("mslp", `load failed: ${err.message ?? err} — run \`npm run weather-service\` from the repo root`);
-    dataRegistry.report("mslp", {
-      source: "NOAA GFS MSLP",
-      error: String(err.message ?? err),
-    });
-  });
+});
+
+function applyActiveOverlay() {
+  const active = menu.activeOverlay() as OverlayKey | null;
+  if (!active) return;
+  const grid = overlayGrids[active];
+  const cfg = OVERLAY_CFGS[active];
+  if (!grid || !cfg) return; // data may still be loading; will reapply when it arrives
+  overlay.setData(grid, cfg.vmin, cfg.vmax, cfg.palette);
+}
+
+menu.onOverlayChange((active) => {
+  if (active) applyActiveOverlay();
+  // If active is null, overlay.mesh.visible is already false (apply() in Menu handled it).
+});
 
 // Load Natural Earth coastlines (TopoJSON). Renders empty until this resolves.
 fetch("/data/earth-topo.json")
