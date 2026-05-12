@@ -24,35 +24,47 @@ export class LocationPin {
     // ─── 3D pin ────────────────────────────────────────────────────────────
     // Group sits AT the surface point (r=1.0 in the rotating earth's local frame); its
     // local +Y is rotated to point outward, so children at (0, h, 0) extend away from
-    // the planet. Stem and head are children of this group.
+    // the planet. Designed so the surface location stays VISIBLE from any camera angle:
+    //   • Prominent base ring on the surface — the primary marker
+    //   • Thin spike rising vertically — secondary cue, makes the pin read as deliberate
+    //   • Tiny tip at the top — punctuation; small enough that it doesn't occlude the ring
+    //     when looking straight down.
     this.meshGlobe = new THREE.Group();
     this.meshGlobe.visible = false;
 
-    // Stem: thin cylinder from the surface (y=0) to y=0.045. Cylinder geometry's local
-    // origin is at its centre, so we offset upward by half its height.
-    const stemHeight = 0.045;
-    const stemGeom = new THREE.CylinderGeometry(0.004, 0.004, stemHeight, 16);
-    const stemMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.95 });
-    const stem = new THREE.Mesh(stemGeom, stemMat);
-    stem.position.y = stemHeight / 2;
-    this.meshGlobe.add(stem);
-
-    // Head: a sphere at the top of the stem. Bigger than the previous marker so it's
-    // clearly visible at default zoom; emissive look comes from pure-colour MeshBasic.
-    const headGeom = new THREE.SphereGeometry(0.020, 24, 16);
-    const headMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.95 });
-    const head = new THREE.Mesh(headGeom, headMat);
-    head.position.y = stemHeight + 0.020;
-    this.meshGlobe.add(head);
-
-    // Ring at the base: helps mark the exact surface point even when the stem is tilted
-    // toward the camera at oblique viewing angles.
-    const ringGeom = new THREE.TorusGeometry(0.012, 0.0025, 12, 32);
-    const ringMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.85 });
+    // Base ring: prominent torus lying flat on the surface. Wider radius than the stem so
+    // it surrounds the spike, and clearly visible from above-overhead views.
+    const ringGeom = new THREE.TorusGeometry(0.022, 0.003, 12, 40);
+    const ringMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.95 });
     const ring = new THREE.Mesh(ringGeom, ringMat);
-    ring.rotation.x = Math.PI / 2; // lay flat on the surface (torus default is XY plane)
-    ring.position.y = 0.001;       // a hair above to avoid z-fighting with the Earth surface
+    ring.rotation.x = Math.PI / 2; // lay flat (torus default is XY plane → rotate so its plane is XZ)
+    ring.position.y = 0.001;       // a hair above the surface to avoid z-fighting
     this.meshGlobe.add(ring);
+
+    // Inner dot on the surface: a small filled disc at the centre of the ring, makes the
+    // exact point unmistakable. Lies flat with the ring.
+    const dotGeom = new THREE.CircleGeometry(0.008, 24);
+    const dotMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.9 });
+    const dot = new THREE.Mesh(dotGeom, dotMat);
+    dot.rotation.x = -Math.PI / 2; // face outward (away from origin)
+    dot.position.y = 0.002;
+    this.meshGlobe.add(dot);
+
+    // Spike: very thin cylinder rising vertically from the centre. Thin enough not to
+    // visually mask the ring from oblique angles.
+    const spikeHeight = 0.055;
+    const spikeGeom = new THREE.CylinderGeometry(0.0025, 0.0025, spikeHeight, 12);
+    const spikeMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.9 });
+    const spike = new THREE.Mesh(spikeGeom, spikeMat);
+    spike.position.y = spikeHeight / 2;
+    this.meshGlobe.add(spike);
+
+    // Tiny tip at the top of the spike — small enough not to occlude the ring from above.
+    const tipGeom = new THREE.SphereGeometry(0.006, 16, 12);
+    const tipMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.95 });
+    const tip = new THREE.Mesh(tipGeom, tipMat);
+    tip.position.y = spikeHeight + 0.005;
+    this.meshGlobe.add(tip);
 
     // ─── 2D pin (for FlatMap mode) ──────────────────────────────────────────
     // A filled disc with a ring around it — same colour, scaled for the 2 × 1 plane.
