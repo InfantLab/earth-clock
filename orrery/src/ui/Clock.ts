@@ -111,22 +111,22 @@ function injectStyles() {
   stylesInjected = true;
   const css = `
     #orrery-clock {
-      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      position: fixed; top: 16px; left: 16px;
       color: #cfd6e4;
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      text-align: center;
+      text-align: left;
       pointer-events: none;
       z-index: 9;
       user-select: none;
     }
     #orrery-clock.hidden { display: none; }
     .orrery-clock-time {
-      font-size: 36px; line-height: 1;
+      font-size: 32px; line-height: 1;
       letter-spacing: 0.04em;
       text-shadow: 0 1px 4px rgba(0,0,0,0.6);
     }
     .orrery-clock-meta {
-      font-size: 13px;
+      font-size: 12px;
       color: #8a93a7;
       margin-top: 4px;
       letter-spacing: 0.04em;

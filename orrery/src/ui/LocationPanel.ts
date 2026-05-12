@@ -100,8 +100,12 @@ function injectStyles() {
   if (stylesInjected) return;
   stylesInjected = true;
   const css = `
+    /* Sits below the top-left Clock (32 px time + 12 px meta + padding ≈ 80 px tall) so
+       both can occupy the top-left column without overlap. If the user disables Clock
+       there's a small gap above this panel — acceptable for a v1; a future layout pass
+       can put both into a shared flex column. */
     #orrery-location {
-      position: fixed; top: 16px; left: 16px;
+      position: fixed; top: 96px; left: 16px;
       background: rgba(5, 10, 30, 0.82);
       color: #cfd6e4;
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
