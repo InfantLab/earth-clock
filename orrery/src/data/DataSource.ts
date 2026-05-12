@@ -25,19 +25,39 @@ export type OverlayType =
   | "wind"
   | "temp"
   | "relative_humidity"
+  | "air_density"
   | "total_precipitable_water"
   | "total_cloud_water"
   | "mean_sea_level_pressure";
 
+/**
+ * Single-band scalar lon/lat grid — same shape as `WindGrid` minus the second component.
+ * Used for every non-wind overlay: temperature, RH, MSLP, TPW, TCW, air density.
+ */
+export interface ScalarGrid {
+  readonly width: number;       // nx
+  readonly height: number;      // ny
+  readonly lo1: number;
+  readonly la1: number;
+  readonly dx: number;
+  readonly dy: number;
+  readonly data: Float32Array;  // packed [width*height]
+  readonly validTime: Date;
+  readonly parameterName: string;
+  readonly parameterUnit: string;
+}
+
 export interface DataSource {
   getWindGrid(time: Date): Promise<WindGrid>;
-  getOverlay(type: OverlayType, time: Date): Promise<Float32Array>;
+  getScalar(type: Exclude<OverlayType, "wind">, time: Date): Promise<ScalarGrid>;
 }
 
 // Minimal shape of a single GFS-JSON record (cambecc/earth format).
 interface GfsRecord {
   header: {
     parameterNumber: number;       // 2 = U, 3 = V
+    parameterNumberName?: string;
+    parameterUnit?: string;
     nx: number;
     ny: number;
     lo1: number;
@@ -49,6 +69,16 @@ interface GfsRecord {
   };
   data: (number | null)[];
 }
+
+/** Map an overlay type to the JSON filename produced by `weather-service.js`. */
+const SCALAR_FILENAME: Record<Exclude<OverlayType, "wind">, string> = {
+  temp:                       "current-temp-surface-level-gfs-1.0.json",
+  relative_humidity:          "current-relative_humidity-surface-level-gfs-1.0.json",
+  air_density:                "current-air_density-surface-level-gfs-1.0.json",
+  total_precipitable_water:   "current-total_precipitable_water-gfs-1.0.json",
+  total_cloud_water:          "current-total_cloud_water-gfs-1.0.json",
+  mean_sea_level_pressure:    "current-mean_sea_level_pressure-gfs-1.0.json",
+};
 
 export class LiveDataSource implements DataSource {
   readonly baseUrl: string;
@@ -79,8 +109,31 @@ export class LiveDataSource implements DataSource {
     return { width: nx, height: ny, lo1, la1, dx, dy, u, v, validTime: valid };
   }
 
-  async getOverlay(_type: OverlayType, _time: Date): Promise<Float32Array> {
-    throw new Error("LiveDataSource.getOverlay: not yet implemented");
+  async getScalar(type: Exclude<OverlayType, "wind">, _time: Date): Promise<ScalarGrid> {
+    const filename = SCALAR_FILENAME[type];
+    if (!filename) throw new Error(`Unknown scalar overlay type: ${type}`);
+    const url = `${this.baseUrl}/weather/current/${filename}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Scalar ${type} fetch failed: ${res.status} ${res.statusText}`);
+    const records = (await res.json()) as GfsRecord[];
+    if (!records.length) throw new Error(`Scalar ${type}: empty records`);
+
+    const rec = records[0];
+    const { nx, ny, lo1, la1, dx, dy, refTime, forecastTime } = rec.header;
+    const data = nullSafeFloat32(rec.data);
+    if (data.length !== nx * ny) {
+      throw new Error(`Scalar ${type} data length ${data.length} ≠ nx*ny ${nx * ny}`);
+    }
+
+    const valid = new Date(refTime);
+    valid.setUTCHours(valid.getUTCHours() + (forecastTime ?? 0));
+
+    return {
+      width: nx, height: ny, lo1, la1, dx, dy, data,
+      validTime: valid,
+      parameterName: rec.header.parameterNumberName ?? type,
+      parameterUnit: rec.header.parameterUnit ?? "",
+    };
   }
 }
 

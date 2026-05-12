@@ -11,6 +11,7 @@ import { AuroraLayer } from "./scene/AuroraLayer";
 import { FireLayer } from "./scene/FireLayer";
 import { HurricaneLayer } from "./scene/HurricaneLayer";
 import { LightningLayer } from "./scene/LightningLayer";
+import { OverlayLayer } from "./scene/OverlayLayer";
 import { FlatMap } from "./scene/FlatMap";
 import { LocationPin } from "./scene/LocationPin";
 import { Menu } from "./ui/Menu";
@@ -87,6 +88,11 @@ scene.add(hurricanes.mesh);
 const lightning = new LightningLayer();
 scene.add(lightning.mesh);
 
+// Mean Sea Level Pressure overlay — first of the GFS scalar overlays (Temp, RH, TPW, TCW
+// will follow the same pattern). Translucent shell at r=1.006; hidden until data loads.
+const overlay = new OverlayLayer(1.006);
+scene.add(overlay.mesh);
+
 // Equirectangular flat-map mode. Owns its own scene + ortho camera; rendered instead of the
 // 3D scene when the menu's "Map" toggle is on. v1 has day + night + clouds + terminator;
 // aurora/fires/hurricanes/wind in flat-map are deferred (see PLAN.md).
@@ -150,12 +156,13 @@ declare global {
       fires: FireLayer;
       hurricanes: HurricaneLayer;
       lightning: LightningLayer;
+      overlay: OverlayLayer;
     };
   }
 }
 
 // Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, lightning };
+window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, lightning, overlay };
 
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
 // Static / bundled assets are reported up-front so they appear in the panel without waiting.
@@ -174,6 +181,7 @@ debug.pending("kp",         "fetching SWPC K-index…");
 debug.pending("fires",      "fetching FIRMS detections…");
 debug.pending("hurricanes", "fetching NHC CurrentStorms…");
 debug.pending("wind",       "fetching GFS surface wind…");
+debug.pending("mslp",       "fetching GFS MSLP…");
 debug.pending("coastlines", "fetching Natural Earth…");
 
 // User-facing data sources panel (top-right). Lists source + last-fetched age per layer.
@@ -190,7 +198,7 @@ const locationPanel = new LocationPanel(document.body);
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
-  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, lightning, flatMap },
+  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, lightning, overlay, flatMap },
   { debug, data: dataPanel, clock, location: locationPanel },
 );
 
@@ -295,6 +303,31 @@ dataSource.getWindGrid(new Date())
   .catch(err => {
     debug.warn("wind", `load failed: ${err.message ?? err}`);
     dataRegistry.report("wind", { source: "NOAA GFS surface", error: String(err.message ?? err) });
+  });
+
+// MSLP overlay — same JSON pipeline as wind (produced by weather-service.js, refreshed
+// every 6 h server-side). If the user hasn't run weather-service recently the file might
+// 404; we report that to the DataPanel so it's obvious what's missing.
+dataSource.getScalar("mean_sea_level_pressure", new Date())
+  .then(grid => {
+    // GFS MSLP is in Pa; typical range 96 000-104 000 Pa (= 960-1040 hPa). Tightening the
+    // window emphasises the high/low pattern over the absolute floor of the scale.
+    overlay.setData(grid, 96_000, 104_000, "pressure");
+    const validZ = grid.validTime.toISOString().slice(0, 13);
+    debug.info("mslp", `${grid.width}×${grid.height}, valid ${validZ}Z`);
+    dataRegistry.report("mslp", {
+      source: "NOAA GFS MSLP (via earth-clock weather-service)",
+      fetched: new Date(),
+      detail: `valid ${validZ}Z`,
+      refreshSeconds: 6 * 3600,
+    });
+  })
+  .catch(err => {
+    debug.warn("mslp", `load failed: ${err.message ?? err} — run \`npm run weather-service\` from the repo root`);
+    dataRegistry.report("mslp", {
+      source: "NOAA GFS MSLP",
+      error: String(err.message ?? err),
+    });
   });
 
 // Load Natural Earth coastlines (TopoJSON). Renders empty until this resolves.
@@ -533,6 +566,7 @@ function updateAstro() {
   fires.setRotationY(earthY);
   hurricanes.setRotationY(earthY);
   lightning.setRotationY(earthY);
+  overlay.setRotationY(earthY);
   // Aurora data is in geographic lat/lon for the forecast time, so it shares Earth's spin.
   // Drift between 5-min fetches is <1.3° and gets corrected next refresh.
   aurora.setRotationY(earthY);
