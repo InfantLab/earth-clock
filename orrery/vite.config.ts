@@ -7,12 +7,21 @@ import { createReadStream, statSync, existsSync } from "fs";
 const classicDataDir = resolve(__dirname, "../public/data");
 
 // Build output goes into ../public/orrery/ so it's served at /orrery/ alongside the classic app.
-// When orrery becomes the default, change `outDir` to "../public" and move classic to /classic/.
+// When orrery is ready to become the default, set BUILD_AS_ROOT=1 to target ../public
+// directly — the classic site should already be relocated to ../public/classic/ at that
+// point. See docs/cutover.md for the full deploy procedure.
+const BUILD_AS_ROOT = process.env.BUILD_AS_ROOT === "1";
+const outDir = BUILD_AS_ROOT
+  ? resolve(__dirname, "../public")
+  : resolve(__dirname, "../public/orrery");
+
 export default defineConfig({
   base: "./",
   build: {
-    outDir: resolve(__dirname, "../public/orrery"),
-    emptyOutDir: true,
+    outDir,
+    // emptyOutDir is dangerous when building to ../public (would wipe everything including
+    // the classic site we just relocated). Only safe in the /orrery subdirectory mode.
+    emptyOutDir: !BUILD_AS_ROOT,
     target: "es2022",
     sourcemap: true,
   },
