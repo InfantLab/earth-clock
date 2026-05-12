@@ -154,24 +154,30 @@ Architecture decision still open: each existing layer gets a `setMapMode(b)` hoo
 
 ---
 
-## Phase B — Needs server-side GRIB2 proxy
+## Phase B — Needs server-side GRIB2 decode
 
-One small Cloudflare Worker / Vercel Edge Function running `eccodes-wasm` unlocks all of these.
-Once built, the worker also enables ECMWF AIFS and GraphCast-GFS (AI weather forecasts).
+Classic earth-clock had Temp, RH, MSLP, TPW, TCW, AD, WPD overlays — all from GFS GRIB2 records, decoded by the legacy `weather-service.js` (only currently extracts surface wind). orrery needs these back; two paths to consider.
 
-### ⬜ GRIB2 decode proxy
-- Input: NOAA NOMADS URL (GFS 0.25° or 0.5°)
-- Output: JSON matching existing `current-wind-surface-level-gfs-1.0.json` schema for any variable
-- Deploy as `grib.earth-clock.onemonkey.org` (Cloudflare Worker)
+### ⬜ Path A — extend the existing `weather-service.js` (recommended first step)
+- The existing Node service already downloads GFS GRIB2 from NOMADS. Adding more variables is a config change + a few more `grib2json` invocations: write companion `.json` files alongside the existing wind one (e.g. `current-temp-surface-gfs-1.0.json`, `current-mslp-gfs-1.0.json`).
+- orrery side: a new loader per variable (re-uses the wind-grid → texture pipeline) and a coloured-texture overlay layer per variable, switchable from the menu.
+- Pros: keeps the proven server pipeline; ships features fast; no new infra.
+- Cons: doesn't unlock AI weather (GraphCast, AIFS) which want different GRIB2 fields and frequencies.
+- **Effort: ~1-2 days** to get MSLP + temperature + RH + TPW + TCW back. Worth doing **before** the eclipse / production cutover so feature parity with classic is restored.
+
+### ⬜ Path B — GRIB2 decode proxy (Cloudflare Worker, `eccodes-wasm`)
+- One small Worker / Vercel Edge Function running `eccodes-wasm` unlocks **every** GRIB2 field including ECMWF AIFS and Google GraphCast (AI weather forecasts) — not just the classic GFS subset.
+- Input: NOAA NOMADS URL (GFS 0.25° or 0.5°). Output: JSON matching existing `current-wind-surface-level-gfs-1.0.json` schema for any variable.
+- Deploy as `grib.earth-clock.onemonkey.org` (Cloudflare Worker).
+- Pros: future-proof; in-browser decode means we're not pre-committed to which fields are exposed; AI weather inclusion.
+- Cons: more new infra to maintain; eccodes-wasm is large (~5 MB); not strictly needed if Path A covers our overlays.
+- **Build Path B after** Path A's feature parity is shipped.
 
 ### ⬜ Multi-altitude wind layers (pressure levels)
-- GFS 250/500/700/850/925 hPa → switchable altitude bands
-
-### ⬜ Temperature / RH / MSLP / TPW overlays
-- Standard GFS fields → color-mapped texture overlay
+- GFS 250/500/700/850/925 hPa → switchable altitude bands. Same Particles pipeline as surface wind, different texture per altitude. Falls out of either Path A or B.
 
 ### ⬜ OSCAR ocean surface currents
-- `https://podaac-opendap.jpl.nasa.gov/...` — needs Earthdata auth (server-side only)
+- `https://podaac-opendap.jpl.nasa.gov/...` — needs Earthdata auth (server-side only). Routed through the same NGINX/Worker proxy used for NHC.
 
 ---
 

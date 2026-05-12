@@ -199,6 +199,15 @@ locationPanel.onClear(() => {
   locationPanel.reset();
 });
 
+// "Use my location" button on the LocationPanel → drop the pin at the browser's reported
+// (lat, lon). Same code path as a click on the globe.
+locationPanel.onGeolocate((lat, lon) => {
+  locationPin.setLocation(lat, lon);
+  locationPin.setVisible(true);
+  locationPanel.setLocation(lat, lon);
+  console.log(`[earth-clock] pinned via geolocation: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
+});
+
 // Click-to-pin location handler. Only fires on simple clicks (not drags) — OrbitControls
 // uses mousedown+move for orbit and never fires "click" if the pointer moved past its
 // threshold. In globe mode we raycast against the Earth's day mesh and convert the world-

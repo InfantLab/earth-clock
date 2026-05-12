@@ -1,7 +1,7 @@
 /**
  * Collapsible bottom-left layer menu, modelled on the classic earth-clock menu.
  *
- * Click the "orrery" wordmark to expand the panel. Each layer is a "text-button" that toggles
+ * Click the "earth-clock" wordmark to expand the panel. Each layer is a "text-button" that toggles
  * a boolean — yellow when active, grey when off, white on hover. The brand wordmark stays
  * visible at all times (it's also the open/close affordance), but expands into the panel below.
  *
@@ -100,7 +100,7 @@ export class Menu {
     root.id = "orrery-ui";
     root.innerHTML = `
       <div class="orrery-brand-row">
-        <span class="orrery-brand" id="orrery-brand" title="menu">orrery</span>
+        <span class="orrery-brand" id="orrery-brand" title="menu">earth-clock</span>
       </div>
       <div class="orrery-menu${this.open ? "" : " collapsed"}" id="orrery-menu">
         <div id="orrery-menu-categories"></div>
