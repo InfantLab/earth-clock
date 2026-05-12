@@ -188,7 +188,14 @@ Classic earth-clock had Temp, RH, MSLP, TPW, TCW, AD, WPD overlays — all from 
 - **Real star skybox** (Tycho-2 / Deepstar catalogue at >100 k stars)
 - **Full solar system** — planets, their moons, ecliptic plane
 - **Wallpaper Engine** output mode — replace `BundledDataSource` stub with real fetches
-- **Camera paths through space** ← *new, needs design*
+- **Camera paths through space** ← *v1 landed (gentle auto-orbit); rest TODO*
+  - ✅ **v1: gentle auto-orbit** — uses OrbitControls' built-in `autoRotate` at speed 0.4 (~150 s per orbit). Toggle "Orbit" in the menu's View row. Pauses automatically while the user is actively dragging the mouse, so input handover is implicit. `src/scene/CameraPath.ts` defines an interface stub for the bigger paths to plug into.
+  - ⬜ **ISS viewpoint** — TLE + SGP4 propagator → real ISS position (~408 km × 51.6° inclination), camera follows.
+  - ⬜ **Sub-lunar / Earthrise** — camera at moon's current world position, looking back at Earth. Apollo 8 frame.
+  - ⬜ **Heliocentric** — camera fixed in inertial frame, watches Earth orbit + spin (heavy time-warp required to be cinematic).
+  - ⬜ **Geosync** — locked equatorial, follows a chosen longitude.
+  - ⬜ **L1 / DSCOVR / EPIC** — always between sun and Earth.
+  - ⬜ **Free-fly** — WASD + mouse, ignores orbital mechanics.
   - The classic earth-clock had a gentle auto-rotate; orrery's OrbitControls is more capable but feels static when idle. The opportunity: make orrery something that *moves* — like an animated photograph of the planet as seen from various vantage points.
   - Future-proof shape: a `CameraPath` abstraction — a parametric function `t → { position, lookAt, up }` evaluated each frame. The animate loop interpolates path state into the camera; OrbitControls can be temporarily disabled and re-enabled for manual control.
   - Concrete paths to support:

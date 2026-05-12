@@ -53,7 +53,7 @@ type LayerKey =
   | "coastlines" | "terminator" | "nightLights"
   | "moon" | "atmosphere"
   | "mslp" | "temp" | "rh" | "tpw" | "tcw"
-  | "map" | "clock" | "data" | "location" | "debug";
+  | "map" | "orbit" | "clock" | "data" | "location" | "debug";
 
 const STORAGE_KEY = "orrery.menu.v1";
 const DEFAULTS: Record<LayerKey, boolean> = {
@@ -61,7 +61,7 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   coastlines: true, terminator: true, nightLights: true,
   moon: true, atmosphere: true,
   mslp: false, temp: false, rh: false, tpw: false, tcw: false,
-  map: false, clock: true, data: false, location: false, debug: false,
+  map: false, orbit: false, clock: true, data: false, location: false, debug: false,
 };
 
 const LABELS: Record<LayerKey, string> = {
@@ -70,7 +70,8 @@ const LABELS: Record<LayerKey, string> = {
   terminator: "Terminator", nightLights: "Night lights",
   moon: "Moon", atmosphere: "Atmosphere",
   mslp: "MSLP", temp: "Temp", rh: "RH", tpw: "TPW", tcw: "TCW",
-  map: "Map", clock: "Clock", data: "Data", location: "Location", debug: "Debug",
+  map: "Map", orbit: "Orbit",
+  clock: "Clock", data: "Data", location: "Location", debug: "Debug",
 };
 
 /**
@@ -92,7 +93,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "View",
-    keys: ["map", "clock", "data", "location", "debug"],
+    keys: ["map", "orbit", "clock", "data", "location", "debug"],
   },
 ];
 
@@ -166,6 +167,11 @@ export class Menu {
   /** True when the user has enabled click-to-pin location mode. */
   isLocationActive(): boolean {
     return this.state.location;
+  }
+
+  /** True when the gentle auto-orbit is enabled (drives OrbitControls.autoRotate). */
+  isAutoOrbit(): boolean {
+    return this.state.orbit;
   }
 
   /**
@@ -275,6 +281,7 @@ export class Menu {
         break;
       case "wind":        /* consumed by main loop via isWindVisible() */ break;
       case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
+      case "orbit":       /* consumed by main loop via isAutoOrbit() → controls.autoRotate */ break;
       case "clock":       this.panels.clock?.setVisible(on); break;
       case "data":        this.panels.data?.setVisible(on); break;
       case "location":    this.panels.location?.setVisible(on); break;

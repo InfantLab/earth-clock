@@ -711,6 +711,10 @@ function animate(t: number) {
   fires.setTime(t / 1000);
   hurricanes.setTime(t / 1000);
   lightning.setTime(t / 1000);
+  // OrbitControls' built-in autoRotate. Three.js pauses it automatically while the user is
+  // actively dragging, so input handover is implicit; we just keep the flag in sync with
+  // the menu toggle each frame.
+  controls.autoRotate = menu.isAutoOrbit();
   controls.update();
   if (menu.isMapMode()) {
     // Flat equirectangular mode — render the FlatMap scene only. Aurora/fires/hurricanes/wind
