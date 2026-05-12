@@ -25,6 +25,12 @@ export interface Storm {
   movementSpeedKt: number;
   /** ISO-8601 string of NHC's last advisory time, or empty if not provided. */
   lastUpdate: string;
+  /** Optional KMZ URL for the forecast cone (5-day uncertainty envelope). */
+  forecastConeKmz?: string;
+  /** Optional KMZ URL for the forecast track polyline. */
+  forecastTrackKmz?: string;
+  /** Optional KMZ URL for the past-track / best-track polyline. */
+  bestTrackKmz?: string;
 }
 
 export interface StormGrid {
@@ -64,6 +70,11 @@ export async function fetchActiveStorms(): Promise<StormGrid> {
       movementDir:     parseFloat(raw.movementDir)   || NaN,
       movementSpeedKt: parseFloat(raw.movementSpeed) || 0,
       lastUpdate:      String(raw.lastUpdate ?? ""),
+      // KMZ track/cone URLs. NHC presents these as `{ kmzFile, zipFile, gisFile }` triples
+      // for each geometry kind; we want the .kmz which contains a simple KML.
+      forecastConeKmz:  pickKmz(raw.forecastCone),
+      forecastTrackKmz: pickKmz(raw.forecastTrack),
+      bestTrackKmz:     pickKmz(raw.bestTrack),
     });
   }
 
@@ -74,6 +85,14 @@ export async function fetchActiveStorms(): Promise<StormGrid> {
  * Resolve a coordinate from NHC's two-format convention: prefer the numeric field, otherwise
  * parse the string form like "21.6N" / "94.4W". Returns NaN on failure so callers can filter.
  */
+function pickKmz(obj: unknown): string | undefined {
+  if (obj && typeof obj === "object" && "kmzFile" in obj) {
+    const v = (obj as { kmzFile: unknown }).kmzFile;
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return undefined;
+}
+
 function parseLatLon(numeric: unknown, str: unknown): number {
   if (typeof numeric === "number" && Number.isFinite(numeric)) return numeric;
   if (typeof numeric === "string") {

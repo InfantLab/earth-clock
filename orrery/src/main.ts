@@ -10,6 +10,8 @@ import { CloudLayer } from "./scene/CloudLayer";
 import { AuroraLayer } from "./scene/AuroraLayer";
 import { FireLayer } from "./scene/FireLayer";
 import { HurricaneLayer } from "./scene/HurricaneLayer";
+import { HurricaneTrackLayer } from "./scene/HurricaneTrackLayer";
+import type { StormGeometry } from "./scene/HurricaneTrackLayer";
 import { LightningLayer } from "./scene/LightningLayer";
 import { OverlayLayer } from "./scene/OverlayLayer";
 import { FlatMap } from "./scene/FlatMap";
@@ -25,6 +27,7 @@ import { fetchAuroraGrid } from "./data/auroraLoader";
 import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoader";
 import { fetchFireDetections } from "./data/firmsLoader";
 import { fetchActiveStorms } from "./data/nhcLoader";
+import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { LightningLoader } from "./data/lightningLoader";
 import { windGridToTexture } from "./data/windToTexture";
 import { fetchGibsTexture, bestAvailableDailyDate } from "./data/gibsLoader";
@@ -87,6 +90,13 @@ scene.add(hurricanes.mesh);
 // strikes appear as bright additive flashes that fade over ~0.6 s.
 const lightning = new LightningLayer();
 scene.add(lightning.mesh);
+
+// Hurricane tracks + cones — past best-track polyline, forecast track, and 5-day
+// uncertainty cone polygon per active storm. Loaded from NHC KMZ files on demand when
+// the storm list arrives. Empty off-season; populates automatically once Atlantic /
+// Eastern Pacific season starts.
+const hurricaneTracks = new HurricaneTrackLayer();
+scene.add(hurricaneTracks.mesh);
 
 // Mean Sea Level Pressure overlay — first of the GFS scalar overlays (Temp, RH, TPW, TCW
 // will follow the same pattern). Translucent shell at r=1.006; hidden until data loads.
@@ -155,6 +165,7 @@ declare global {
       aurora: AuroraLayer;
       fires: FireLayer;
       hurricanes: HurricaneLayer;
+      hurricaneTracks: HurricaneTrackLayer;
       lightning: LightningLayer;
       overlay: OverlayLayer;
     };
@@ -162,7 +173,7 @@ declare global {
 }
 
 // Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, lightning, overlay };
+window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay };
 
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
 // Static / bundled assets are reported up-front so they appear in the panel without waiting.
@@ -202,7 +213,7 @@ const locationPanel = new LocationPanel(document.body);
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
-  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, lightning, overlay, flatMap },
+  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, flatMap },
   { debug, data: dataPanel, clock, location: locationPanel },
 );
 
@@ -513,6 +524,9 @@ function loadHurricanes() {
           detail: `${grid.storms.length} active`,
           refreshSeconds: 15 * 60,
         });
+        // Kick off per-storm KMZ fetches in parallel. Failures on individual KMZs don't
+        // hold up other storms; the track layer just renders whatever resolved successfully.
+        loadHurricaneTracks(grid.storms);
       } else {
         debug.info("hurricanes", "no active storms (off-season)");
         dataRegistry.report("hurricanes", {
@@ -521,6 +535,7 @@ function loadHurricanes() {
           detail: "no active storms (off-season)",
           refreshSeconds: 15 * 60,
         });
+        hurricaneTracks.update([]); // clear any stale geometry
       }
     })
     .catch(err => {
@@ -530,6 +545,44 @@ function loadHurricanes() {
 }
 loadHurricanes();
 setInterval(loadHurricanes, 15 * 60 * 1000);
+
+async function loadHurricaneTracks(storms: import("./data/nhcLoader").Storm[]) {
+  const results = await Promise.all(storms.map(async (s): Promise<StormGeometry> => {
+    const sg: StormGeometry = { stormId: s.id };
+    // Run the three KMZ fetches in parallel for this storm; tolerate individual failures.
+    const fetchOne = async (url: string | undefined) => {
+      if (!url) return undefined;
+      try { return await fetchAndParseKmz(rewriteNhcUrl(url)); }
+      catch (err) {
+        debug.warn(`tracks:${s.id}`, `KMZ failed: ${(err as Error).message}`);
+        return undefined;
+      }
+    };
+    const [bt, ft, fc] = await Promise.all([
+      fetchOne(s.bestTrackKmz),
+      fetchOne(s.forecastTrackKmz),
+      fetchOne(s.forecastConeKmz),
+    ]);
+    if (bt) sg.bestTrack = bt;
+    if (ft) sg.forecastTrack = ft;
+    if (fc) sg.forecastCone = fc;
+    return sg;
+  }));
+  hurricaneTracks.update(results);
+  const totalGeoms = results.reduce(
+    (n, sg) => n + (sg.bestTrack?.length ?? 0) + (sg.forecastTrack?.length ?? 0) + (sg.forecastCone?.length ?? 0),
+    0,
+  );
+  if (totalGeoms > 0) {
+    debug.info("hurricane-tracks", `${results.length} storms, ${totalGeoms} geometry parts`);
+    dataRegistry.report("storm-tracks", {
+      source: "NHC · per-storm KMZ (track + cone)",
+      fetched: new Date(),
+      detail: `${results.length} storms · ${totalGeoms} geometry parts`,
+      refreshSeconds: 15 * 60,
+    });
+  }
+}
 
 // Real-time lightning strikes via Blitzortung's community WebSocket. We hold the strikes
 // rate as a rolling 60-second count for the DataPanel readout. The loader auto-reconnects
@@ -643,6 +696,7 @@ function updateAstro() {
   clouds.setSunDirection(sunDir);
   fires.setRotationY(earthY);
   hurricanes.setRotationY(earthY);
+  hurricaneTracks.setRotationY(earthY);
   lightning.setRotationY(earthY);
   overlay.setRotationY(earthY);
   // Aurora data is in geographic lat/lon for the forecast time, so it shares Earth's spin.
