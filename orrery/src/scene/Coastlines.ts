@@ -28,8 +28,11 @@ const AXIAL_TILT = 23.44 * Math.PI / 180;
  */
 export class Coastlines {
   readonly mesh: THREE.Group;
+  /** Flat-map version: same coastlines rendered in plane (u, v) coords for the FlatMap scene. */
+  readonly flatMesh: THREE.LineSegments;
   private readonly lines: THREE.LineSegments;
   private readonly material: THREE.LineBasicMaterial;
+  private readonly flatMaterial: THREE.LineBasicMaterial;
 
   constructor() {
     const geometry = new THREE.BufferGeometry();
@@ -47,6 +50,19 @@ export class Coastlines {
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
     this.mesh.add(this.lines);
+
+    // Flat-map coastlines: same decoded TopoJSON, projected to (u, v) on the 2×1 plane.
+    // Stronger opacity than the globe version because there's no Phong-shaded surface
+    // beneath to compete for visual weight.
+    const flatGeom = new THREE.BufferGeometry();
+    flatGeom.setAttribute("position", new THREE.Float32BufferAttribute([], 3));
+    this.flatMaterial = new THREE.LineBasicMaterial({
+      color: 0xb0c0e0,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    this.flatMesh = new THREE.LineSegments(flatGeom, this.flatMaterial);
   }
 
   /** Build LineSegments from one of the topology's GeometryCollections (e.g. "coastline_50m"). */
@@ -80,10 +96,12 @@ export class Coastlines {
     };
 
     const positions: number[] = [];
+    const flatPositions: number[] = []; // (x, y, z=0) on the 2×1 plane
     const a: [number, number, number] = [0, 0, 0];
     const b: [number, number, number] = [0, 0, 0];
 
-    // Walk a chain of arcs into a single line strip, then emit LineSegments pairs.
+    // Walk a chain of arcs into a single line strip, then emit LineSegments pairs for both
+    // the sphere (xyz) and the flat map (u, v at z=0).
     const emitChain = (arcIndices: number[]) => {
       let chain: number[][] = [];
       for (const ai of arcIndices) {
@@ -92,9 +110,22 @@ export class Coastlines {
         else chain.push(...arcPts.slice(1)); // skip duplicate at junction
       }
       for (let i = 1; i < chain.length; i++) {
-        lonLatToXYZ(chain[i - 1][0], chain[i - 1][1], a);
-        lonLatToXYZ(chain[i][0],     chain[i][1],     b);
+        const lonA = chain[i - 1][0], latA = chain[i - 1][1];
+        const lonB = chain[i][0],     latB = chain[i][1];
+
+        // Sphere version
+        lonLatToXYZ(lonA, latA, a);
+        lonLatToXYZ(lonB, latB, b);
         positions.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+
+        // Flat-map version: skip segments that span the antimeridian, otherwise they'd
+        // draw a horizontal line straight across the map (visually wrong even though
+        // technically correct since lon=179 → lon=-179 wraps). Real coastlines almost
+        // never cross ±180°; the handful that do (Fiji, Wrangel Island, Aleutians) are
+        // small. A future v2 can split these properly at the seam.
+        if (Math.abs(lonB - lonA) > 180) continue;
+        flatPositions.push(lonA / 180, latA / 180, 0,
+                           lonB / 180, latB / 180, 0);
       }
     };
 
@@ -110,6 +141,11 @@ export class Coastlines {
     geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     this.lines.geometry.dispose();
     this.lines.geometry = geom;
+
+    const flatGeom = new THREE.BufferGeometry();
+    flatGeom.setAttribute("position", new THREE.Float32BufferAttribute(flatPositions, 3));
+    this.flatMesh.geometry.dispose();
+    this.flatMesh.geometry = flatGeom;
   }
 
   /** Match Earth's daily spin so coastlines stay glued to the ground. */

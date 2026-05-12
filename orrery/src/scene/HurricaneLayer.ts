@@ -17,9 +17,12 @@ const AXIAL_TILT = 23.44 * Math.PI / 180;
  */
 export class HurricaneLayer {
   readonly mesh: THREE.Group;
+  /** Flat-map mirror: same shader, positions are (lon/180, lat/180, 0) on the 2×1 plane. */
+  readonly flatMesh: THREE.Points;
   private readonly points: THREE.Points;
   private readonly material: THREE.ShaderMaterial;
   private readonly posAttr: THREE.BufferAttribute;
+  private readonly flatPosAttr: THREE.BufferAttribute;
   private readonly intensityAttr: THREE.BufferAttribute;
   private readonly hashAttr: THREE.BufferAttribute;
 
@@ -43,6 +46,16 @@ export class HurricaneLayer {
     geometry.setAttribute("aIntensity", this.intensityAttr);
     geometry.setAttribute("aHash", this.hashAttr);
     geometry.setDrawRange(0, 0);
+
+    // Flat-map geometry: shares intensity + hash attrs with the sphere geometry.
+    const flatGeom = new THREE.BufferGeometry();
+    const flatPositions = new Float32Array(HurricaneLayer.MAX_STORMS * 3);
+    this.flatPosAttr = new THREE.BufferAttribute(flatPositions, 3);
+    this.flatPosAttr.setUsage(THREE.DynamicDrawUsage);
+    flatGeom.setAttribute("position", this.flatPosAttr);
+    flatGeom.setAttribute("aIntensity", this.intensityAttr);
+    flatGeom.setAttribute("aHash", this.hashAttr);
+    flatGeom.setDrawRange(0, 0);
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
@@ -132,6 +145,8 @@ export class HurricaneLayer {
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
     this.mesh.add(this.points);
+
+    this.flatMesh = new THREE.Points(flatGeom, this.material);
   }
 
   /** Replace storm data from a fresh NHC fetch. Empty array → nothing drawn. */
@@ -139,6 +154,7 @@ export class HurricaneLayer {
     const R = this.RADIUS;
     const n = Math.min(grid.storms.length, HurricaneLayer.MAX_STORMS);
     const pos  = this.posAttr.array as Float32Array;
+    const flat = this.flatPosAttr.array as Float32Array;
     const intn = this.intensityAttr.array as Float32Array;
     const hash = this.hashAttr.array as Float32Array;
 
@@ -151,15 +167,20 @@ export class HurricaneLayer {
       pos[i * 3 + 0] =  R * cosLat * Math.cos(lonRad);
       pos[i * 3 + 1] =  R * Math.sin(latRad);
       pos[i * 3 + 2] = -R * cosLat * Math.sin(lonRad);
+      flat[i * 3 + 0] = s.lon / 180;
+      flat[i * 3 + 1] = s.lat / 180;
+      flat[i * 3 + 2] = 0.002;
       intn[i] = s.intensityKt;
       // Stable per-storm hash from id (so spiral rotation phase is consistent across reloads)
       hash[i] = Math.abs(hashString(s.id)) % 1;
     }
 
     this.posAttr.needsUpdate       = true;
+    this.flatPosAttr.needsUpdate   = true;
     this.intensityAttr.needsUpdate = true;
     this.hashAttr.needsUpdate      = true;
     this.points.geometry.setDrawRange(0, n);
+    this.flatMesh.geometry.setDrawRange(0, n);
   }
 
   setRotationY(angle: number) {

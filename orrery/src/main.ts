@@ -66,6 +66,7 @@ const moon = new Moon();
 scene.add(moon.mesh);
 
 // Coastlines (Natural Earth, 50m resolution). Loaded async from /data/earth-topo.json.
+// Both representations: 3D sphere (mesh) and flat-map plane (flatMesh).
 const coastlines = new Coastlines();
 scene.add(coastlines.mesh);
 
@@ -147,6 +148,10 @@ flatMap.resize(window.innerWidth, window.innerHeight);
 const locationPin = new LocationPin();
 globe.attachToEarth(locationPin.meshGlobe);
 flatMap.scene.add(locationPin.meshFlat);
+flatMap.scene.add(coastlines.flatMesh);
+flatMap.scene.add(fires.flatMesh);
+flatMap.scene.add(hurricanes.flatMesh);
+flatMap.scene.add(lightning.flatMesh);
 
 // GPU wind particles. Live-tune from the console:
 //   __orrery.particles.setSpeed(0.05) / setPointSize(3) / setAlpha(0.4)

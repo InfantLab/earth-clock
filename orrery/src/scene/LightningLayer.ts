@@ -19,9 +19,12 @@ const AXIAL_TILT = 23.44 * Math.PI / 180;
  */
 export class LightningLayer {
   readonly mesh: THREE.Group;
+  /** Flat-map mirror: same shader, positions are (lon/180, lat/180, 0) on the 2×1 plane. */
+  readonly flatMesh: THREE.Points;
   private readonly points: THREE.Points;
   private readonly material: THREE.ShaderMaterial;
   private readonly posAttr: THREE.BufferAttribute;
+  private readonly flatPosAttr: THREE.BufferAttribute;
   private readonly spawnAttr: THREE.BufferAttribute;
   private readonly polarityAttr: THREE.BufferAttribute;
   private writeIndex = 0;
@@ -51,6 +54,16 @@ export class LightningLayer {
     geometry.setAttribute("aPolarity", this.polarityAttr);
     // Always draw the full buffer — the shader culls dead strikes via alpha=0.
     geometry.setDrawRange(0, LightningLayer.MAX_STRIKES);
+
+    // Flat-map geometry: own position buffer, shares spawn + polarity with sphere.
+    const flatGeom = new THREE.BufferGeometry();
+    const flatPositions = new Float32Array(LightningLayer.MAX_STRIKES * 3);
+    this.flatPosAttr = new THREE.BufferAttribute(flatPositions, 3);
+    this.flatPosAttr.setUsage(THREE.DynamicDrawUsage);
+    flatGeom.setAttribute("position", this.flatPosAttr);
+    flatGeom.setAttribute("aSpawn", this.spawnAttr);
+    flatGeom.setAttribute("aPolarity", this.polarityAttr);
+    flatGeom.setDrawRange(0, LightningLayer.MAX_STRIKES);
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
@@ -119,6 +132,8 @@ export class LightningLayer {
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
     this.mesh.add(this.points);
+
+    this.flatMesh = new THREE.Points(flatGeom, this.material);
   }
 
   /**
@@ -135,15 +150,20 @@ export class LightningLayer {
 
     const i = this.writeIndex;
     const pos      = this.posAttr.array as Float32Array;
+    const flat     = this.flatPosAttr.array as Float32Array;
     const spawn    = this.spawnAttr.array as Float32Array;
     const polarity = this.polarityAttr.array as Float32Array;
     pos[i * 3 + 0] =  R * cosLat * Math.cos(lonRad);
     pos[i * 3 + 1] =  R * Math.sin(latRad);
     pos[i * 3 + 2] = -R * cosLat * Math.sin(lonRad);
+    flat[i * 3 + 0] = strike.lon / 180;
+    flat[i * 3 + 1] = strike.lat / 180;
+    flat[i * 3 + 2] = 0.003;
     spawn[i]       = animTime;
     polarity[i]    = strike.polarity;
 
     this.posAttr.needsUpdate      = true;
+    this.flatPosAttr.needsUpdate  = true;
     this.spawnAttr.needsUpdate    = true;
     this.polarityAttr.needsUpdate = true;
 

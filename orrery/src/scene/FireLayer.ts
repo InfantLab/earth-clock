@@ -15,9 +15,12 @@ const AXIAL_TILT = 23.44 * Math.PI / 180;
  */
 export class FireLayer {
   readonly mesh: THREE.Group;
+  /** Flat-map mirror: same shader, positions are (lon/180, lat/180, 0) on the 2×1 plane. */
+  readonly flatMesh: THREE.Points;
   private readonly points: THREE.Points;
   private readonly material: THREE.ShaderMaterial;
   private readonly posAttr: THREE.BufferAttribute;
+  private readonly flatPosAttr: THREE.BufferAttribute;
   private readonly frpAttr: THREE.BufferAttribute;
   private readonly hashAttr: THREE.BufferAttribute;
 
@@ -40,6 +43,18 @@ export class FireLayer {
     geometry.setAttribute("aFrp", this.frpAttr);
     geometry.setAttribute("aHash", this.hashAttr);
     geometry.setDrawRange(0, 0);
+
+    // Flat-map geometry — its own position buffer (different coords), but the same FRP /
+    // hash attributes from the sphere geometry. We share the BufferAttribute objects so the
+    // single update() loop fills both at once.
+    const flatGeom = new THREE.BufferGeometry();
+    const flatPositions = new Float32Array(FireLayer.MAX_POINTS * 3);
+    this.flatPosAttr = new THREE.BufferAttribute(flatPositions, 3);
+    this.flatPosAttr.setUsage(THREE.DynamicDrawUsage);
+    flatGeom.setAttribute("position", this.flatPosAttr);
+    flatGeom.setAttribute("aFrp", this.frpAttr);
+    flatGeom.setAttribute("aHash", this.hashAttr);
+    flatGeom.setDrawRange(0, 0);
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
@@ -108,6 +123,10 @@ export class FireLayer {
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
     this.mesh.add(this.points);
+
+    // Flat-map points: shares the same material (shader doesn't reference world position,
+    // only gl_PointCoord + FRP + hash uniforms, so it works in any camera frame).
+    this.flatMesh = new THREE.Points(flatGeom, this.material);
   }
 
   /** Replace fire data from a fresh FIRMS fetch. */
@@ -118,6 +137,7 @@ export class FireLayer {
     const frp  = this.frpAttr.array as Float32Array;
     const hash = this.hashAttr.array as Float32Array;
 
+    const flat = this.flatPosAttr.array as Float32Array;
     for (let i = 0; i < n; i++) {
       const d = grid.detections[i];
       const lonRad = d.lon * Math.PI / 180;
@@ -127,15 +147,21 @@ export class FireLayer {
       pos[i * 3 + 0] =  R * cosLat * Math.cos(lonRad);
       pos[i * 3 + 1] =  R * Math.sin(latRad);
       pos[i * 3 + 2] = -R * cosLat * Math.sin(lonRad);
+      // Flat-map: lon → x in [-1, 1], lat → y in [-0.5, 0.5], z tiny offset above the plane
+      flat[i * 3 + 0] = d.lon / 180;
+      flat[i * 3 + 1] = d.lat / 180;
+      flat[i * 3 + 2] = 0.001;
       frp[i]  = d.frp;
       // Cheap per-point hash from lat/lon — stable across reloads of the same fire
       hash[i] = Math.abs(Math.sin(d.lat * 12.9898 + d.lon * 78.233)) * 43758.5453 % 1;
     }
 
-    this.posAttr.needsUpdate  = true;
-    this.frpAttr.needsUpdate  = true;
-    this.hashAttr.needsUpdate = true;
+    this.posAttr.needsUpdate     = true;
+    this.flatPosAttr.needsUpdate = true;
+    this.frpAttr.needsUpdate     = true;
+    this.hashAttr.needsUpdate    = true;
     this.points.geometry.setDrawRange(0, n);
+    this.flatMesh.geometry.setDrawRange(0, n);
   }
 
   /** Earth's daily spin angle — keeps fires anchored to their lat/lon. */

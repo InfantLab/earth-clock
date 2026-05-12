@@ -258,11 +258,20 @@ export class Menu {
         flatMap.setCloudsVisible(on);
         break;
       case "aurora":      aurora.mesh.visible = on; break;
-      case "fires":       fires.mesh.visible = on; break;
-      case "hurricanes":  hurricanes.mesh.visible = on; break;
+      case "fires":
+        fires.mesh.visible     = on;
+        fires.flatMesh.visible = on;
+        break;
+      case "hurricanes":
+        hurricanes.mesh.visible     = on;
+        hurricanes.flatMesh.visible = on;
+        break;
       case "tracks":      hurricaneTracks.mesh.visible = on; break;
       case "eclipse":     eclipse.mesh.visible = on; break;
-      case "lightning":   lightning.mesh.visible = on; break;
+      case "lightning":
+        lightning.mesh.visible     = on;
+        lightning.flatMesh.visible = on;
+        break;
       // The five overlay-row keys share one OverlayLayer; visibility is just "is any
       // overlay active?" (the data-swap happens in main.ts via onOverlayChange).
       case "mslp":
@@ -274,7 +283,10 @@ export class Menu {
         // The mutex logic in `toggle()` has already turned off any others.
         overlay.mesh.visible = this.activeOverlay() !== null;
         break;
-      case "coastlines":  coastlines.mesh.visible = on; break;
+      case "coastlines":
+        coastlines.mesh.visible     = on;
+        coastlines.flatMesh.visible = on;
+        break;
       case "moon":        moon.mesh.visible = on; break;
       case "atmosphere":  atmosphere.mesh.visible = on; break;
       case "terminator":
