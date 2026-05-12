@@ -22,6 +22,7 @@ import type { HurricaneLayer } from "../scene/HurricaneLayer";
 import type { HurricaneTrackLayer } from "../scene/HurricaneTrackLayer";
 import type { LightningLayer } from "../scene/LightningLayer";
 import type { OverlayLayer } from "../scene/OverlayLayer";
+import type { EclipseLayer } from "../scene/EclipseLayer";
 import type { FlatMap } from "../scene/FlatMap";
 import type { Debug } from "./Debug";
 import type { DataPanel } from "./DataPanel";
@@ -40,6 +41,7 @@ export interface MenuLayers {
   hurricaneTracks: HurricaneTrackLayer;
   lightning: LightningLayer;
   overlay: OverlayLayer;
+  eclipse: EclipseLayer;
   flatMap: FlatMap;
 }
 
@@ -53,7 +55,7 @@ export interface MenuPanels {
 type LayerKey =
   | "clouds" | "aurora" | "fires" | "hurricanes" | "tracks" | "lightning" | "wind"
   | "coastlines" | "terminator" | "nightLights"
-  | "moon" | "atmosphere"
+  | "moon" | "atmosphere" | "eclipse"
   | "mslp" | "temp" | "rh" | "tpw" | "tcw"
   | "map" | "orbit" | "clock" | "data" | "location" | "debug";
 
@@ -63,6 +65,7 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   lightning: true, wind: true,
   coastlines: true, terminator: true, nightLights: true,
   moon: true, atmosphere: true,
+  eclipse: false,
   mslp: false, temp: false, rh: false, tpw: false, tcw: false,
   map: false, orbit: false, clock: true, data: false, location: false, debug: false,
 };
@@ -73,6 +76,7 @@ const LABELS: Record<LayerKey, string> = {
   lightning: "Lightning", wind: "Wind", coastlines: "Coastlines",
   terminator: "Terminator", nightLights: "Night lights",
   moon: "Moon", atmosphere: "Atmosphere",
+  eclipse: "Eclipse",
   mslp: "MSLP", temp: "Temp", rh: "RH", tpw: "TPW", tcw: "TCW",
   map: "Map", orbit: "Orbit",
   clock: "Clock", data: "Data", location: "Location", debug: "Debug",
@@ -89,7 +93,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   {
     label: "Layers",
     keys: ["clouds", "aurora", "fires", "hurricanes", "tracks", "lightning", "wind", "coastlines",
-           "terminator", "nightLights", "moon", "atmosphere"],
+           "terminator", "nightLights", "moon", "atmosphere", "eclipse"],
   },
   {
     label: "Overlay",
@@ -247,7 +251,7 @@ export class Menu {
 
   private apply(key: LayerKey) {
     const on = this.state[key];
-    const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, flatMap } = this.layers;
+    const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse, flatMap } = this.layers;
     switch (key) {
       case "clouds":
         clouds.mesh.visible = on;
@@ -257,6 +261,7 @@ export class Menu {
       case "fires":       fires.mesh.visible = on; break;
       case "hurricanes":  hurricanes.mesh.visible = on; break;
       case "tracks":      hurricaneTracks.mesh.visible = on; break;
+      case "eclipse":     eclipse.mesh.visible = on; break;
       case "lightning":   lightning.mesh.visible = on; break;
       // The five overlay-row keys share one OverlayLayer; visibility is just "is any
       // overlay active?" (the data-swap happens in main.ts via onOverlayChange).

@@ -17,6 +17,7 @@ export class Debug {
   private astroLine = "";
   private testDataHandler: (() => void) | null = null;
   private findMoonHandler: (() => void) | null = null;
+  private jumpEclipseHandler: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
     injectStyles();
@@ -31,6 +32,7 @@ export class Debug {
       <div class="orrery-debug-btnrow">
         <button class="orrery-debug-btn" id="orrery-debug-testdata">Use test data</button>
         <button class="orrery-debug-btn" id="orrery-debug-findmoon">Find moon</button>
+        <button class="orrery-debug-btn" id="orrery-debug-eclipse">Jump to eclipse</button>
       </div>
     `;
     parent.appendChild(this.root);
@@ -41,6 +43,8 @@ export class Debug {
     btn.addEventListener("click", () => this.testDataHandler?.());
     const findBtn = this.root.querySelector("#orrery-debug-findmoon") as HTMLButtonElement;
     findBtn.addEventListener("click", () => this.findMoonHandler?.());
+    const eclipseBtn = this.root.querySelector("#orrery-debug-eclipse") as HTMLButtonElement;
+    eclipseBtn.addEventListener("click", () => this.jumpEclipseHandler?.());
   }
 
   setVisible(b: boolean) {
@@ -55,6 +59,11 @@ export class Debug {
   /** Hook for the "Find moon" button — main.ts wires this to re-aim the camera at the moon. */
   onFindMoon(fn: () => void) {
     this.findMoonHandler = fn;
+  }
+
+  /** Hook for the "Jump to eclipse" button — main.ts snaps simulatedTime + sets time-warp. */
+  onJumpEclipse(fn: () => void) {
+    this.jumpEclipseHandler = fn;
   }
 
   info(key: string, msg: string)    { this.set(key, msg, "info"); }

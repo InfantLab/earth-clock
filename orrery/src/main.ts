@@ -12,6 +12,7 @@ import { FireLayer } from "./scene/FireLayer";
 import { HurricaneLayer } from "./scene/HurricaneLayer";
 import { HurricaneTrackLayer } from "./scene/HurricaneTrackLayer";
 import type { StormGeometry } from "./scene/HurricaneTrackLayer";
+import { EclipseLayer } from "./scene/EclipseLayer";
 import { LightningLayer } from "./scene/LightningLayer";
 import { OverlayLayer } from "./scene/OverlayLayer";
 import { FlatMap } from "./scene/FlatMap";
@@ -28,6 +29,8 @@ import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoad
 import { fetchFireDetections } from "./data/firmsLoader";
 import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
+import { computeShadow, computePathOfTotality } from "./astro/eclipse";
+import { nextEclipse } from "./data/eclipseCatalog";
 import { LightningLoader } from "./data/lightningLoader";
 import { windGridToTexture } from "./data/windToTexture";
 import { fetchGibsTexture, bestAvailableDailyDate } from "./data/gibsLoader";
@@ -97,6 +100,35 @@ scene.add(lightning.mesh);
 // Eastern Pacific season starts.
 const hurricaneTracks = new HurricaneTrackLayer();
 scene.add(hurricaneTracks.mesh);
+
+// Eclipse layer — umbra/penumbra discs at the current shadow centre + a precomputed
+// path-of-totality polyline for the next upcoming total solar eclipse. Auto-loads from
+// the bundled eclipse catalog. Headline feature: 2026-08-12 Spain total eclipse.
+const eclipseLayer = new EclipseLayer();
+scene.add(eclipseLayer.mesh);
+
+// Constants needed for world ↔ geographic frame conversion. Same value used by every layer
+// that rotates with Earth — keeping a local copy to avoid pulling them through Globe's
+// internals; if any of them ever change, search for AXIAL_TILT_RAD across the codebase.
+const AXIAL_TILT_RAD = 23.44 * Math.PI / 180;
+
+/**
+ * Transform a point in the inertial world frame to Earth's geographic frame at a given time.
+ * Undoes the axial-tilt rotation around Z then the daily rotation around Y, in that order
+ * — the inverse of the forward transform applied by every Earth-anchored layer.
+ */
+function worldToGeographic(worldPoint: THREE.Vector3, date: Date, out: THREE.Vector3): THREE.Vector3 {
+  const c1 = Math.cos(-AXIAL_TILT_RAD), s1 = Math.sin(-AXIAL_TILT_RAD);
+  const x1 = worldPoint.x * c1 - worldPoint.y * s1;
+  const y1 = worldPoint.x * s1 + worldPoint.y * c1;
+  const z1 = worldPoint.z;
+  const earthY = earthRotationY(date);
+  const c2 = Math.cos(-earthY), s2 = Math.sin(-earthY);
+  out.x =  x1 * c2 + z1 * s2;
+  out.y =  y1;
+  out.z = -x1 * s2 + z1 * c2;
+  return out;
+}
 
 // Mean Sea Level Pressure overlay — first of the GFS scalar overlays (Temp, RH, TPW, TCW
 // will follow the same pattern). Translucent shell at r=1.006; hidden until data loads.
@@ -168,12 +200,13 @@ declare global {
       hurricaneTracks: HurricaneTrackLayer;
       lightning: LightningLayer;
       overlay: OverlayLayer;
+      eclipse: EclipseLayer;
     };
   }
 }
 
 // Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay };
+window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer };
 
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
 // Static / bundled assets are reported up-front so they appear in the panel without waiting.
@@ -213,7 +246,8 @@ const locationPanel = new LocationPanel(document.body);
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
-  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, flatMap },
+  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks,
+    lightning, overlay, eclipse: eclipseLayer, flatMap },
   { debug, data: dataPanel, clock, location: locationPanel },
 );
 
@@ -262,6 +296,24 @@ renderer.domElement.addEventListener("click", (event) => {
   locationPin.setVisible(true);
   locationPanel.setLocation(lat, lon);
   console.log(`[orrery] pinned: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
+});
+
+// "Jump to eclipse" button: snap simulatedTime to T-minus-1-minute on the next upcoming
+// eclipse, set time-warp to 60× so the whole event plays out in a few minutes, and turn
+// the Eclipse layer on. Mainly a QA/demo affordance — useful for verifying the eclipse
+// path & shadow rendering without waiting weeks for the real event.
+debug.onJumpEclipse(() => {
+  if (!activeEclipse) {
+    console.warn("[earth-clock] no upcoming eclipse in the catalog");
+    return;
+  }
+  simulatedTime = activeEclipse.startUtc.getTime() - 60_000;
+  window.__orreryTimeWarp = 60;
+  menu.setLayer("eclipse", true);
+  console.log(
+    `[earth-clock] jumped to T-1m of ${activeEclipse.name} (peak ${activeEclipse.peakUtc.toISOString()}). ` +
+    `Set window.__orreryTimeWarp = 1 to stop the warp.`,
+  );
 });
 
 // "Find moon" button: re-position the camera along the moon's direction at 1.5x the moon's
@@ -546,6 +598,42 @@ function loadHurricanes() {
 loadHurricanes();
 setInterval(loadHurricanes, 15 * 60 * 1000);
 
+// Load the next upcoming eclipse from the catalog (if any) and precompute its path of
+// totality. The math is fast (a few hundred ray-sphere intersections), so we just do it
+// synchronously at startup. Reaches into worldToGeographic() to keep the path glued to
+// Earth's surface as it rotates beneath the inertially-fixed shadow.
+const activeEclipse = nextEclipse(new Date());
+if (activeEclipse) {
+  const samples = computePathOfTotality(activeEclipse.startUtc, activeEclipse.endUtc, 30);
+  const geographicPath = samples.map(s => {
+    const out = new THREE.Vector3();
+    worldToGeographic(s.worldPoint, s.time, out);
+    return out;
+  });
+  eclipseLayer.setPath(geographicPath);
+  const peakLocal = activeEclipse.peakUtc.toISOString().slice(0, 16) + "Z";
+  console.log(
+    `[earth-clock] eclipse loaded: ${activeEclipse.name} · peak ${peakLocal} · ` +
+    `${geographicPath.length} totality-path samples (${activeEclipse.region})`,
+  );
+  dataRegistry.report("eclipse", {
+    source: "NASA eclipse catalog · bundled",
+    fetched: new Date(),
+    detail: `${activeEclipse.name} · ${peakLocal}`,
+    bundled: true,
+  });
+} else {
+  dataRegistry.report("eclipse", {
+    source: "NASA eclipse catalog · bundled",
+    detail: "no upcoming eclipse in catalog",
+    bundled: true,
+  });
+}
+
+// Per-frame: feed the live umbra centre to the eclipse layer in the geographic frame.
+// The layer then applies the same daily-rotation we apply below, putting it back in world.
+const _liveShadowGeoPt = new THREE.Vector3();
+
 async function loadHurricaneTracks(storms: import("./data/nhcLoader").Storm[]) {
   const results = await Promise.all(storms.map(async (s): Promise<StormGeometry> => {
     const sg: StormGeometry = { stormId: s.id };
@@ -699,6 +787,19 @@ function updateAstro() {
   hurricaneTracks.setRotationY(earthY);
   lightning.setRotationY(earthY);
   overlay.setRotationY(earthY);
+  eclipseLayer.setRotationY(earthY);
+
+  // Live eclipse shadow. computeShadow() returns the surface point in the inertial world
+  // frame; convert it to geographic so it follows Earth's rotation along with the
+  // precomputed path. computeShadow returns hasShadow=false at any moment outside an
+  // eclipse, so 99.99% of the time this is a quick guard + no shadow rendered.
+  const sh = computeShadow(now);
+  if (sh.hasShadow) {
+    worldToGeographic(sh.surfacePoint, now, _liveShadowGeoPt);
+    eclipseLayer.setLiveShadow(_liveShadowGeoPt);
+  } else {
+    eclipseLayer.setLiveShadow(null);
+  }
   // Aurora data is in geographic lat/lon for the forecast time, so it shares Earth's spin.
   // Drift between 5-min fetches is <1.3° and gets corrected next refresh.
   aurora.setRotationY(earthY);
