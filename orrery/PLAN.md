@@ -71,6 +71,34 @@ This is the **engineering tracker** — current status of every layer, what's ne
 - **Source**: `AMSRU2_Sea_Ice_Concentration_12km` via GIBS (same pipeline)
 - Polar-cap overlay; opacity ∝ ice concentration
 
+### ⬜ Solar-eclipse visualisation tool  ← **headline feature**, targeting **summer 2026 Spain eclipse**
+
+The next total solar eclipse visible over mainland Spain is **2026-08-12** (Iceland → Greenland → northern Spain; totality ~1 min 50 s over Bilbao / Valladolid / Palma de Mallorca). The 2027-08-02 eclipse also crosses Spain with a much longer totality (~6 min over Cádiz / Tarifa). The tool should target whichever the user asks for; the math is the same. Worth getting this right for the 2026 event — it's a rare-astonishment moment that maps directly onto the project's design-philosophy thesis ("the eclipse experience, made sustainable").
+
+The goal: while the user time-warps through an eclipse, the moon's umbra and penumbra discs glide across Earth's surface in real geometry. A static "path of totality" line records where the umbra has been (and will be) so the user sees the full sweep at a glance, with the live disc indicating the current moment.
+
+- **Math**: we already have sub-solar and sub-lunar positions to ~0.01° / ~1-2° accuracy. The shadow geometry is a cone with apex behind the moon, opening toward the sun. Where that cone intersects Earth's surface = umbra (full eclipse) and penumbra (partial). Procedure:
+  1. Each frame: compute the moon's world position `M` and the sun's world direction `S`.
+  2. Shadow axis = ray from `M` in direction `−S`.
+  3. Ray-sphere intersection with the unit Earth gives the umbra centre on the surface (when one exists — most of the time there's no intersection, only during an eclipse).
+  4. Umbra radius on surface ≈ `(R_moon − D · α_sun) / cos(incidence)` where `α_sun` is the sun's angular radius from Earth. Typical surface umbra is 100–270 km wide; penumbra is ~3 500–7 000 km wide.
+  5. Magnitude at a given (lat, lon): ratio of sun-disc obscured by the moon at that point. Useful for the location-pin readout.
+- **Path of totality**: precomputed by stepping simulated time at 30 s intervals over the full eclipse window and recording the umbra centre's lat/lon when it exists. Result: a polyline drawn on the globe + a wider corridor for the penumbra envelope.
+- **Layers / files**:
+  - `src/astro/eclipse.ts` — shadow geometry from sun + moon position (uses existing `solarPosition` / `lunarPosition`).
+  - `src/data/eclipseCatalog.ts` — bundled metadata for upcoming / notable eclipses (date, type, max-totality coords, duration). Start with 2026-08-12 and 2027-08-02 hand-entered from NASA's catalog; expand as needed.
+  - `src/scene/EclipseLayer.ts` — renders the umbra disc (small dark circle with bright "diamond ring" rim during contacts), the penumbra disc (large faint dim), and the path-of-totality polyline. All rotate with Earth.
+  - `src/ui/EclipsePanel.ts` — UI showing the current eclipse name, contact-time countdown, magnitude at the pinned location, and a "jump to eclipse start" button that snaps `simulatedTime` to the right moment.
+- **Integration with existing features**:
+  - **Time-warp** is already plumbed (`window.__orreryTimeWarp`); the eclipse tool just orchestrates a sensible default speed (~60× → eclipse plays out in ~4 minutes).
+  - **Location pin** reports the eclipse magnitude at the pinned point. Pin Bilbao on 2026-08-12 18:30 UTC and the panel says "magnitude 1.00 · totality 1 min 47 s".
+  - **Terminator** still renders normally; the umbra is an additional dimming on top.
+- **UI gestures**:
+  - "Eclipse" entry in the menu (View row). Toggle on → loads the next upcoming eclipse from the catalog and shows its path/discs. With time-warp at 1× it just sits there waiting; warp up to 60× and the discs slide across Spain.
+  - Future: a selector ("next eclipse / pick a date / browse catalog") and a "play" button that snaps to T-minus-30-min and runs the whole event at 60× then auto-stops.
+- **Out of scope for v1**: lunar eclipses (Earth's shadow on the moon — same geometry, just inverted, but moon-only visual), Saros series browsing, terrestrial weather forecast for the eclipse path.
+- **Time budget**: ~1 week of work for the headline feature. Worth scheduling before the docs-polish + cutover so we can ship orrery to the public with this as the lede.
+
 ### ✅ Lightning (Blitzortung WebSocket)  ← landed
 - **Source**: `wss://ws1.blitzortung.org/` — community network, no auth, ~200 ms latency. LZW-style-compressed JSON payload (subscription message `{"a": 111}` requests the global firehose). Time is in nanoseconds since epoch; the loader handles ns / μs / ms gracefully.
 - `src/data/lightningLoader.ts` — auto-reconnecting WebSocket wrapper. Emits `onStrike` callbacks; tracks total count + last-strike time for the DataPanel. Status callbacks (connecting / connected / disconnected / error) flow into both Debug and Data panels.
