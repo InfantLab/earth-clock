@@ -71,13 +71,12 @@ This is the **engineering tracker** — current status of every layer, what's ne
 - **Source**: `AMSRU2_Sea_Ice_Concentration_12km` via GIBS (same pipeline)
 - Polar-cap overlay; opacity ∝ ice concentration
 
-### ⬜ Lightning (Blitzortung WebSocket)
-- **Source**: `wss://ws1.blitzortung.org/` (real-time JSON stream)
-  - No auth, community network, ~200 ms latency
-  - Payload: `{time, lat, lon, pol}` per strike
-- **Implementation**:
-  - `src/data/lightningLoader.ts` — WebSocket wrapper, rolling 60 s buffer of strikes
-  - `src/scene/LightningLayer.ts` — flash geometry (billboarded point or ring), bright-white flash → fade over ~500 ms, max ~1000 simultaneous fading flashes to keep GPU cost low
+### ✅ Lightning (Blitzortung WebSocket)  ← landed
+- **Source**: `wss://ws1.blitzortung.org/` — community network, no auth, ~200 ms latency. LZW-style-compressed JSON payload (subscription message `{"a": 111}` requests the global firehose). Time is in nanoseconds since epoch; the loader handles ns / μs / ms gracefully.
+- `src/data/lightningLoader.ts` — auto-reconnecting WebSocket wrapper. Emits `onStrike` callbacks; tracks total count + last-strike time for the DataPanel. Status callbacks (connecting / connected / disconnected / error) flow into both Debug and Data panels.
+- `src/scene/LightningLayer.ts` — circular buffer of 1 024 additive point sprites at r=1.0020. Each strike spawns as a hot white-blue flash (warm/cool tint by polarity) that fades over ~0.6 s via shader (`uTime − spawnTime`). Buffer wraparound is invisible because old strikes have long faded. Rotates with Earth.
+- DataPanel row shows rolling 60 s strike rate + cumulative total, e.g. `connected · 142 strikes/min · 41 837 total`.
+- **Prod-origin risk**: Blitzortung's WebSocket is a community service not officially documented. Origin filtering or upstream policy changes could break this without notice. Mitigations to consider: route through our own backend (the same proxy that handles NHC); negotiate a proper feed via Blitzortung's affiliate programme; cache the dictionary-decoder in a Web Worker if it ever becomes a perf concern.
 
 ### 🔄 Equirectangular flat-map mode  ← v1 landed; data overlays TODO
 - `src/scene/FlatMap.ts` — own scene + orthographic camera + 2:1 textured plane. Combined fragment shader bakes day surface, night-lights overlay, and clouds together. Sub-solar (lat, lon) passed as a geographic-frame direction uniform; no axial-tilt or daily-rotation transforms needed because the flat map renders directly in geographic coords. Letterbox/pillarbox via `resize()` to keep 2:1 aspect.
@@ -155,6 +154,21 @@ Once built, the worker also enables ECMWF AIFS and GraphCast-GFS (AI weather for
 - **Real star skybox** (Tycho-2 / Deepstar catalogue at >100 k stars)
 - **Full solar system** — planets, their moons, ecliptic plane
 - **Wallpaper Engine** output mode — replace `BundledDataSource` stub with real fetches
+- **Camera paths through space** ← *new, needs design*
+  - The classic earth-clock had a gentle auto-rotate; orrery's OrbitControls is more capable but feels static when idle. The opportunity: make orrery something that *moves* — like an animated photograph of the planet as seen from various vantage points.
+  - Future-proof shape: a `CameraPath` abstraction — a parametric function `t → { position, lookAt, up }` evaluated each frame. The animate loop interpolates path state into the camera; OrbitControls can be temporarily disabled and re-enabled for manual control.
+  - Concrete paths to support:
+    - **Gentle orbit** (default idle behaviour): slow CCW rotation around Earth at the current zoom, no orbital realism — purely cinematic.
+    - **ISS viewpoint**: camera follows a TLE-derived ISS orbit (~408 km × 51.6° inclination), looking down at Earth. Real-time position from celestrak.org / N2YO; standard SGP4 propagator (a few hundred lines, public).
+    - **Sub-lunar viewpoint**: camera sits at the moon's current position looking back at Earth — the classic Apollo "Earthrise" frame.
+    - **Heliocentric**: camera at a fixed point in the inertial frame, watching Earth orbit and spin (heavy time-warp required to be cinematic).
+    - **Geosync / GOES viewpoint**: ~35 786 km, equatorial, locked to a chosen longitude.
+    - **L1 viewpoint** (sub-solar): always between Earth and sun — what DSCOVR / EPIC sees.
+    - **Free-fly**: WASD/mouse keyboard control for power-users; ignores orbital mechanics.
+  - UI: probably a "Vantage" submenu or a dedicated panel. Each preset is a path. A "Path: orbit / ISS / moon / sun-L1 / free" selector + a "speed" multiplier.
+  - Design constraint: when in a path, OrbitControls is suspended but a single user input (drag / scroll) should pause the path and hand control back. The path can resume on a button.
+  - Honour the design philosophy: paths are *gentle*. No jump-cuts, no whip-pans. Position interpolation is smoothed; transitions between paths use ~2 s ease.
+  - Out of scope for v1: VR / 360° camera mode; multi-camera composition.
 
 ---
 
@@ -188,3 +202,6 @@ Once built, the worker also enables ECMWF AIFS and GraphCast-GFS (AI weather for
 | 2026-05-11 | **Fixed lat/lon→xyz chirality bug** in Coastlines / Fires / Hurricanes / Aurora (Greenwich was at −Z, east going CW; corrected to texture convention: Greenwich at +X, east CCW). Aurora wrapped in tilted Group + setRotationY (was using neither). Debug overlay (`src/ui/Debug.ts`) + static fixtures (`src/data/debugFixtures.ts`) + "Use test data" button for isolating loader-vs-renderer bugs. | GIBS overlays next, then lightning |
 | 2026-05-11 | Hurricane sprite rewrite (NormalBlending, larger eye, bolder color ramp). Cloud night-side: dropped hard day mask, now a brightness gradient with a floor — clouds stay visible at night (master Terminator toggle still scales the gradient). Test-data button now syncs Menu state via public `setLayer()` instead of forcing `mesh.visible`. Find-moon button + on-screen NDC indicator. **FlatMap v1**: equirectangular projection toggle (`src/scene/FlatMap.ts`) — own scene + ortho camera + combined day/night/clouds shader; "Map" toggle in menu. | FlatMap v2 (port aurora/fires/hurricanes/wind/coastlines to 2D) and GIBS overlays |
 | 2026-05-11 | Moon emissive map (dim disc on the dark side, phases still show). Menu reorganized into Layers / View categories. **Three new UI features**: DataRegistry + DataPanel (live source + age per layer, top-right), Clock (top-centre, 36 px monospace, UTC ⇄ local toggle), LocationPin + LocationPanel (click-to-pin coordinates + solar time, 3D and flat-map markers). | Wire wind sampling at pinned location, port more layers to FlatMap, hurricane track / cone geometry |
+| 2026-05-11 | Loader robustness: NHC routed through Vite dev proxy (`/proxy/nhc/*`) — CORS-blocked direct in browser. GIBS daily lag bumped to 2 days (Pacific tiles publish late). Aurora detail line now shows max-probability + finer activity bands. New Kp index row (NOAA SWPC planetary K-index, 0-9 scale + plain-language activity label + approximate visible latitude). | CORS proxy decision: CapRover NGINX vs. Cloudflare Worker |
+| 2026-05-11 | CORS-proxy investigation written up in `docs/proxy.md`: full options table, decision (CapRover NGINX, $0/month), dev-prod URL symmetry diagram, step-by-step deploy snippet. New `orrery/docs/` folder kicks off the docs-polish work. | Lightning next |
+| 2026-05-12 | **Lightning** (`LightningLayer` + `LightningLoader`): Blitzortung community WebSocket, LZW-decoded JSON strikes streamed at ~200 ms latency. Additive flash sprites in a 1 024-slot circular buffer, fading over ~0.6 s via shader (`uTime − spawnTime`). DataPanel row shows rolling 60 s strike rate + cumulative total + connection status. **Camera paths roadmap entry** added to Phase C (gentle orbit / ISS / Earthrise / heliocentric / geosync / L1 / free-fly, with `CameraPath` abstraction). | Camera paths v1, or FlatMap v2, or production cutover |

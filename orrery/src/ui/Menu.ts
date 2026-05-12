@@ -19,6 +19,7 @@ import type { CloudLayer } from "../scene/CloudLayer";
 import type { AuroraLayer } from "../scene/AuroraLayer";
 import type { FireLayer } from "../scene/FireLayer";
 import type { HurricaneLayer } from "../scene/HurricaneLayer";
+import type { LightningLayer } from "../scene/LightningLayer";
 import type { FlatMap } from "../scene/FlatMap";
 import type { Debug } from "./Debug";
 import type { DataPanel } from "./DataPanel";
@@ -34,6 +35,7 @@ export interface MenuLayers {
   aurora: AuroraLayer;
   fires: FireLayer;
   hurricanes: HurricaneLayer;
+  lightning: LightningLayer;
   flatMap: FlatMap;
 }
 
@@ -45,14 +47,14 @@ export interface MenuPanels {
 }
 
 type LayerKey =
-  | "clouds" | "aurora" | "fires" | "hurricanes" | "wind"
+  | "clouds" | "aurora" | "fires" | "hurricanes" | "lightning" | "wind"
   | "coastlines" | "terminator" | "nightLights"
   | "moon" | "atmosphere"
   | "map" | "clock" | "data" | "location" | "debug";
 
 const STORAGE_KEY = "orrery.menu.v1";
 const DEFAULTS: Record<LayerKey, boolean> = {
-  clouds: true, aurora: true, fires: true, hurricanes: true, wind: true,
+  clouds: true, aurora: true, fires: true, hurricanes: true, lightning: true, wind: true,
   coastlines: true, terminator: true, nightLights: true,
   moon: true, atmosphere: true,
   map: false, clock: true, data: false, location: false, debug: false,
@@ -60,7 +62,7 @@ const DEFAULTS: Record<LayerKey, boolean> = {
 
 const LABELS: Record<LayerKey, string> = {
   clouds: "Clouds", aurora: "Aurora", fires: "Fires", hurricanes: "Hurricanes",
-  wind: "Wind", coastlines: "Coastlines",
+  lightning: "Lightning", wind: "Wind", coastlines: "Coastlines",
   terminator: "Terminator", nightLights: "Night lights",
   moon: "Moon", atmosphere: "Atmosphere",
   map: "Map", clock: "Clock", data: "Data", location: "Location", debug: "Debug",
@@ -69,7 +71,7 @@ const LABELS: Record<LayerKey, string> = {
 const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   {
     label: "Layers",
-    keys: ["clouds", "aurora", "fires", "hurricanes", "wind", "coastlines",
+    keys: ["clouds", "aurora", "fires", "hurricanes", "lightning", "wind", "coastlines",
            "terminator", "nightLights", "moon", "atmosphere"],
   },
   {
@@ -183,7 +185,7 @@ export class Menu {
 
   private apply(key: LayerKey) {
     const on = this.state[key];
-    const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, flatMap } = this.layers;
+    const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, lightning, flatMap } = this.layers;
     switch (key) {
       case "clouds":
         clouds.mesh.visible = on;
@@ -192,6 +194,7 @@ export class Menu {
       case "aurora":      aurora.mesh.visible = on; break;
       case "fires":       fires.mesh.visible = on; break;
       case "hurricanes":  hurricanes.mesh.visible = on; break;
+      case "lightning":   lightning.mesh.visible = on; break;
       case "coastlines":  coastlines.mesh.visible = on; break;
       case "moon":        moon.mesh.visible = on; break;
       case "atmosphere":  atmosphere.mesh.visible = on; break;

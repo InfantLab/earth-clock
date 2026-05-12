@@ -10,6 +10,7 @@ import { CloudLayer } from "./scene/CloudLayer";
 import { AuroraLayer } from "./scene/AuroraLayer";
 import { FireLayer } from "./scene/FireLayer";
 import { HurricaneLayer } from "./scene/HurricaneLayer";
+import { LightningLayer } from "./scene/LightningLayer";
 import { FlatMap } from "./scene/FlatMap";
 import { LocationPin } from "./scene/LocationPin";
 import { Menu } from "./ui/Menu";
@@ -23,6 +24,7 @@ import { fetchAuroraGrid } from "./data/auroraLoader";
 import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoader";
 import { fetchFireDetections } from "./data/firmsLoader";
 import { fetchActiveStorms } from "./data/nhcLoader";
+import { LightningLoader } from "./data/lightningLoader";
 import { windGridToTexture } from "./data/windToTexture";
 import { fetchGibsTexture, bestAvailableDailyDate } from "./data/gibsLoader";
 import {
@@ -79,6 +81,11 @@ scene.add(fires.mesh);
 // Pulsing animated swirl sprites at r=1.012. Refreshes every 15 min.
 const hurricanes = new HurricaneLayer();
 scene.add(hurricanes.mesh);
+
+// Real-time lightning strikes from the Blitzortung community network. WebSocket stream;
+// strikes appear as bright additive flashes that fade over ~0.6 s.
+const lightning = new LightningLayer();
+scene.add(lightning.mesh);
 
 // Equirectangular flat-map mode. Owns its own scene + ortho camera; rendered instead of the
 // 3D scene when the menu's "Map" toggle is on. v1 has day + night + clouds + terminator;
@@ -142,12 +149,13 @@ declare global {
       aurora: AuroraLayer;
       fires: FireLayer;
       hurricanes: HurricaneLayer;
+      lightning: LightningLayer;
     };
   }
 }
 
 // Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes };
+window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, lightning };
 
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
 // Static / bundled assets are reported up-front so they appear in the panel without waiting.
@@ -182,7 +190,7 @@ const locationPanel = new LocationPanel(document.body);
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
-  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, flatMap },
+  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, lightning, flatMap },
   { debug, data: dataPanel, clock, location: locationPanel },
 );
 
@@ -403,6 +411,65 @@ function loadHurricanes() {
 loadHurricanes();
 setInterval(loadHurricanes, 15 * 60 * 1000);
 
+// Real-time lightning strikes via Blitzortung's community WebSocket. We hold the strikes
+// rate as a rolling 60-second count for the DataPanel readout. The loader auto-reconnects
+// on disconnect; status changes are reported through the data registry.
+const lightningTimestamps: number[] = []; // performance.now() of each received strike
+const lightningLoader = new LightningLoader({
+  onStrike: (strike) => {
+    // animTime matches the shader's `uTime` (seconds since first frame), which is set in
+    // `animate()` from `t / 1000`. Using performance.now()/1000 is the same clock.
+    lightning.addStrike(strike, performance.now() / 1000);
+    const now = performance.now();
+    lightningTimestamps.push(now);
+    // Drop entries older than 60 s.
+    while (lightningTimestamps.length && now - lightningTimestamps[0] > 60_000) {
+      lightningTimestamps.shift();
+    }
+  },
+  onStatus: (status, detail) => {
+    const stats = lightningLoader.stats;
+    if (status === "connected") {
+      debug.info("lightning", "Blitzortung connected");
+      dataRegistry.report("lightning", {
+        source: "Blitzortung · community WebSocket",
+        fetched: new Date(),
+        detail: "connected · waiting for strikes",
+        refreshSeconds: 60, // never "stale" in the same way as polled feeds — connection state matters
+      });
+    } else if (status === "disconnected") {
+      debug.warn("lightning", "disconnected — reconnecting in 5 s");
+      dataRegistry.report("lightning", {
+        source: "Blitzortung · community WebSocket",
+        error: `disconnected (received ${stats.count} strikes)`,
+      });
+    } else if (status === "error") {
+      debug.warn("lightning", detail ?? "WebSocket error");
+      dataRegistry.report("lightning", {
+        source: "Blitzortung · community WebSocket",
+        error: detail ?? "WebSocket error",
+      });
+    } else {
+      // "connecting"
+      debug.pending("lightning", "connecting to Blitzortung…");
+    }
+  },
+});
+lightningLoader.start();
+
+// Refresh the data panel's lightning row once a second with the rolling 60-s strike rate.
+// Cheap (1 setInterval callback writing to the registry); independent of WS event timing.
+setInterval(() => {
+  if (!lightningLoader.stats.connectedSince) return; // skip during disconnects
+  const rate = lightningTimestamps.length; // strikes in the last 60 s
+  dataRegistry.report("lightning", {
+    source: "Blitzortung · community WebSocket",
+    fetched: lightningLoader.stats.last ?? new Date(),
+    detail: `${rate} strikes/min · ${lightningLoader.stats.count} total`,
+    refreshSeconds: 60,
+  });
+}, 1000);
+
 // Fetch yesterday's global VIIRS true-color mosaic from NASA GIBS (CORS-clean, no auth).
 // 8 tiles at zoom 1 → 2048×1024 final texture, ~700 KB total payload.
 const cloudDate = bestAvailableDailyDate();
@@ -456,6 +523,7 @@ function updateAstro() {
   clouds.setSunDirection(sunDir);
   fires.setRotationY(earthY);
   hurricanes.setRotationY(earthY);
+  lightning.setRotationY(earthY);
   // Aurora data is in geographic lat/lon for the forecast time, so it shares Earth's spin.
   // Drift between 5-min fetches is <1.3° and gets corrected next refresh.
   aurora.setRotationY(earthY);
@@ -521,6 +589,7 @@ function animate(t: number) {
   aurora.setTime(t / 1000);
   fires.setTime(t / 1000);
   hurricanes.setTime(t / 1000);
+  lightning.setTime(t / 1000);
   controls.update();
   if (menu.isMapMode()) {
     // Flat equirectangular mode — render the FlatMap scene only. Aurora/fires/hurricanes/wind
