@@ -385,6 +385,10 @@ VITE_FIRMS_MAP_KEY=…   # https://firms.modaps.eosdis.nasa.gov/api/map_key/ (fr
 
 Vite exposes any `VITE_*` variable on `import.meta.env`. **`.env.local` is gitignored** — never commit your key.
 
+### Upstream proxies
+
+One data source (NHC tropical cyclones) doesn't ship CORS headers, so it can't be fetched directly from the browser. Dev routes through Vite's built-in proxy at `/proxy/nhc/*` (configured in [vite.config.ts](vite.config.ts)); production routes the same path through an NGINX rule on the CapRover host. Application code uses the same URL in both cases. Full write-up + deploy steps: [docs/proxy.md](docs/proxy.md).
+
 When orrery is ready to become the default site, point `vite.config.ts > build.outDir` at `../public` and move classic earth-clock to `../public/classic/`.
 
 ---
