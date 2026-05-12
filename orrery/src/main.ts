@@ -29,6 +29,7 @@ import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoad
 import { fetchFireDetections } from "./data/firmsLoader";
 import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
+import { reverseGeocode } from "./data/geocoder";
 import { computeShadow, computePathOfTotality } from "./astro/eclipse";
 import { nextEclipse } from "./data/eclipseCatalog";
 import { LightningLoader } from "./data/lightningLoader";
@@ -264,11 +265,25 @@ locationPanel.onClear(() => {
 // "Use my location" button on the LocationPanel → drop the pin at the browser's reported
 // (lat, lon). Same code path as a click on the globe.
 locationPanel.onGeolocate((lat, lon) => {
+  pinLocation(lat, lon, "geolocation");
+});
+
+// Centralised pin-drop. Sets the 3D + flat pin meshes, fills the panel coords, and kicks
+// off a reverse-geocode lookup that fills in the place name asynchronously.
+function pinLocation(lat: number, lon: number, source: string) {
   locationPin.setLocation(lat, lon);
   locationPin.setVisible(true);
   locationPanel.setLocation(lat, lon);
-  console.log(`[earth-clock] pinned via geolocation: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
-});
+  console.log(`[earth-clock] pinned via ${source}: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
+  // Reverse geocode in the background — Nominatim rate-limits to 1 req/s so the function
+  // returns null if called too quickly. Don't await; let the UI show "looking up…".
+  reverseGeocode(lat, lon)
+    .then(place => locationPanel.setPlaceName(place?.short ?? null))
+    .catch(err => {
+      console.warn(`[earth-clock] reverse geocode failed: ${err.message ?? err}`);
+      locationPanel.setPlaceName(null);
+    });
+}
 
 // Click-to-pin location handler. Only fires on simple clicks (not drags) — OrbitControls
 // uses mousedown+move for orbit and never fires "click" if the pointer moved past its
@@ -297,10 +312,7 @@ renderer.domElement.addEventListener("click", (event) => {
     if (!hits.length) return;
     ({ lat, lon } = globe.worldToLatLon(hits[0].point));
   }
-  locationPin.setLocation(lat, lon);
-  locationPin.setVisible(true);
-  locationPanel.setLocation(lat, lon);
-  console.log(`[orrery] pinned: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
+  pinLocation(lat, lon, "click");
 });
 
 // "Jump to eclipse" button: snap simulatedTime to T-minus-1-minute on the next upcoming

@@ -9,6 +9,7 @@
  */
 export class LocationPanel {
   private readonly root: HTMLElement;
+  private readonly placeEl: HTMLElement;
   private readonly coordsEl: HTMLElement;
   private readonly solarEl: HTMLElement;
   private readonly hintEl: HTMLElement;
@@ -42,12 +43,14 @@ export class LocationPanel {
         ` : ""}
       </div>
       <div class="orrery-loc-detail" id="orrery-loc-detail" style="display:none">
+        <div><span class="orrery-loc-label">place</span>  <span id="orrery-loc-place">—</span></div>
         <div><span class="orrery-loc-label">coords</span> <span id="orrery-loc-coords">—</span></div>
         <div><span class="orrery-loc-label">solar</span>  <span id="orrery-loc-solar">—</span></div>
       </div>
     `;
     parent.appendChild(this.root);
 
+    this.placeEl  = this.root.querySelector("#orrery-loc-place")  as HTMLElement;
     this.coordsEl = this.root.querySelector("#orrery-loc-coords") as HTMLElement;
     this.solarEl  = this.root.querySelector("#orrery-loc-solar")  as HTMLElement;
     this.hintEl   = this.root.querySelector("#orrery-loc-hint")   as HTMLElement;
@@ -73,6 +76,12 @@ export class LocationPanel {
     this.hintEl.style.display   = "none";
     this.detailEl.style.display = "block";
     this.coordsEl.textContent = `${fmtLat(latDeg)}, ${fmtLon(lonDeg)}`;
+    this.placeEl.textContent  = "looking up…";
+  }
+
+  /** Update the place-name line. Pass null to show "—" (geocoder threw or rate-limited). */
+  setPlaceName(name: string | null) {
+    this.placeEl.textContent = name ?? "—";
   }
 
   /**

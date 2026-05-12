@@ -150,7 +150,8 @@ Architecture decision still open: each existing layer gets a `setMapMode(b)` hoo
 - `src/scene/LocationPin.ts` — single class managing both the 3D pin (emissive sphere + ring on the rotating Earth, attached via `Globe.attachToEarth`) and the 2D pin (small disc on the FlatMap plane). `setLocation(lat, lon)` updates both.
 - `src/ui/LocationPanel.ts` — top-left panel toggled by the "Location" menu entry. Shows pinned coordinates and **solar time at that longitude** (UTC + lon/15 hours). ✕ button clears the pin.
 - Click handler in `main.ts`: raycaster against the Earth mesh in globe mode (uses `Globe.worldToLatLon` to undo tilt + daily rotation); unproject NDC onto the plane in map mode. Only fires while Location toggle is on.
-- **Future (v2)**: sample wind from GFS grid at pinned (lat, lon); list nearest fire / storm; show local civil time (proper timezone, not just solar); reverse-geocode → city name; "Use my location" button (browser geolocation API).
+- **v2 (landed)**: ✅ "Use my location" button (browser geolocation API), ✅ reverse-geocode → place name (Nominatim, rate-limited 1 req/s with friendly fallback).
+- **Future**: sample wind from GFS grid at pinned (lat, lon); list nearest fire / storm; show local civil time (proper timezone, not just solar).
 
 ---
 

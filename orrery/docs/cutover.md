@@ -35,6 +35,9 @@ Eclipse tool should ideally be deployed before 2026-08-12 so we can use it as th
      current-mean_sea_level_pressure-gfs-1.0.json
 □ Run `npm run build` in orrery/ to confirm the orrery build is clean
 □ Confirm CapRover NGINX override has the /proxy/nhc/ block deployed and curl-tested
+□ Optional: deploy /proxy/nominatim/ block too (place-name lookups are direct-to-Nominatim
+  in dev; production should proxy with a descriptive User-Agent to comply with their
+  usage policy). NGINX block at the end of this doc.
 □ Confirm weather-service is set to run on a schedule (every 6 h) in prod
 □ Take a backup of /public/ so rollback is trivial
 ```
@@ -135,3 +138,31 @@ The orrery build artefacts go into `/public/assets/`, `/public/index.html`, etc.
 - [PLAN.md](../PLAN.md) — "Replace-classic cutover" row in the Infrastructure table.
 - [docs/proxy.md](proxy.md) — the CORS-proxy NGINX rule that must be in place before cutover.
 - [docs/qa-checklist.md](qa-checklist.md) — visual QA checklist for the deep-dive testing pass.
+
+---
+
+## Appendix: optional Nominatim NGINX proxy
+
+Place-name reverse geocoding (LocationPanel) currently hits `nominatim.openstreetmap.org`
+directly. Nominatim's usage policy requires a descriptive `User-Agent` (which the browser
+won't set) and rate-limits to 1 req/s per IP. For production, route through the same NGINX
+host with a polite User-Agent. Paste this into the CapRover NGINX override alongside the
+NHC block:
+
+```nginx
+location /proxy/nominatim/ {
+    proxy_pass         https://nominatim.openstreetmap.org/;
+    proxy_ssl_server_name on;
+    proxy_set_header   Host nominatim.openstreetmap.org;
+    proxy_set_header   User-Agent "earth-clock (https://earth-clock.onemonkey.org; contact: <your-email>)";
+    proxy_intercept_errors on;
+    add_header Access-Control-Allow-Origin *  always;
+
+    # Cache results for 7 days — same lat/lon resolves to the same place name reliably,
+    # and Nominatim explicitly encourages caching.
+    proxy_cache_valid 200 7d;
+}
+```
+
+If deployed, edit `src/data/geocoder.ts` to point `NOMINATIM_URL` at `/proxy/nominatim/reverse`
+so prod uses the proxy while dev (currently no Vite proxy entry for Nominatim) hits direct.
