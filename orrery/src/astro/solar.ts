@@ -47,8 +47,13 @@ export function sunDirectionWorld(date: Date, out = new THREE.Vector3()): THREE.
 
 // Y-axis rotation to apply to the Earth mesh so that its current orientation
 // matches reality: Greenwich meridian sits where it really sits relative to the stars.
-// Negative because the texture's longitude-0 side starts at +X and we rotate
-// "with the spin" (Earth turns eastward).
+//
+// Positive because the texture's longitude-0 side starts at +X, and Earth rotates eastward
+// such that Greenwich moves toward -Z in this world frame (where the sun direction formula
+// puts +RA at -Z). The rotation `R_Y(+θ)` takes +X to -Z, matching that physical direction.
+//
+// A prior incarnation returned `-gmst(date)`, which mirrored the day/night terminator —
+// the rendered sub-solar point landed on the wrong side of Earth.
 export function earthRotationY(date: Date): number {
-  return -gmst(date);
+  return gmst(date);
 }
