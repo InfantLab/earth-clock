@@ -67,21 +67,46 @@ export class LocationPin {
     this.meshGlobe.add(tip);
 
     // ─── 2D pin (for FlatMap mode) ──────────────────────────────────────────
-    // A filled disc with a ring around it — same colour, scaled for the 2 × 1 plane.
+    // Crosshair + outer ring + tiny centre dot. The lines mark the exact spot without
+    // filling the surrounding territory; the outer ring catches the eye at a distance.
+    // Sized to be visible-but-unobtrusive on the 2 × 1 plane (≈10–14 px at default zoom).
     this.meshFlat = new THREE.Group();
     this.meshFlat.visible = false;
 
-    const flatDiscGeom = new THREE.CircleGeometry(0.012, 32);
-    const flatDiscMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.95 });
-    const flatDisc = new THREE.Mesh(flatDiscGeom, flatDiscMat);
-    flatDisc.position.z = 0.001;
-    this.meshFlat.add(flatDisc);
-
-    const flatRingGeom = new THREE.RingGeometry(0.018, 0.022, 32);
-    const flatRingMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.7 });
+    // Outer ring — modest size so it doesn't obscure a continent.
+    const flatRingGeom = new THREE.RingGeometry(0.011, 0.013, 32);
+    const flatRingMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.9 });
     const flatRing = new THREE.Mesh(flatRingGeom, flatRingMat);
     flatRing.position.z = 0.001;
     this.meshFlat.add(flatRing);
+
+    // Crosshair — two short line segments through the centre, with a small gap so the
+    // exact point reads as a "+" rather than a single bar. Lines extend just outside the
+    // ring so the marker looks like a precision target.
+    const crosshairGap  = 0.003;
+    const crosshairOuter = 0.017;
+    const lineGeom = new THREE.BufferGeometry();
+    lineGeom.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute([
+        // Horizontal: left and right of centre
+        -crosshairOuter, 0, 0.001,   -crosshairGap, 0, 0.001,
+         crosshairGap,   0, 0.001,    crosshairOuter, 0, 0.001,
+        // Vertical: above and below centre
+        0, -crosshairOuter, 0.001,   0, -crosshairGap, 0.001,
+        0,  crosshairGap,   0.001,   0,  crosshairOuter, 0.001,
+      ], 3),
+    );
+    const lineMat = new THREE.LineBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.95 });
+    const crosshair = new THREE.LineSegments(lineGeom, lineMat);
+    this.meshFlat.add(crosshair);
+
+    // Tiny centre dot — makes the exact pixel unambiguous when zoomed in.
+    const flatDotGeom = new THREE.CircleGeometry(0.0015, 16);
+    const flatDotMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.95 });
+    const flatDot = new THREE.Mesh(flatDotGeom, flatDotMat);
+    flatDot.position.z = 0.002;
+    this.meshFlat.add(flatDot);
   }
 
   /**
