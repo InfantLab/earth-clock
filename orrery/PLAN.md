@@ -116,7 +116,7 @@ The goal: while the user time-warps through an eclipse, the moon's umbra and pen
 2. **Active fires** — port `FireLayer` to support a 2D mode. Vertex shader picks between sphere xyz and (lon, lat)-on-plane positions based on a `uMode` uniform; fragment shader unchanged. Same for the data path (lat/lon → plane uv is just a linear scale).
 3. **Active hurricanes** — same treatment as fires. Storm sprites in 2D should be the same colored discs with the same intensity ramp.
 4. **Aurora** — same point-cloud treatment. Aurora's night-side mask uses geographic ndotl which is already in the FlatMap shader, so it transfers cleanly.
-5. **Wind particles** — biggest. `Particles.ts`'s GPU compute is already in (lon, lat) — only the render vertex shader projects to xyz. Add a `uMode` uniform that, in flat-map mode, projects to (u, v) on the plane instead. `Trails` accumulator also needs to know about the projection so streaks display correctly.
+5. **Wind particles** — ✅ done as part of the world-space Trails refactor. `Particles.flatMesh` projects to (u, v) on the 2x1 plane; FlatMap composites the same trail texture as a planar quad.
 6. **Sub-solar marker** — small dot at the current sub-solar (lat, lon) on the plane. Visual rhyme with the 3D globe's terminator.
 7. **Sub-lunar marker / projected moon** — small dot at the current sub-lunar (lat, lon) showing where the moon is directly overhead. Replaces the 3D moon mesh which doesn't have an equivalent in the flat view.
 8. **Terminator line** — explicit drawn curve along the day/night boundary on the plane (it's an arc, not a straight line — phase depends on sub-solar declination).
@@ -189,6 +189,12 @@ Classic earth-clock had Temp, RH, MSLP, TPW, TCW, AD, WPD overlays — all from 
 - **Real star skybox** (Tycho-2 / Deepstar catalogue at >100 k stars)
 - **Full solar system** — planets, their moons, ecliptic plane
 - **Wallpaper Engine** output mode — replace `BundledDataSource` stub with real fetches
+- **Wind trail finesse** — current world-space trails (2048×1024 buffer, 0.99 fade) look right but read as a lot of visual weight when combined with clouds + day map. Future polish:
+  - Lower default `uAlpha` per particle (subtler accumulation) and rely on density instead of per-streak brightness.
+  - Subtle day/night modulation in the composite shader so trails dim on the night side (or fade entirely there, matching how the sun's glint defines visible weather).
+  - Colour-by-speed: tint warm for fast (jet-stream), cool for slow — adds information density without dominating the image.
+  - Optional "wind only" rendering mode (everything else darkened) for the classic earth.nullschool look on demand.
+  - All live-tunable from the console today; this PLAN entry is to remember to set sensible defaults.
 - **Camera paths through space** ← *v1 landed (gentle auto-orbit); rest TODO*
   - ✅ **v1: gentle auto-orbit** — uses OrbitControls' built-in `autoRotate` at speed 0.4 (~150 s per orbit). Toggle "Orbit" in the menu's View row. Pauses automatically while the user is actively dragging the mouse, so input handover is implicit. `src/scene/CameraPath.ts` defines an interface stub for the bigger paths to plug into.
   - ⬜ **ISS viewpoint** — TLE + SGP4 propagator → real ISS position (~408 km × 51.6° inclination), camera follows.
