@@ -47,12 +47,14 @@ export class Trails {
   private readonly compositeSphere: THREE.Mesh;
 
   /**
-   * Trail buffer resolution. The composite sphere samples this texture with bilinear
-   * filtering, so 1024×512 is enough for a smooth look — going higher costs fillrate
-   * and memory without much visible benefit at globe-zoom.
+   * Trail buffer resolution. At 2048×1024, the visible hemisphere maps to ~1024 texels —
+   * approximately 1:1 with screen pixels at default zoom, so bilinear filtering doesn't
+   * blur particle splats into soft blobs. This matches the visual sharpness of the old
+   * screen-space accumulator while keeping the geographic-frame advantages of world space.
+   * Memory: 2 × 2048 × 1024 × 4 bytes = 16 MB for the ping-pong pair.
    */
-  private static readonly TRAIL_WIDTH = 1024;
-  private static readonly TRAIL_HEIGHT = 512;
+  private static readonly TRAIL_WIDTH = 2048;
+  private static readonly TRAIL_HEIGHT = 1024;
 
   constructor(particleFlatMesh: THREE.Points) {
     const rtOpts: THREE.RenderTargetOptions = {
@@ -82,7 +84,10 @@ export class Trails {
     this.fadeMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uPrev: { value: null },
-        uFade: { value: 0.985 }, // same default as the old screen-space version
+        // Half-life ≈ log(0.5)/log(0.99) ≈ 69 frames ≈ 1.15 s at 60 fps. Long enough that
+        // each particle traces a clearly elongated streak (~6–8 texels at default
+        // particle speed) before fading.
+        uFade: { value: 0.99 },
       },
       vertexShader: /* glsl */`
         varying vec2 vUv;
