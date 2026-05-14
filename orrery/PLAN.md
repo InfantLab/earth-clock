@@ -189,6 +189,7 @@ Classic earth-clock had Temp, RH, MSLP, TPW, TCW, AD, WPD overlays — all from 
 - **Real star skybox** (Tycho-2 / Deepstar catalogue at >100 k stars)
 - **Full solar system** — planets, their moons, ecliptic plane
 - **Wallpaper Engine** output mode — replace `BundledDataSource` stub with real fetches
+- **"About sources" panel** — friendly button labels + hover-tooltips landed (e.g. "Pressure" instead of "MSLP", with the technical name in the title attribute), but a single panel that lists every data source with its purpose / cadence / organisation / units / link would help first-time visitors who don't hover. Could grow out of the existing DataPanel (expandable rows) or be its own About modal. Keep it discoverable from the menu — current "about" link points to GitHub which isn't the right place for this.
 - **Wind trail finesse** — current world-space trails (2048×1024 buffer, 0.99 fade) look right but read as a lot of visual weight when combined with clouds + day map. Future polish:
   - Lower default `uAlpha` per particle (subtler accumulation) and rely on density instead of per-streak brightness.
   - Subtle day/night modulation in the composite shader so trails dim on the night side (or fade entirely there, matching how the sun's glint defines visible weather).

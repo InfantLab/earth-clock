@@ -72,14 +72,52 @@ const DEFAULTS: Record<LayerKey, boolean> = {
 
 const LABELS: Record<LayerKey, string> = {
   clouds: "Clouds", aurora: "Aurora", fires: "Fires", hurricanes: "Hurricanes",
-  tracks: "Tracks",
+  tracks: "Storm tracks",
   lightning: "Lightning", wind: "Wind", coastlines: "Coastlines",
-  terminator: "Terminator", nightLights: "Night lights",
+  terminator: "Day/night", nightLights: "Night lights",
   moon: "Moon", atmosphere: "Atmosphere",
   eclipse: "Eclipse",
-  mslp: "MSLP", temp: "Temp", rh: "RH", tpw: "TPW", tcw: "TCW",
-  map: "Map", orbit: "Orbit",
+  // Overlay row: human-readable names rather than meteorological abbreviations. The
+  // technical names + brief explanations are surfaced as tooltips below.
+  mslp: "Pressure", temp: "Temperature", rh: "Humidity",
+  tpw: "Moisture", tcw: "Cloud water",
+  map: "Flat map", orbit: "Auto-spin",
   clock: "Clock", data: "Data", location: "Location", debug: "Debug",
+};
+
+/**
+ * Hover-tooltips for buttons whose display label is the friendly name. We keep the
+ * technical / catalogue names accessible (one-line description, what it measures, units
+ * if relevant) so power-users aren't lost when they expect "MSLP" rather than "Pressure".
+ */
+const TOOLTIPS: Partial<Record<LayerKey, string>> = {
+  // Layers
+  clouds:      "Cloud cover (NASA VIIRS true-color composite, refreshed daily)",
+  aurora:      "Aurora oval probability (NOAA SWPC Ovation, refreshed 5 min)",
+  fires:       "Active wildfires from satellite thermal detections (NASA FIRMS, last 24 h)",
+  hurricanes:  "Active tropical cyclones (NOAA NHC, refreshed 15 min)",
+  tracks:      "Past track + 5-day forecast track + uncertainty cone for each active storm",
+  lightning:   "Real-time lightning strikes from the Blitzortung community network",
+  wind:        "Surface wind particle simulation (NOAA GFS, refreshed 6 h)",
+  coastlines:  "Natural Earth 50 m coastlines",
+  terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
+  nightLights: "City lights on the night side (Solar System Scope)",
+  moon:        "The moon at its true position and distance (~60 Earth radii)",
+  atmosphere:  "Atmospheric rim glow with day-twilight gradient",
+  eclipse:     "Live umbra + penumbra discs and path-of-totality for the next solar eclipse",
+  // Overlays — each carries the GFS technical name in parentheses
+  mslp:        "Mean sea level pressure (MSLP) — highs and lows drive weather systems",
+  temp:        "2 m air temperature (Temp) — kelvin internally, displayed via colour ramp",
+  rh:          "2 m relative humidity (RH) — 0 to 100 % of saturation",
+  tpw:         "Total precipitable water (TPW, mm) — atmospheric water vapour column",
+  tcw:         "Total cloud water (TCW, kg/m²) — liquid + ice in the atmospheric column",
+  // View row
+  map:         "Switch to equirectangular flat-map projection",
+  orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
+  clock:       "Time display (top-left). Click the zone to flip UTC ⇄ local.",
+  data:        "Per-layer source + last-fetched age",
+  location:    "Click the globe / map to pin a location and look it up",
+  debug:       "Diagnostic overlay — astro readout, fixture loader, find-moon, jump-to-eclipse",
 };
 
 /**
@@ -151,7 +189,9 @@ export class Menu {
         const btn = document.createElement("span");
         btn.className = "orrery-tb";
         btn.textContent = LABELS[key];
-        btn.title = `Toggle ${LABELS[key]}`;
+        // Tooltip: the layer's full description (which includes the technical name where
+        // relevant), falling back to a plain "Toggle X" for layers without an entry yet.
+        btn.title = TOOLTIPS[key] ?? `Toggle ${LABELS[key]}`;
         btn.addEventListener("click", () => this.toggle(key));
         buttonsHost.appendChild(btn);
         this.buttons[key] = btn;
