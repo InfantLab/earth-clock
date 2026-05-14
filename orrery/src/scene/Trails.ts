@@ -1,29 +1,60 @@
 import * as THREE from "three";
 
+const AXIAL_TILT = 23.44 * Math.PI / 180;
+
 /**
- * Persistent-trail accumulator (the secret sauce of the Mapbox webgl-wind effect).
+ * World-space wind-particle trail accumulator.
  *
- * Each frame:
- *   1. Take the previous trails RT and copy it into the current RT, multiplied by a per-frame
- *      decay factor — this is what makes streaks gradually fade.
- *   2. Render the particle scene on top, additively, using the main camera.
- *   3. Composite the current RT over the main canvas with additive blending.
+ * Earlier versions accumulated trails in **screen space** (the classic Mapbox webgl-wind
+ * technique): cheap and pretty, but any camera motion (auto-orbit, drag, scroll-zoom)
+ * smears every particle in the direction of motion because the accumulator can't tell
+ * particle motion from camera motion.
  *
- * The render pings between two RTs because WebGL can't read and write the same texture.
- * Trails stay in screen space, so the streaks read correctly when the globe rotates underneath.
+ * This version accumulates in **geographic (lon, lat) space** — the trail buffer is a
+ * 2:1 equirectangular texture; each frame the particles are rendered into it at their
+ * `(lon/180, lat/180)` plane coordinates, faded toward zero, and ping-ponged. The
+ * resulting texture is mapped onto a sphere in Earth's local frame so the trails sit on
+ * the ground and rotate with it. Camera motion doesn't affect them.
+ *
+ * Three passes per frame, same shape as before:
+ *   1. Fade the previous trail RT into the next RT (multiply by `uFade`).
+ *   2. Render the flat-projection particle mesh into the next RT with an ortho camera
+ *      that views the 2×1 plane (so particles land at the right texel by lon/lat).
+ *   3. The composite mesh (a sphere in the main scene) samples the trail texture as a
+ *      regular equirectangular UV map. It's added directly to the main scene with
+ *      additive blending, so the main render pass handles compositing automatically —
+ *      no separate composite step here.
  */
 export class Trails {
+  /** Mesh that lives in the main 3D scene — a translucent sphere whose surface is the
+   *  trail texture. Parented to a group that gets axial-tilt + daily rotation each frame. */
+  readonly mesh: THREE.Group;
+  /** Plane mesh for FlatMap mode — same trail texture rendered onto a 2×1 plane. */
+  readonly flatMesh: THREE.Mesh;
+
   private rtA: THREE.WebGLRenderTarget;
   private rtB: THREE.WebGLRenderTarget;
   private current: THREE.WebGLRenderTarget;
+
   private readonly particleScene: THREE.Scene;
   private readonly fadeScene: THREE.Scene;
-  private readonly compositeScene: THREE.Scene;
-  private readonly screenCamera: THREE.OrthographicCamera;
+  private readonly trailCamera: THREE.OrthographicCamera;
+
   private readonly fadeMaterial: THREE.ShaderMaterial;
   private readonly compositeMaterial: THREE.ShaderMaterial;
+  private readonly flatCompositeMaterial: THREE.ShaderMaterial;
+  private readonly fadeQuadCam: THREE.OrthographicCamera;
+  private readonly compositeSphere: THREE.Mesh;
 
-  constructor(width: number, height: number, particleMesh: THREE.Object3D) {
+  /**
+   * Trail buffer resolution. The composite sphere samples this texture with bilinear
+   * filtering, so 1024×512 is enough for a smooth look — going higher costs fillrate
+   * and memory without much visible benefit at globe-zoom.
+   */
+  private static readonly TRAIL_WIDTH = 1024;
+  private static readonly TRAIL_HEIGHT = 512;
+
+  constructor(particleFlatMesh: THREE.Points) {
     const rtOpts: THREE.RenderTargetOptions = {
       depthBuffer: false,
       stencilBuffer: false,
@@ -31,25 +62,27 @@ export class Trails {
       format: THREE.RGBAFormat,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
+      wrapS: THREE.RepeatWrapping,        // longitude wraps at ±180
+      wrapT: THREE.ClampToEdgeWrapping,   // latitude clamps at poles
     };
-    this.rtA = new THREE.WebGLRenderTarget(width, height, rtOpts);
-    this.rtB = new THREE.WebGLRenderTarget(width, height, rtOpts);
+    this.rtA = new THREE.WebGLRenderTarget(Trails.TRAIL_WIDTH, Trails.TRAIL_HEIGHT, rtOpts);
+    this.rtB = new THREE.WebGLRenderTarget(Trails.TRAIL_WIDTH, Trails.TRAIL_HEIGHT, rtOpts);
     this.current = this.rtA;
 
-    // Particles live in their own scene so the main render pass doesn't draw them directly —
-    // they only reach the canvas via the trails composite.
+    // Ortho camera viewing the 2×1 plane (matches the FlatMap layout). Particles' flat
+    // material projects their (lon, lat) into this frustum so they land at the right
+    // texel of the trail texture.
+    this.trailCamera = new THREE.OrthographicCamera(-1, 1, 0.5, -0.5, 0, 10);
+    this.trailCamera.position.set(0, 0, 1);
+
     this.particleScene = new THREE.Scene();
-    this.particleScene.add(particleMesh);
+    this.particleScene.add(particleFlatMesh);
 
-    this.screenCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-
-    // Full-screen quad reused by both the fade and composite passes
-    const quadGeom = new THREE.PlaneGeometry(2, 2);
-
+    // ---- Pass 1: fade the previous trail buffer ----
     this.fadeMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uPrev: { value: null },
-        uFade: { value: 0.985 }, // ~46-frame half-life ≈ 0.77s trails at 60fps
+        uFade: { value: 0.985 }, // same default as the old screen-space version
       },
       vertexShader: /* glsl */`
         varying vec2 vUv;
@@ -70,76 +103,142 @@ export class Trails {
       depthTest: false,
       depthWrite: false,
     });
+    this.fadeQuadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.fadeScene = new THREE.Scene();
-    this.fadeScene.add(new THREE.Mesh(quadGeom, this.fadeMaterial));
+    this.fadeScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.fadeMaterial));
 
+    // ---- Composite: sphere in main scene, textured with the trail buffer ----
     this.compositeMaterial = new THREE.ShaderMaterial({
-      uniforms: { uTrails: { value: null } },
+      uniforms: {
+        uTrails:  { value: null },
+        uOpacity: { value: 1.0 },
+      },
       vertexShader: /* glsl */`
         varying vec2 vUv;
         void main() {
-          vUv = uv;
-          gl_Position = vec4(position.xy, 0.0, 1.0);
+          // Three.js SphereGeometry's default UV puts u=0 at lon=-180; the day texture
+          // has Greenwich at u=0.5. Trail buffer was rendered with particles at
+          // (lon/180, lat/180) on the 2x1 plane, so its "Greenwich" is at u=0 of the
+          // texture. Shift by 0.5 here so the trail texture aligns with the day map.
+          vUv = vec2(fract(uv.x + 0.5), uv.y);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: /* glsl */`
         uniform sampler2D uTrails;
+        uniform float uOpacity;
         varying vec2 vUv;
         void main() {
-          gl_FragColor = texture2D(uTrails, vUv);
+          vec4 c = texture2D(uTrails, vUv);
+          // Trail texture is additive-accumulated white; only its alpha really matters.
+          gl_FragColor = vec4(c.rgb, c.a * uOpacity);
         }
       `,
       transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthTest: false,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
     });
-    this.compositeScene = new THREE.Scene();
-    this.compositeScene.add(new THREE.Mesh(quadGeom, this.compositeMaterial));
-  }
 
-  resize(width: number, height: number) {
-    this.rtA.setSize(width, height);
-    this.rtB.setSize(width, height);
-  }
+    // Composite sphere at r=1.006 — above the cloud shell (1.003) so trails read against
+    // both the day surface and the cloud layer. Mesh stays in the rotating-Earth frame.
+    this.compositeSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(1.006, 96, 48),
+      this.compositeMaterial,
+    );
+    this.mesh = new THREE.Group();
+    this.mesh.rotation.z = AXIAL_TILT;
+    this.mesh.add(this.compositeSphere);
 
-  /** Live tunable: 0.90 = short trails (~10 frames), 0.99 = very long (~70 frames). */
-  setFade(survivalRate: number) {
-    this.fadeMaterial.uniforms.uFade.value = survivalRate;
+    // Flat-map composite: a quad textured with the trail buffer. Parented separately
+    // (FlatMap.scene); same uniform-driven material so trail texture updates are shared.
+    this.flatCompositeMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTrails:  this.compositeMaterial.uniforms.uTrails, // share the trail-texture ref
+        uOpacity: this.compositeMaterial.uniforms.uOpacity,
+      },
+      vertexShader: /* glsl */`
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform sampler2D uTrails;
+        uniform float uOpacity;
+        varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(uTrails, vUv);
+          gl_FragColor = vec4(c.rgb, c.a * uOpacity);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.flatMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 1), this.flatCompositeMaterial);
+    this.flatMesh.position.z = 0.005; // above other flat-map content
   }
 
   /**
-   * Run the three passes. Call AFTER renderer.render(mainScene, mainCamera) so the trails
-   * end up composited on top of the rendered globe.
+   * Run one trail-accumulation step:
+   *   1. Fade the previous RT into the next RT.
+   *   2. Render the flat particle mesh into the next RT.
+   *   3. Update the composite materials to sample the next RT.
+   * No screen compositing happens here — the composite sphere is part of the main scene
+   * and gets drawn automatically by `renderer.render(scene, camera)`.
    */
-  render(renderer: THREE.WebGLRenderer, mainCamera: THREE.Camera) {
+  step(renderer: THREE.WebGLRenderer) {
     const next = this.current === this.rtA ? this.rtB : this.rtA;
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
 
-    // Pass 1: fade-of-prev → next
+    // Pass 1: fade prev → next
     this.fadeMaterial.uniforms.uPrev.value = this.current.texture;
     renderer.setRenderTarget(next);
     renderer.setClearColor(0x000000, 0);
     renderer.clear(true, false, false);
-    renderer.render(this.fadeScene, this.screenCamera);
+    renderer.render(this.fadeScene, this.fadeQuadCam);
 
-    // Pass 2: render particles on top of the faded buffer using the real camera
-    renderer.render(this.particleScene, mainCamera);
+    // Pass 2: render flat-projection particles into the trail buffer
+    renderer.render(this.particleScene, this.trailCamera);
 
-    // Pass 3: composite the accumulated trails over the main canvas additively
     renderer.setRenderTarget(null);
-    this.compositeMaterial.uniforms.uTrails.value = next.texture;
-    renderer.render(this.compositeScene, this.screenCamera);
-
     renderer.autoClear = prevAutoClear;
+
+    // Update the composite sampler so the next main-scene render picks up the new trail.
+    this.compositeMaterial.uniforms.uTrails.value = next.texture;
     this.current = next;
   }
+
+  /** Daily spin angle for the composite sphere. Same value as every other Earth layer. */
+  setRotationY(angle: number) {
+    this.compositeSphere.rotation.y = angle;
+  }
+
+  /** Trail visibility — toggled by the Wind menu entry. Hides both the sphere and the flat composite. */
+  setVisible(visible: boolean) {
+    this.mesh.visible = visible;
+    this.flatMesh.visible = visible;
+  }
+
+  /** Live-tunable fade rate. 0.985 ≈ 0.77 s half-life at 60 fps; 0.99 = longer trails. */
+  setFade(survivalRate: number) {
+    this.fadeMaterial.uniforms.uFade.value = survivalRate;
+  }
+
+  setOpacity(o: number) {
+    this.compositeMaterial.uniforms.uOpacity.value = o;
+  }
+
+  /** Resize is a no-op now (trail buffer is fixed-resolution); kept for call-site compatibility. */
+  resize(_w: number, _h: number) {}
 
   dispose() {
     this.rtA.dispose();
     this.rtB.dispose();
     this.fadeMaterial.dispose();
     this.compositeMaterial.dispose();
+    this.flatCompositeMaterial.dispose();
   }
 }

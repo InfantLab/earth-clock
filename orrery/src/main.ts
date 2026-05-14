@@ -160,9 +160,13 @@ flatMap.scene.add(lightning.flatMesh);
 //   __orrery.coastlines.setOpacity(0.6)
 const particles = new Particles(renderer, 65536);
 
-// Particles render via the Trails accumulator (additive ping-pong) rather than directly into the
-// main scene, so they leave persistent streaks instead of single dots.
-const trails = new Trails(window.innerWidth, window.innerHeight, particles.mesh);
+// Particles render through the Trails accumulator (additive ping-pong) which writes them
+// into a *geographic-frame* trail texture. The composite sphere is parented into the main
+// scene and renders alongside everything else, so the trails follow Earth's rotation and
+// are immune to camera motion.
+const trails = new Trails(particles.flatMesh);
+scene.add(trails.mesh);
+flatMap.scene.add(trails.flatMesh);
 
 // Sun: a directional light positioned along the actual sun direction so Three.js's
 // built-in lighting gives us a physically-correct day/night terminator on the day map.
@@ -796,6 +800,7 @@ function updateAstro() {
   // Particles, coastlines, clouds, fires, and hurricanes share Earth's rotation so they stay glued to the ground frame
   const earthY = earthRotationY(now);
   particles.setRotationY(earthY);
+  trails.setRotationY(earthY);
   coastlines.setRotationY(earthY);
   clouds.setRotationY(earthY);
   clouds.setSunDirection(sunDir);
@@ -889,36 +894,23 @@ function animate(t: number) {
   controls.autoRotate = menu.isAutoOrbit();
   controls.update();
 
-  // Camera-motion detection. Wind particles' world positions are correct (advection step
-  // uses real GFS u/v), but the trails accumulator stores particle history in *screen*
-  // space — so any camera motion (auto-orbit, manual drag, scroll-zoom) makes every
-  // particle's screen position shift even when its world position doesn't, and the
-  // accumulator dutifully records that motion as a fake "trail" in the direction the
-  // camera moved. Pragmatic fix: rapidly fade the trail buffer while the camera is
-  // moving — smear can't accumulate, but individual particles still register visually.
-  // When the camera stops, normal long-trail fade resumes.
-  trailsCameraMoved.copy(camera.position).sub(trailsCameraLast);
-  const cameraIsMoving = trailsCameraMoved.lengthSq() > 1e-10;
-  trailsCameraLast.copy(camera.position);
-  trails.setFade(cameraIsMoving ? 0.5 : DEFAULT_TRAIL_FADE);
+  // Update the world-space trail accumulator: fade prev frame, render flat-projected
+  // particles into the equirectangular trail texture. The composite (sphere in main scene,
+  // plane in flat map) reads the updated texture during the upcoming render passes. Toggle
+  // hides the composite meshes and skips the step so the trail texture doesn't churn.
+  const windOn = menu.isWindVisible();
+  trails.setVisible(windOn);
+  if (windOn) trails.step(renderer);
 
   if (menu.isMapMode()) {
-    // Flat equirectangular mode — render the FlatMap scene only. Aurora/fires/hurricanes/wind
-    // overlays in flat-map are TODO (see PLAN.md); v1 has day + night + clouds + terminator.
+    // Flat equirectangular mode — composite plane is in flatMap.scene so it renders here.
     renderer.render(flatMap.scene, flatMap.camera);
   } else {
-    // Main scene first (globe, atmosphere, moon, sky) — depth populated, particles NOT here
+    // Main scene render — includes globe, atmosphere, moon, sky, AND the trails composite
+    // sphere (added in startup). Trails follow Earth's rotation via trails.setRotationY.
     renderer.render(scene, camera);
-    // Then composite trails over the top using the same camera — unless wind layer is off
-    if (menu.isWindVisible()) trails.render(renderer, camera);
   }
   requestAnimationFrame(animate);
 }
-
-// Scratch state for the trails camera-motion guard above. Sits at module scope so it
-// outlives any single animate() call.
-const DEFAULT_TRAIL_FADE = 0.985;
-const trailsCameraLast = new THREE.Vector3().copy(camera.position);
-const trailsCameraMoved = new THREE.Vector3();
 
 requestAnimationFrame(animate);

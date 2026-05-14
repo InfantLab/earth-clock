@@ -19,10 +19,15 @@ const AXIAL_TILT = 23.44 * Math.PI / 180;
  */
 export class Particles {
   readonly mesh: THREE.Group;
+  /** Flat-projection mesh: same particles rendered at (lon/180, lat/180) on a 2×1 plane.
+   *  Used by both FlatMap mode (planar wind visualisation) and the world-space Trails
+   *  accumulator (renders particles into an equirectangular trail texture). */
+  readonly flatMesh: THREE.Points;
   private readonly points: THREE.Points;
   private readonly gpu: GPUComputationRenderer;
   private readonly positionVar: Variable;
   private readonly renderMaterial: THREE.ShaderMaterial;
+  private readonly flatRenderMaterial: THREE.ShaderMaterial;
 
   constructor(renderer: THREE.WebGLRenderer, particleCount = 65536) {
     const textureSize = Math.ceil(Math.sqrt(particleCount));
@@ -186,6 +191,50 @@ export class Particles {
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
     this.mesh.add(this.points);
+
+    // ---- Flat-projection render: same particles, but projected to (lon/180, lat/180, 0) ----
+    // Used for both FlatMap rendering and the world-space (equirectangular) Trails buffer.
+    // The trail buffer is its own ortho-camera scene at the 2×1 plane, so this projection
+    // becomes a write into the right texel of the trail texture for each particle.
+    this.flatRenderMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTexturePosition: { value: null },
+        uPointSize: { value: 1.5 },
+        uAlpha: { value: 0.25 },
+      },
+      vertexShader: /* glsl */`
+        uniform sampler2D uTexturePosition;
+        uniform float uPointSize;
+        attribute vec2 lookupUV;
+        varying float vLife;
+        void main() {
+          vec4 state = texture2D(uTexturePosition, lookupUV);
+          vLife = state.z;
+          // (lon/180, lat/180) on the 2×1 plane. Identity model+view+projection lets the
+          // ortho camera viewing (-1..+1, -0.5..+0.5) map this directly onto the trail
+          // texture. No sphere-projection, no tilt, no hemisphere clip.
+          float x = state.x / 180.0;
+          float y = state.y / 180.0;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(x, y, 0.0, 1.0);
+          gl_PointSize = uPointSize;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform float uAlpha;
+        varying float vLife;
+        void main() {
+          float lifeFade = smoothstep(0.0, 0.1, vLife) * (1.0 - smoothstep(0.85, 1.0, vLife));
+          gl_FragColor = vec4(1.0, 1.0, 1.0, uAlpha * lifeFade);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    // Reuses the same geometry — `lookupUV` attribute drives where each vertex pulls its
+    // (lon, lat) from in the compute texture; the position attribute is overwritten in the
+    // vertex shader anyway.
+    this.flatMesh = new THREE.Points(geometry, this.flatRenderMaterial);
   }
 
   /** Mock fallback used until real GFS data loads. Uniform 10 m/s east everywhere. */
@@ -225,9 +274,11 @@ export class Particles {
   }
   setPointSize(px: number) {
     this.renderMaterial.uniforms.uPointSize.value = px;
+    this.flatRenderMaterial.uniforms.uPointSize.value = px;
   }
   setAlpha(a: number) {
     this.renderMaterial.uniforms.uAlpha.value = a;
+    this.flatRenderMaterial.uniforms.uAlpha.value = a;
   }
 
   /** Run one advection step. Call after astro update, before rendering. */
@@ -236,13 +287,15 @@ export class Particles {
     u.uDt.value = Math.min(dtSeconds, 1 / 30); // cap dt so a tab-switch doesn't fling everything
     u.uTime.value = timeSeconds;
     this.gpu.compute();
-    this.renderMaterial.uniforms.uTexturePosition.value =
-      this.gpu.getCurrentRenderTarget(this.positionVar).texture;
+    const positionTex = this.gpu.getCurrentRenderTarget(this.positionVar).texture;
+    this.renderMaterial.uniforms.uTexturePosition.value     = positionTex;
+    this.flatRenderMaterial.uniforms.uTexturePosition.value = positionTex;
   }
 
   dispose() {
     this.gpu.dispose();
     this.renderMaterial.dispose();
+    this.flatRenderMaterial.dispose();
     (this.points.geometry as THREE.BufferGeometry).dispose();
   }
 }
