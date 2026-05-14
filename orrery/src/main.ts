@@ -888,6 +888,20 @@ function animate(t: number) {
   // the menu toggle each frame.
   controls.autoRotate = menu.isAutoOrbit();
   controls.update();
+
+  // Camera-motion detection. Wind particles' world positions are correct (advection step
+  // uses real GFS u/v), but the trails accumulator stores particle history in *screen*
+  // space — so any camera motion (auto-orbit, manual drag, scroll-zoom) makes every
+  // particle's screen position shift even when its world position doesn't, and the
+  // accumulator dutifully records that motion as a fake "trail" in the direction the
+  // camera moved. Pragmatic fix: rapidly fade the trail buffer while the camera is
+  // moving — smear can't accumulate, but individual particles still register visually.
+  // When the camera stops, normal long-trail fade resumes.
+  trailsCameraMoved.copy(camera.position).sub(trailsCameraLast);
+  const cameraIsMoving = trailsCameraMoved.lengthSq() > 1e-10;
+  trailsCameraLast.copy(camera.position);
+  trails.setFade(cameraIsMoving ? 0.5 : DEFAULT_TRAIL_FADE);
+
   if (menu.isMapMode()) {
     // Flat equirectangular mode — render the FlatMap scene only. Aurora/fires/hurricanes/wind
     // overlays in flat-map are TODO (see PLAN.md); v1 has day + night + clouds + terminator.
@@ -900,5 +914,11 @@ function animate(t: number) {
   }
   requestAnimationFrame(animate);
 }
+
+// Scratch state for the trails camera-motion guard above. Sits at module scope so it
+// outlives any single animate() call.
+const DEFAULT_TRAIL_FADE = 0.985;
+const trailsCameraLast = new THREE.Vector3().copy(camera.position);
+const trailsCameraMoved = new THREE.Vector3();
 
 requestAnimationFrame(animate);
