@@ -14,3 +14,10 @@ screensaver/**/Deploy/
 
 # Generated runtime data (refreshed by services)
 public/data/weather/current/current-*.json
+
+# Claude Code workspace dir (chat history, scratch files) — never belongs in a commit
+.claude/
+
+# Orrery dev build output. Vite writes here when BUILD_AS_ROOT is unset; the production
+# cutover writes to ../public/ directly. Either way it's a build artefact, not source.
+public/orrery/

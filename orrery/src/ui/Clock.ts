@@ -4,10 +4,20 @@
  * that drives the globe's rotation, which means time-warp shows up here visibly too.
  *
  * Click anywhere on the time area to toggle **UTC ⇄ Local (browser)**. Choice persists in
- * localStorage. The bottom row carries the current time-warp factor (1× hidden, anything
- * else shown in amber) with a single-click reset back to wall-clock pace.
+ * localStorage.
+ *
+ * Time controls live behind a small ⏱ toggle so the default live-time experience has zero
+ * extra chrome. When expanded, the user gets `⏪  ⏯  ⏩  ↺  × N` — slow down, pause/play,
+ * speed up, reset to 1×. The amber "× N" indicator stays visible regardless of expand
+ * state when warp ≠ 1 so the user can tell at a glance that time-travel is active.
  */
 const STORAGE_KEY = "orrery.clock.v1";
+
+/** Step ratio for ⏪ / ⏩ buttons. 10× per step is brisk; classic earth-clock used 60×. */
+const WARP_STEP = 10;
+const WARP_MIN  = 0.01;
+const WARP_MAX  = 1e7;          // 1e7 ≈ 116 simulated days per real second; well beyond visual usefulness
+const WARP_PAUSE_DEFAULT = 60;  // value restored on play if there's no prior warp memory
 
 type Zone = "utc" | "local";
 
@@ -17,16 +27,24 @@ export class Clock {
   private readonly timeEl: HTMLElement;
   private readonly dateEl: HTMLElement;
   private readonly zoneEl: HTMLElement;
-  private readonly warpEl: HTMLElement;
+  private readonly expandBtn: HTMLElement;
+  private readonly controlsEl: HTMLElement;
+  private readonly warpReadoutEl: HTMLElement;
+  private readonly pauseBtn: HTMLElement;
   private zone: Zone;
+  private expanded: boolean;
+  /** Warp value to restore on un-pause (the speed the user was at before hitting pause). */
+  private warpBeforePause = WARP_PAUSE_DEFAULT;
   private lastTimeStr = "";
   private lastDateStr = "";
   private lastZoneStr = "";
   private lastWarpStr = "";
+  private lastPauseLabel = "";
 
   constructor(parent: HTMLElement) {
     injectStyles();
     this.zone = loadZone();
+    this.expanded = loadExpanded();
 
     this.root = document.createElement("div");
     this.root.id = "orrery-clock";
@@ -36,33 +54,78 @@ export class Clock {
         <div class="orrery-clock-meta">
           <span class="orrery-clock-date" id="orrery-clock-date">—</span>
           <span class="orrery-clock-zone" id="orrery-clock-zone">UTC</span>
+          <span class="orrery-clock-expand" id="orrery-clock-expand" title="Time controls">⏱</span>
         </div>
       </div>
-      <div class="orrery-clock-warp hidden" id="orrery-clock-warp" title="Time-warp factor — click to reset to real time"></div>
+      <div class="orrery-clock-controls hidden" id="orrery-clock-controls">
+        <button class="orrery-clock-btn" id="orrery-clock-slower" title="Slow down (÷${WARP_STEP})">⏪</button>
+        <button class="orrery-clock-btn" id="orrery-clock-pause"  title="Pause / play">⏸</button>
+        <button class="orrery-clock-btn" id="orrery-clock-faster" title="Speed up (×${WARP_STEP})">⏩</button>
+        <button class="orrery-clock-btn" id="orrery-clock-reset"  title="Reset to real time (× 1)">↺</button>
+        <span class="orrery-clock-warp" id="orrery-clock-warp">× 1</span>
+      </div>
     `;
     parent.appendChild(this.root);
 
-    this.clickArea = this.root.querySelector("#orrery-clock-click") as HTMLElement;
-    this.timeEl    = this.root.querySelector("#orrery-clock-time")  as HTMLElement;
-    this.dateEl    = this.root.querySelector("#orrery-clock-date")  as HTMLElement;
-    this.zoneEl    = this.root.querySelector("#orrery-clock-zone")  as HTMLElement;
-    this.warpEl    = this.root.querySelector("#orrery-clock-warp")  as HTMLElement;
+    this.clickArea     = this.root.querySelector("#orrery-clock-click")    as HTMLElement;
+    this.timeEl        = this.root.querySelector("#orrery-clock-time")     as HTMLElement;
+    this.dateEl        = this.root.querySelector("#orrery-clock-date")     as HTMLElement;
+    this.zoneEl        = this.root.querySelector("#orrery-clock-zone")     as HTMLElement;
+    this.expandBtn     = this.root.querySelector("#orrery-clock-expand")   as HTMLElement;
+    this.controlsEl    = this.root.querySelector("#orrery-clock-controls") as HTMLElement;
+    this.warpReadoutEl = this.root.querySelector("#orrery-clock-warp")     as HTMLElement;
+    this.pauseBtn      = this.root.querySelector("#orrery-clock-pause")    as HTMLElement;
 
-    // Single click target covering the whole time block — the earlier "click the zone label"
-    // affordance was too small / hard to discover.
-    this.clickArea.addEventListener("click", () => {
+    // The whole time block (not just the zone label) toggles zone. Catch clicks on the
+    // ⏱ icon at the capture phase so the click doesn't also flip the zone — it lives
+    // inside the click area for layout, not for behaviour.
+    this.clickArea.addEventListener("click", (ev) => {
+      if (ev.target === this.expandBtn) return;
       this.zone = this.zone === "utc" ? "local" : "utc";
       saveZone(this.zone);
       this.lastTimeStr = this.lastDateStr = this.lastZoneStr = "";
     });
 
-    this.warpEl.addEventListener("click", () => {
+    this.expandBtn.addEventListener("click", () => {
+      this.expanded = !this.expanded;
+      saveExpanded(this.expanded);
+      this.refreshExpandState();
+    });
+    this.refreshExpandState();
+
+    (this.root.querySelector("#orrery-clock-slower") as HTMLElement).addEventListener("click", () => {
+      const cur = window.__orreryTimeWarp ?? 1;
+      if (cur === 0) return; // paused — let the user un-pause first
+      window.__orreryTimeWarp = clampWarp(cur / WARP_STEP);
+    });
+    (this.root.querySelector("#orrery-clock-faster") as HTMLElement).addEventListener("click", () => {
+      const cur = window.__orreryTimeWarp ?? 1;
+      if (cur === 0) return;
+      window.__orreryTimeWarp = clampWarp(cur * WARP_STEP);
+    });
+    (this.root.querySelector("#orrery-clock-reset") as HTMLElement).addEventListener("click", () => {
       window.__orreryTimeWarp = 1;
+    });
+    this.pauseBtn.addEventListener("click", () => {
+      const cur = window.__orreryTimeWarp ?? 1;
+      if (cur === 0) {
+        // Currently paused → resume at whatever speed we were running before.
+        window.__orreryTimeWarp = this.warpBeforePause || 1;
+      } else {
+        // Running → remember current speed so play restores it, then freeze.
+        this.warpBeforePause = cur;
+        window.__orreryTimeWarp = 0;
+      }
     });
   }
 
   setVisible(visible: boolean) {
     this.root.classList.toggle("hidden", !visible);
+  }
+
+  private refreshExpandState() {
+    this.controlsEl.classList.toggle("hidden", !this.expanded);
+    this.expandBtn.classList.toggle("active",   this.expanded);
   }
 
   /**
@@ -84,24 +147,35 @@ export class Clock {
     if (dateStr !== this.lastDateStr) { this.dateEl.textContent = dateStr; this.lastDateStr = dateStr; }
     if (zoneStr !== this.lastZoneStr) { this.zoneEl.textContent = zoneStr; this.lastZoneStr = zoneStr; }
 
-    // Time-warp readout: 1× hidden (no visual chrome when running at real time); any other
-    // value shown in amber with a "reset" affordance. Called every frame but only writes
-    // DOM when the rendered text changes.
+    // Warp display. The readout is always inside the control panel (visible when expanded);
+    // when collapsed we still want the user to see that time-travel is active, so the same
+    // string also drives a class on the ⏱ icon (`active` → amber tint when warp ≠ 1).
     const warp = window.__orreryTimeWarp ?? 1;
-    const warpStr = warp === 1 ? "" : `× ${formatWarp(warp)}  ↺ reset`;
+    const warpStr = warp === 0 ? "paused" : `× ${formatWarp(warp)}`;
     if (warpStr !== this.lastWarpStr) {
-      this.warpEl.textContent = warpStr;
-      this.warpEl.classList.toggle("hidden", warpStr === "");
+      this.warpReadoutEl.textContent = warpStr;
+      this.warpReadoutEl.classList.toggle("warped", warp !== 1);
+      this.expandBtn.classList.toggle("warped", warp !== 1);
       this.lastWarpStr = warpStr;
+    }
+    const pauseLabel = warp === 0 ? "▶" : "⏸";
+    if (pauseLabel !== this.lastPauseLabel) {
+      this.pauseBtn.textContent = pauseLabel;
+      this.pauseBtn.title = warp === 0 ? "Resume" : "Pause";
+      this.lastPauseLabel = pauseLabel;
     }
   }
 }
 
 /** Display a warp factor compactly: integer if exact, otherwise 1-decimal. */
 function formatWarp(w: number): string {
-  if (w >= 1000) return `${(w / 1000).toFixed(1)}k`;
+  if (Math.abs(w) >= 1000) return `${(w / 1000).toFixed(1)}k`;
   if (Number.isInteger(w)) return String(w);
-  return w.toFixed(1);
+  return w.toFixed(2).replace(/\.?0+$/, "");
+}
+function clampWarp(w: number): number {
+  if (!Number.isFinite(w) || w <= 0) return WARP_MIN;
+  return Math.min(WARP_MAX, Math.max(WARP_MIN, w));
 }
 
 function pad(n: number): string { return n < 10 ? `0${n}` : `${n}`; }
@@ -134,7 +208,26 @@ function loadZone(): Zone {
   } catch { return "utc"; }
 }
 function saveZone(zone: Zone) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ zone })); } catch { /* */ }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const blob = raw ? JSON.parse(raw) : {};
+    blob.zone = zone;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
+  } catch { /* */ }
+}
+function loadExpanded(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? !!JSON.parse(raw).expanded : false;
+  } catch { return false; }
+}
+function saveExpanded(expanded: boolean) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const blob = raw ? JSON.parse(raw) : {};
+    blob.expanded = expanded;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
+  } catch { /* */ }
 }
 
 let stylesInjected = false;
@@ -172,19 +265,49 @@ function injectStyles() {
     .orrery-clock-date { margin-right: 0.8em; }
     .orrery-clock-zone {
       color: #7c869a;
+      margin-right: 0.6em;
       transition: color 125ms ease;
     }
-    .orrery-clock-warp {
+    /* ⏱ disclosure icon — same colour as the zone label by default so it doesn't crowd
+       the readout; flips amber when time-warp is active so the user is alerted even
+       when the controls row is collapsed. */
+    .orrery-clock-expand {
       pointer-events: all;
       cursor: pointer;
-      margin-top: 6px;
-      font-size: 12px;
-      color: #e2b42e;
-      letter-spacing: 0.04em;
+      color: #6e7a90;
+      font-size: 13px;
       transition: color 125ms ease;
     }
-    .orrery-clock-warp.hidden { display: none; }
-    .orrery-clock-warp:hover { color: #fff; }
+    .orrery-clock-expand:hover           { color: #fff; }
+    .orrery-clock-expand.active          { color: #cfd6e4; }
+    .orrery-clock-expand.warped          { color: #e2b42e; }
+
+    .orrery-clock-controls {
+      pointer-events: all;
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+    .orrery-clock-controls.hidden { display: none; }
+    .orrery-clock-btn {
+      background: rgba(255,255,255,0.06);
+      color: #cfd6e4;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-family: inherit; font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 125ms ease, color 125ms ease;
+    }
+    .orrery-clock-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+    .orrery-clock-warp {
+      margin-left: 4px;
+      color: #6e7a90;
+      transition: color 125ms ease;
+    }
+    .orrery-clock-warp.warped { color: #e2b42e; }
   `;
   const el = document.createElement("style");
   el.textContent = css;
