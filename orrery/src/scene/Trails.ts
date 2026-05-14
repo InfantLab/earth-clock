@@ -114,23 +114,34 @@ export class Trails {
         uOpacity: { value: 1.0 },
       },
       vertexShader: /* glsl */`
-        varying vec2 vUv;
+        varying vec3 vLocalNormal;
         void main() {
-          // Three.js SphereGeometry's default UV puts u=0 at lon=-180; the day texture
-          // has Greenwich at u=0.5. Trail buffer was rendered with particles at
-          // (lon/180, lat/180) on the 2x1 plane, so its "Greenwich" is at u=0 of the
-          // texture. Shift by 0.5 here so the trail texture aligns with the day map.
-          vUv = vec2(fract(uv.x + 0.5), uv.y);
+          // Per-fragment UV (computed in fragment shader from this normal) — avoids the
+          // prime-meridian seam that a vUv with a +0.5 shift creates. See OverlayLayer
+          // for the same approach applied to GFS scalar overlays.
+          vLocalNormal = normalize(normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: /* glsl */`
         uniform sampler2D uTrails;
         uniform float uOpacity;
-        varying vec2 vUv;
+        varying vec3 vLocalNormal;
+        const float PI = 3.14159265359;
         void main() {
-          vec4 c = texture2D(uTrails, vUv);
-          // Trail texture is additive-accumulated white; only its alpha really matters.
+          // Trail buffer was rendered with particles at world (lon/180, lat/180) on the
+          // 2x1 plane via an ortho camera. That puts:
+          //   lon=0  (Greenwich)  → texture u=0.5
+          //   lon=±π (date line)  → texture u=0 or 1
+          //   lat=+π/2 (N pole)   → texture v=1
+          //   lat=-π/2 (S pole)   → texture v=0
+          // Per-fragment formula: lat = asin(y), lon = atan2(-z, x).
+          float lat = asin(clamp(vLocalNormal.y, -1.0, 1.0));
+          float lon = atan(-vLocalNormal.z, vLocalNormal.x);
+          float u = (lon + PI) / (2.0 * PI);
+          float vv = (lat + 0.5 * PI) / PI;
+          vec4 c = texture2D(uTrails, vec2(u, vv));
+          // Trail texture is additive-accumulated white; alpha carries the trail density.
           gl_FragColor = vec4(c.rgb, c.a * uOpacity);
         }
       `,

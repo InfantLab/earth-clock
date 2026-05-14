@@ -46,12 +46,16 @@ export class OverlayLayer {
         uOpacity:  { value: 0.65 },
       },
       vertexShader: /* glsl */`
-        varying vec2 vUv;
+        varying vec3 vLocalNormal;
         void main() {
-          // Three.js SphereGeometry maps the equirectangular UV directly; the GFS grid uses
-          // the same convention (u=0 at lon=-180 to u=1 at lon=+180, v=0 at +90 to v=1 at -90).
-          // GFS data files actually start at lon=0 / lat=+90 — so we shift u by 0.5 to align.
-          vUv = vec2(fract(uv.x + 0.5), uv.y);
+          // Local-frame surface normal — for a unit sphere centred at origin, this equals
+          // the normalised vertex position. We compute the UV per-fragment from this in the
+          // fragment shader rather than interpolating a vUv, because the prime-meridian
+          // wrap-around (texture u=0 meets u=1 here) creates a discontinuity that the
+          // rasterizer's linear vUv interpolation can't bridge — fragments straddling the
+          // seam would sample the wrong half of the texture. The normal is continuous, so
+          // computing UV from it per-pixel avoids the seam entirely.
+          vLocalNormal = normalize(normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
@@ -62,7 +66,8 @@ export class OverlayLayer {
         uniform float uVmax;
         uniform int   uPalette;
         uniform float uOpacity;
-        varying vec2 vUv;
+        varying vec3 vLocalNormal;
+        const float PI = 3.14159265359;
 
         // Five-stop colour palettes. Each row maps a normalised value t ∈ [0,1] to RGB.
         // Sample with linear interpolation between adjacent stops.
@@ -135,8 +140,18 @@ export class OverlayLayer {
 
         void main() {
           if (uHasData < 0.5) discard;
-          float v = texture2D(uMap, vUv).r;
-          float t = (v - uVmin) / max(uVmax - uVmin, 1e-6);
+          // Per-fragment UV from the local-frame surface normal. Convention:
+          //   x = cos(lat)·cos(lon),  y = sin(lat),  z = -cos(lat)·sin(lon)
+          //   so lat = asin(y),  lon = atan2(-z, x)  (range -π..+π).
+          // GFS grid: first column at lon=0, first row at lat=+90. So:
+          //   u = (lon mod 2π) / 2π
+          //   v = (π/2 − lat) / π   (v=0 north pole, v=1 south pole)
+          float lat = asin(clamp(vLocalNormal.y, -1.0, 1.0));
+          float lon = atan(-vLocalNormal.z, vLocalNormal.x);
+          float u = (lon < 0.0 ? lon + 2.0 * PI : lon) / (2.0 * PI);
+          float vv = (0.5 * PI - lat) / PI;
+          float val = texture2D(uMap, vec2(u, vv)).r;
+          float t = (val - uVmin) / max(uVmax - uVmin, 1e-6);
           vec3 col;
           if      (uPalette == 0) col = paletteTemp(t);
           else if (uPalette == 1) col = paletteHumidity(t);
