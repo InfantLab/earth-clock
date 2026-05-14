@@ -34,7 +34,7 @@ import { computeShadow, computePathOfTotality } from "./astro/eclipse";
 import { nextEclipse } from "./data/eclipseCatalog";
 import { LightningLoader } from "./data/lightningLoader";
 import { windGridToTexture } from "./data/windToTexture";
-import { fetchGibsTexture, bestAvailableDailyDate } from "./data/gibsLoader";
+import { fetchGibsTextureWithFallback } from "./data/gibsLoader";
 import {
   debugAuroraGrid, debugFireDetections,
   debugStormGrid, debugCloudTexture,
@@ -752,24 +752,29 @@ setInterval(() => {
   });
 }, 1000);
 
-// Fetch yesterday's global VIIRS true-color mosaic from NASA GIBS (CORS-clean, no auth).
-// 8 tiles at zoom 1 → 2048×1024 final texture, ~700 KB total payload.
-const cloudDate = bestAvailableDailyDate();
-fetchGibsTexture({
+// Fetch the latest fully-published global VIIRS true-color mosaic from NASA GIBS. The
+// most-recent few days can have regional publishing gaps (col=3 at zoom 1 — Pacific /
+// East Asia — typically lags the Americas), so the fallback loop walks the date back
+// until every tile loads. 8 tiles at zoom 1 → 2048×1024 final texture, ~700 KB.
+fetchGibsTextureWithFallback({
   layer: "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
-  date: cloudDate,
   tileMatrixSet: "250m",
   zoom: 1,
   ext: "jpg",
+  onAttempt: (date, err) => {
+    const dateStr = date.toISOString().slice(0, 10);
+    debug.warn("clouds", `${dateStr} incomplete (${err.message.split(":").slice(-1)[0].trim()}); trying older`);
+  },
 })
-  .then(tex => {
-    clouds.setTexture(tex);
-    flatMap.setCloudTexture(tex);
-    debug.info("clouds", `VIIRS NOAA-20 ${cloudDate.toISOString().slice(0, 10)}`);
+  .then(({ texture, date }) => {
+    const dateStr = date.toISOString().slice(0, 10);
+    clouds.setTexture(texture);
+    flatMap.setCloudTexture(texture);
+    debug.info("clouds", `VIIRS NOAA-20 ${dateStr}`);
     dataRegistry.report("clouds", {
       source: "NASA GIBS · VIIRS NOAA-20 True Color",
       fetched: new Date(),
-      detail: cloudDate.toISOString().slice(0, 10),
+      detail: dateStr,
       refreshSeconds: 24 * 3600,
     });
   })

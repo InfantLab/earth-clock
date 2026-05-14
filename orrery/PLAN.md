@@ -67,9 +67,11 @@ This is the **engineering tracker** — current status of every layer, what's ne
   - `FIRMS_VIIRS_NOAA20_Fires` — GIBS fire overlay (lower-res alternative to FIRMS API)
 - **Implementation**: extend `CloudLayer`-style overlay class to accept GIBS layer ID + colormap uniform; or just add a generic `GibsOverlay` class that wraps a translucent sphere.
 
-### ⬜ Sea ice (NH + SH)
-- **Source**: `AMSRU2_Sea_Ice_Concentration_12km` via GIBS (same pipeline)
-- Polar-cap overlay; opacity ∝ ice concentration
+### ⬜ Sea ice (NH + SH)  ← bumped: bundled day texture has Arctic ice baked in, not live
+- **Why now**: the Solar System Scope day texture is a fixed mosaic that always shows summer/winter ice extent the way it was when the texture was captured. Today the Arctic looks ice-cap-y even if it isn't. A live sea-ice overlay would correct that for the present date.
+- **Source**: `AMSRU2_Sea_Ice_Concentration_12km` via GIBS (same pipeline as the cloud composite — `fetchGibsTextureWithFallback` handles the regional-publishing-lag retry).
+- **Implementation**: thin translucent shell at r≈1.0008 (between Earth and clouds) with a luminance-threshold-style shader, masked to polar regions and modulated by ice concentration (high concentration = bright opaque white, low = transparent).
+- **UX**: lives in the Overlay row alongside the GFS scalars, or in Layers as a binary "Sea ice" toggle. Probably Layers since it's not mutually exclusive with the GFS overlays.
 
 ### ⬜ Solar-eclipse visualisation tool  ← **headline feature**, targeting **summer 2026 Spain eclipse**
 

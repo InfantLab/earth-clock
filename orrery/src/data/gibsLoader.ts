@@ -76,18 +76,52 @@ function drawTile(
 }
 
 /**
- * Get a UTC date for which a daily GIBS mosaic is definitely fully published.
+ * Get a UTC date for which a daily GIBS mosaic is *likely* fully published.
  *
- * NASA publishes the daily VIIRS true-color mosaic region-by-region, so "yesterday" can
- * still be partial — typically the Pacific / East Asia tiles (col=3 at zoom 1) lag the
- * Americas tiles by several hours, producing 400 responses on incomplete tiles. Lagging
- * by 2 days is conservative but reliable. The visual difference between "yesterday" and
- * "the day before yesterday" is invisible at globe-zoom.
- *
- * A more sophisticated implementation would probe the latest available tile and walk back.
+ * NASA publishes the daily VIIRS true-color mosaic region-by-region, so the most recent
+ * days can be partial — typically the Pacific / East Asia tiles (col=3 at zoom 1) lag
+ * the Americas tiles by several hours, producing 400 responses on incomplete tiles.
+ * Lagging by 2 days is the default conservative starting point; if that still fails,
+ * `fetchGibsTextureWithFallback()` walks the date back further until every tile loads.
  */
 export function bestAvailableDailyDate(now: Date = new Date()): Date {
   const d = new Date(now);
   d.setUTCDate(d.getUTCDate() - 2);
   return d;
+}
+
+/**
+ * Try `fetchGibsTexture` for a sequence of progressively-older dates, returning the
+ * first one whose every tile loaded successfully. Useful for GIBS layers where the
+ * most-recent dates can have missing tiles (regional publishing lag).
+ *
+ * Walks back up to `maxDaysBack` days from the caller's preferred start date. Throws
+ * if every attempt fails. Logs each attempt so the diagnostic overlay can show the
+ * progression.
+ */
+export async function fetchGibsTextureWithFallback(
+  opts: Omit<GibsTileOptions, "date"> & {
+    /** First date to try. Default: `bestAvailableDailyDate(now)` (2 days ago). */
+    startDate?: Date;
+    /** Maximum number of older dates to try after `startDate` before giving up. */
+    maxDaysBack?: number;
+    /** Optional progress callback for each failed attempt — fired with the failing date and error. */
+    onAttempt?: (date: Date, error: Error) => void;
+  },
+): Promise<{ texture: THREE.CanvasTexture; date: Date }> {
+  const start = opts.startDate ?? bestAvailableDailyDate();
+  const maxDaysBack = opts.maxDaysBack ?? 7;
+  let lastErr: Error | null = null;
+  for (let i = 0; i <= maxDaysBack; i++) {
+    const date = new Date(start);
+    date.setUTCDate(date.getUTCDate() - i);
+    try {
+      const texture = await fetchGibsTexture({ ...opts, date });
+      return { texture, date };
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      opts.onAttempt?.(date, lastErr);
+    }
+  }
+  throw lastErr ?? new Error("GIBS fetch failed for every fallback date");
 }
