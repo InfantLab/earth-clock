@@ -263,9 +263,13 @@ debug.pending("coastlines", "fetching Natural Earth…");
 // User-facing data sources panel (top-right). Lists source + last-fetched age per layer.
 const dataPanel = new DataPanel(document.body, dataRegistry);
 
-// Clock readout (top-centre). Big monospace UTC/local clock driven by simulatedTime so it
-// reflects time-warp. Click the zone label to flip UTC ⇄ Local.
-const clock = new Clock(document.body);
+// Clock readout (top-left). Big monospace UTC/local clock driven by simulatedTime so it
+// reflects time-warp. Click anywhere on the time to flip UTC ⇄ Local; ⏱ reveals time
+// controls. `onSnapToLive` is the hook the ↺ Reset button calls — main.ts owns
+// `simulatedTime` so the Clock can't write to it directly.
+const clock = new Clock(document.body, {
+  onSnapToLive: () => { simulatedTime = Date.now(); },
+});
 
 // Location panel (top-left). Shows pinned-location coords + solar time. Hidden until the
 // user enables Location mode and clicks the globe.

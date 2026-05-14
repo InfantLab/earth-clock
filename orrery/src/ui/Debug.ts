@@ -30,7 +30,7 @@ export class Debug {
     this.root.id = "orrery-debug";
     this.root.classList.add("hidden");
     this.root.innerHTML = `
-      <div class="orrery-debug-title">debug</div>
+      <div class="orrery-debug-title">data</div>
       <pre class="orrery-debug-astro" id="orrery-debug-astro"></pre>
       <pre class="orrery-debug-rows" id="orrery-debug-rows"></pre>
       <div class="orrery-debug-btnrow">

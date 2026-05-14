@@ -13,13 +13,23 @@
  */
 const STORAGE_KEY = "orrery.clock.v1";
 
-/** Step ratio for ⏪ / ⏩ buttons. 10× per step is brisk; classic earth-clock used 60×. */
-const WARP_STEP = 10;
-const WARP_MIN  = 0.01;
-const WARP_MAX  = 1e7;          // 1e7 ≈ 116 simulated days per real second; well beyond visual usefulness
+/**
+ * Speed presets the ⏪ / ⏩ buttons step through. Chosen to be *temporally meaningful* rather
+ * than fixed multipliers — 60× = "minute per second", 1440× = "day per minute" etc. — so a
+ * user can describe what they're seeing without having to multiply in their head. The ⏩
+ * button finds the smallest preset above the current speed; ⏪ finds the largest below.
+ * Console-set values that fall between presets are treated as the starting point.
+ */
+const SPEED_PRESETS = [1, 60, 1440, 86400];  // 1× / 60× / 1440× / 86400×
 const WARP_PAUSE_DEFAULT = 60;  // value restored on play if there's no prior warp memory
 
 type Zone = "utc" | "local";
+
+export interface ClockCallbacks {
+  /** Reset button hook: snap the simulated clock back to wall-clock now. main.ts owns
+   *  `simulatedTime` so the Clock can't write to it directly. */
+  onSnapToLive?: () => void;
+}
 
 export class Clock {
   private readonly root: HTMLElement;
@@ -41,8 +51,11 @@ export class Clock {
   private lastWarpStr = "";
   private lastPauseLabel = "";
 
-  constructor(parent: HTMLElement) {
+  private readonly callbacks: ClockCallbacks;
+
+  constructor(parent: HTMLElement, callbacks: ClockCallbacks = {}) {
     injectStyles();
+    this.callbacks = callbacks;
     this.zone = loadZone();
     this.expanded = loadExpanded();
 
@@ -58,10 +71,10 @@ export class Clock {
         </div>
       </div>
       <div class="orrery-clock-controls hidden" id="orrery-clock-controls">
-        <button class="orrery-clock-btn" id="orrery-clock-slower" title="Slow down (÷${WARP_STEP})">⏪</button>
+        <button class="orrery-clock-btn" id="orrery-clock-slower" title="Slow down (previous preset: 1× / 60× / 1440× / 86400×)">⏪</button>
         <button class="orrery-clock-btn" id="orrery-clock-pause"  title="Pause / play">⏸</button>
-        <button class="orrery-clock-btn" id="orrery-clock-faster" title="Speed up (×${WARP_STEP})">⏩</button>
-        <button class="orrery-clock-btn" id="orrery-clock-reset"  title="Reset to real time (× 1)">↺</button>
+        <button class="orrery-clock-btn" id="orrery-clock-faster" title="Speed up (next preset: 1× / 60× / 1440× / 86400×)">⏩</button>
+        <button class="orrery-clock-btn" id="orrery-clock-reset"  title="Reset to real time — warp 1× and snap to now">↺</button>
         <span class="orrery-clock-warp" id="orrery-clock-warp">× 1</span>
       </div>
     `;
@@ -96,15 +109,20 @@ export class Clock {
     (this.root.querySelector("#orrery-clock-slower") as HTMLElement).addEventListener("click", () => {
       const cur = window.__orreryTimeWarp ?? 1;
       if (cur === 0) return; // paused — let the user un-pause first
-      window.__orreryTimeWarp = clampWarp(cur / WARP_STEP);
+      window.__orreryTimeWarp = prevPreset(cur);
     });
     (this.root.querySelector("#orrery-clock-faster") as HTMLElement).addEventListener("click", () => {
       const cur = window.__orreryTimeWarp ?? 1;
       if (cur === 0) return;
-      window.__orreryTimeWarp = clampWarp(cur * WARP_STEP);
+      window.__orreryTimeWarp = nextPreset(cur);
     });
+    // ↺ resets *both* sides of the time state: warp back to 1× **and** simulatedTime back
+    // to wall-clock now. Users described the older behaviour ("only resets warp; the
+    // simulated clock stays in the past") as broken-feeling — naturally, since the panel
+    // labels it "Reset to real time".
     (this.root.querySelector("#orrery-clock-reset") as HTMLElement).addEventListener("click", () => {
       window.__orreryTimeWarp = 1;
+      this.callbacks.onSnapToLive?.();
     });
     this.pauseBtn.addEventListener("click", () => {
       const cur = window.__orreryTimeWarp ?? 1;
@@ -173,9 +191,19 @@ function formatWarp(w: number): string {
   if (Number.isInteger(w)) return String(w);
   return w.toFixed(2).replace(/\.?0+$/, "");
 }
-function clampWarp(w: number): number {
-  if (!Number.isFinite(w) || w <= 0) return WARP_MIN;
-  return Math.min(WARP_MAX, Math.max(WARP_MIN, w));
+
+/** Next preset >= current. Returns current if already at the top, so the button never
+ *  becomes a no-op surprise. */
+function nextPreset(cur: number): number {
+  for (const p of SPEED_PRESETS) if (p > cur) return p;
+  return SPEED_PRESETS[SPEED_PRESETS.length - 1];
+}
+/** Previous preset <= current. Returns current if already at the bottom. */
+function prevPreset(cur: number): number {
+  for (let i = SPEED_PRESETS.length - 1; i >= 0; i--) {
+    if (SPEED_PRESETS[i] < cur) return SPEED_PRESETS[i];
+  }
+  return SPEED_PRESETS[0];
 }
 
 function pad(n: number): string { return n < 10 ? `0${n}` : `${n}`; }

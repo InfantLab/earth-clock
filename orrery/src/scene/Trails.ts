@@ -84,10 +84,11 @@ export class Trails {
     this.fadeMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uPrev: { value: null },
-        // Half-life ≈ log(0.5)/log(0.99) ≈ 69 frames ≈ 1.15 s at 60 fps. Long enough that
-        // each particle traces a clearly elongated streak (~6–8 texels at default
-        // particle speed) before fading.
-        uFade: { value: 0.99 },
+        // Half-life ≈ log(0.5)/log(0.995) ≈ 138 frames ≈ 2.3 s at 60 fps. Long enough for
+        // sparse-wind regions to look continuous (older particle trails are still there
+        // when fresh ones arrive); short enough that updates feel responsive.
+        // Tunable via `__orrery.trails.setFade(0.998)` for longer streaks in QA sessions.
+        uFade: { value: 0.995 },
       },
       vertexShader: /* glsl */`
         varying vec2 vUv;
