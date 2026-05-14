@@ -13,11 +13,15 @@ export class Debug {
   private readonly root: HTMLElement;
   private readonly statusEl: HTMLElement;
   private readonly astroEl: HTMLElement;
+  private readonly testDataBtn: HTMLButtonElement;
   private readonly rows = new Map<string, { msg: string; level: DebugLevel }>();
   private astroLine = "";
   private testDataHandler: (() => void) | null = null;
+  private liveDataHandler: (() => void) | null = null;
   private findMoonHandler: (() => void) | null = null;
   private jumpEclipseHandler: (() => void) | null = null;
+  /** Whether the user has currently swapped in synthetic fixtures via the button. */
+  private testDataActive = false;
 
   constructor(parent: HTMLElement) {
     injectStyles();
@@ -39,8 +43,18 @@ export class Debug {
 
     this.statusEl = this.root.querySelector("#orrery-debug-rows") as HTMLElement;
     this.astroEl  = this.root.querySelector("#orrery-debug-astro")  as HTMLElement;
-    const btn     = this.root.querySelector("#orrery-debug-testdata") as HTMLButtonElement;
-    btn.addEventListener("click", () => this.testDataHandler?.());
+    this.testDataBtn = this.root.querySelector("#orrery-debug-testdata") as HTMLButtonElement;
+    this.testDataBtn.addEventListener("click", () => {
+      if (this.testDataActive) {
+        this.testDataActive = false;
+        this.refreshTestDataBtn();
+        this.liveDataHandler?.();
+      } else {
+        this.testDataActive = true;
+        this.refreshTestDataBtn();
+        this.testDataHandler?.();
+      }
+    });
     const findBtn = this.root.querySelector("#orrery-debug-findmoon") as HTMLButtonElement;
     findBtn.addEventListener("click", () => this.findMoonHandler?.());
     const eclipseBtn = this.root.querySelector("#orrery-debug-eclipse") as HTMLButtonElement;
@@ -54,6 +68,16 @@ export class Debug {
   /** Hook for the "Use test data" button — main.ts wires this to load fixtures. */
   onUseTestData(fn: () => void) {
     this.testDataHandler = fn;
+  }
+
+  /** Hook for switching back to live data after the user toggles test data off. */
+  onUseLiveData(fn: () => void) {
+    this.liveDataHandler = fn;
+  }
+
+  private refreshTestDataBtn() {
+    this.testDataBtn.textContent = this.testDataActive ? "Use live data" : "Use test data";
+    this.testDataBtn.classList.toggle("active", this.testDataActive);
   }
 
   /** Hook for the "Find moon" button — main.ts wires this to re-aim the camera at the moon. */
@@ -148,6 +172,11 @@ function injectStyles() {
       cursor: pointer;
     }
     .orrery-debug-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .orrery-debug-btn.active {
+      background: rgba(226, 180, 46, 0.18);
+      border-color: rgba(226, 180, 46, 0.55);
+      color: #e2b42e;
+    }
   `;
   const el = document.createElement("style");
   el.textContent = css;

@@ -32,7 +32,7 @@ export class LocationPanel {
     this.root.innerHTML = `
       <div class="orrery-loc-row">
         <span class="orrery-loc-title">location</span>
-        <span class="orrery-loc-clear" id="orrery-loc-clear" title="Clear pin">✕</span>
+        <span class="orrery-loc-clear" id="orrery-loc-clear" title="Close panel">✕</span>
       </div>
       <div class="orrery-loc-hint" id="orrery-loc-hint">
         click the globe to drop a pin

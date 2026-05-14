@@ -28,6 +28,7 @@ export type OverlayType =
   | "air_density"
   | "total_precipitable_water"
   | "total_cloud_water"
+  | "total_cloud_cover"
   | "mean_sea_level_pressure";
 
 /**
@@ -77,6 +78,7 @@ const SCALAR_FILENAME: Record<Exclude<OverlayType, "wind">, string> = {
   air_density:                "current-air_density-surface-level-gfs-1.0.json",
   total_precipitable_water:   "current-total_precipitable_water-gfs-1.0.json",
   total_cloud_water:          "current-total_cloud_water-gfs-1.0.json",
+  total_cloud_cover:          "current-total_cloud_cover-gfs-1.0.json",
   mean_sea_level_pressure:    "current-mean_sea_level_pressure-gfs-1.0.json",
 };
 

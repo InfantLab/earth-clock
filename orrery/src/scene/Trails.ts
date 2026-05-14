@@ -161,6 +161,9 @@ export class Trails {
       new THREE.SphereGeometry(1.006, 96, 48),
       this.compositeMaterial,
     );
+    // See CloudLayer for the full renderOrder budget — trails draw on top of the overlay
+    // (2) so wind streaks stay visible over coloured data fields.
+    this.compositeSphere.renderOrder = 3;
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
     this.mesh.add(this.compositeSphere);

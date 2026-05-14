@@ -221,6 +221,20 @@ window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires,
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
 // Static / bundled assets are reported up-front so they appear in the panel without waiting.
 const dataRegistry = new DataRegistry();
+// Display order matches the bottom-left Menu's group order so users can map a button to
+// its source row without scanning. Keys not listed sort alphabetically at the end.
+dataRegistry.setOrder([
+  // Weather row
+  "wind", "fires", "lightning", "hurricanes", "storm-tracks", "aurora", "kp",
+  // Clouds row
+  "viirs", "tcdc",
+  // Overlay row
+  "mslp", "temp", "rh", "tpw", "tcw",
+  // Geography row
+  "coastlines", "day map", "night map",
+  // Astro row
+  "moon", "eclipse",
+]);
 dataRegistry.report("day map",   { source: "Solar System Scope · 2k_earth_daymap.jpg",   bundled: true });
 dataRegistry.report("night map", { source: "Solar System Scope · 2k_earth_nightmap.jpg", bundled: true });
 dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",                 bundled: true });
@@ -229,12 +243,16 @@ dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",      
 // Each loader reports its state (✓/✗/⋯) here. The "Use test data" button replaces live
 // fetches with synthetic fixtures so we can isolate "loader broken" vs "renderer broken".
 const debug = new Debug(document.body);
-debug.pending("clouds",     "fetching VIIRS mosaic…");
-debug.pending("aurora",     "fetching SWPC Ovation…");
-debug.pending("kp",         "fetching SWPC K-index…");
+// Pre-register every loader so the panel shows a "⋯ fetching…" row before the first
+// network response. Order here doesn't matter — DataPanel + DataRegistry sort by the
+// menu group order (see DATA_ORDER below).
+debug.pending("wind",       "fetching GFS surface wind…");
 debug.pending("fires",      "fetching FIRMS detections…");
 debug.pending("hurricanes", "fetching NHC CurrentStorms…");
-debug.pending("wind",       "fetching GFS surface wind…");
+debug.pending("aurora",     "fetching SWPC Ovation…");
+debug.pending("kp",         "fetching SWPC K-index…");
+debug.pending("viirs",      "fetching VIIRS mosaic…");
+debug.pending("tcdc",       "fetching GFS total cloud cover…");
 debug.pending("mslp",       "fetching GFS MSLP…");
 debug.pending("temp",       "fetching GFS 2 m temperature…");
 debug.pending("rh",         "fetching GFS 2 m RH…");
@@ -255,15 +273,21 @@ const locationPanel = new LocationPanel(document.body);
 
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
+// Panel keys: `data` = bottom-right diagnostic (formerly Debug); `sources` = top-right
+// per-layer source listing (formerly Data). The rename happened to free up the more
+// natural "Data" name for the live readout panel.
 const menu = new Menu(document.body,
   { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks,
     lightning, overlay, eclipse: eclipseLayer, flatMap },
-  { debug, data: dataPanel, clock, location: locationPanel },
+  { data: debug, sources: dataPanel, clock, location: locationPanel },
 );
 
+// QA v001dev: the ✕ button now closes the Location panel entirely (toggles off in the menu)
+// rather than just clearing the pin. Clearing-but-keeping-panel-open turned out to be
+// unhelpful: every click on the globe resets the pin already, so a dedicated "clear" had
+// no use. Pin geometry is left in place so re-opening the panel restores the previous mark.
 locationPanel.onClear(() => {
-  locationPin.setVisible(false);
-  locationPanel.reset();
+  menu.setLayer("location", false);
 });
 
 // "Use my location" button on the LocationPanel → drop the pin at the browser's reported
@@ -371,6 +395,17 @@ debug.onUseTestData(() => {
   debug.info("aurora",     `fixture: ${auroraGrid.pointCount} pts in 6 bands ±55°…±80°`);
   debug.info("fires",      `fixture: ${fireGrid.detections.length} pts across 8 known fire zones`);
   debug.info("hurricanes", `fixture: ${stormGrid.storms.length} storms in every basin`);
+});
+
+// Second click on the (now "Use live data") button: re-trigger the live loaders so the
+// fixtures get overwritten by fresh network data. Menu visibility is left untouched —
+// if the user turned off a layer while inspecting fixtures, it stays off.
+debug.onUseLiveData(() => {
+  console.log("[orrery] debug: restoring live data");
+  loadClouds();
+  loadAurora();
+  loadFires();
+  loadHurricanes();
 });
 
 // Fetch real GFS surface wind and hand it to the particles. Mock east-wind keeps running until
@@ -491,6 +526,67 @@ menu.onOverlayChange((active) => {
   if (active) applyActiveOverlay();
   // If active is null, overlay.mesh.visible is already false (apply() in Menu handled it).
 });
+
+// GFS Total Cloud Cover (TCDC) — separate scalar fetch driving the "GFS" cloud source.
+// Independent from the OVERLAY_CFGS map because it powers a different layer (CloudLayer in
+// scalar mode, not OverlayLayer). Stored on its own so applyActiveCloudSource() can grab it
+// without waiting for the overlay loop.
+let tcdcGrid: import("./data/DataSource").ScalarGrid | null = null;
+function loadTcdc() {
+  debug.pending("tcdc", "fetching GFS total cloud cover…");
+  dataSource.getScalar("total_cloud_cover", new Date())
+    .then(grid => {
+      tcdcGrid = grid;
+      const validZ = grid.validTime.toISOString().slice(0, 13);
+      debug.info("tcdc", `${grid.width}×${grid.height}, valid ${validZ}Z`);
+      dataRegistry.report("tcdc", {
+        source: "NOAA GFS · total cloud cover (TCDC)",
+        fetched: new Date(),
+        detail: `valid ${validZ}Z`,
+        refreshSeconds: 6 * 3600,
+      });
+      // If the user already picked the GFS clouds source while we were loading, apply now.
+      if (menu.activeCloudSource() === "cloudsGfs") applyActiveCloudSource();
+    })
+    .catch(err => {
+      debug.warn("tcdc", `load failed: ${err.message ?? err} — run \`npm run weather-service\` from the repo root`);
+      dataRegistry.report("tcdc", {
+        source: "NOAA GFS · total cloud cover (TCDC)",
+        error: String(err.message ?? err),
+      });
+    });
+}
+loadTcdc();
+
+// Cloud-source switching. Handles the three menu picker entries:
+//   cloudsViirs → CloudLayer.setTexture(viirsTexture)   — true-color GIBS daily mosaic
+//   cloudsGfs   → CloudLayer.setScalarField(tcdcGrid)   — GFS Total Cloud Cover (model)
+//   cloudsGoes  → not yet implemented; warns and reverts to VIIRS so something stays visible
+// `null` means clouds are hidden entirely; CloudLayer's mesh.visible is already false (the
+// Menu's apply() sets it based on activeCloudSource() !== null), so we just don't swap data.
+let viirsTexture: THREE.Texture | null = null;
+let goesWarned = false;
+function applyActiveCloudSource() {
+  const active = menu.activeCloudSource();
+  if (!active) return;
+  if (active === "cloudsViirs") {
+    if (viirsTexture) clouds.setTexture(viirsTexture);
+    // else: VIIRS still loading; loadClouds() applies on resolve.
+  } else if (active === "cloudsGfs") {
+    if (tcdcGrid) {
+      // TCDC is % cover, 0..100 → map 0..100 to alpha 0..1
+      clouds.setScalarField(tcdcGrid, 0, 100);
+    }
+    // else: TCDC still loading; loadTcdc() applies on resolve.
+  } else if (active === "cloudsGoes") {
+    if (!goesWarned) {
+      goesWarned = true;
+      debug.warn("clouds", "GOES geostationary composite not yet implemented — falling back to VIIRS");
+    }
+    if (viirsTexture) clouds.setTexture(viirsTexture);
+  }
+}
+menu.onCloudsChange(() => applyActiveCloudSource());
 
 // Load Natural Earth coastlines (TopoJSON). Renders empty until this resolves.
 fetch("/data/earth-topo.json")
@@ -753,35 +849,43 @@ setInterval(() => {
 }, 1000);
 
 // Fetch the latest fully-published global VIIRS true-color mosaic from NASA GIBS. The
-// most-recent few days can have regional publishing gaps (col=3 at zoom 1 — Pacific /
-// East Asia — typically lags the Americas), so the fallback loop walks the date back
-// until every tile loads. 8 tiles at zoom 1 → 2048×1024 final texture, ~700 KB.
-fetchGibsTextureWithFallback({
-  layer: "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
-  tileMatrixSet: "250m",
-  zoom: 1,
-  ext: "jpg",
-  onAttempt: (date, err) => {
-    const dateStr = date.toISOString().slice(0, 10);
-    debug.warn("clouds", `${dateStr} incomplete (${err.message.split(":").slice(-1)[0].trim()}); trying older`);
-  },
-})
-  .then(({ texture, date }) => {
-    const dateStr = date.toISOString().slice(0, 10);
-    clouds.setTexture(texture);
-    flatMap.setCloudTexture(texture);
-    debug.info("clouds", `VIIRS NOAA-20 ${dateStr}`);
-    dataRegistry.report("clouds", {
-      source: "NASA GIBS · VIIRS NOAA-20 True Color",
-      fetched: new Date(),
-      detail: dateStr,
-      refreshSeconds: 24 * 3600,
-    });
+// 250m TileMatrixSet has non-doubling dimensions at each zoom (zoom=1 → 3×2 = 6 tiles,
+// not 4×2 — see MATRIX_DIMS in gibsLoader.ts) so the loader looks dims up from a table.
+// The fallback loop handles real-day partial publishing (some tiles 400 if the orbit
+// pass hasn't completed yet) by walking the date back until every tile loads.
+function loadClouds() {
+  debug.pending("clouds", "fetching VIIRS mosaic…");
+  fetchGibsTextureWithFallback({
+    layer: "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
+    tileMatrixSet: "250m",
+    zoom: 1,
+    ext: "jpg",
+    onAttempt: (date, err) => {
+      const dateStr = date.toISOString().slice(0, 10);
+      debug.warn("clouds", `${dateStr} incomplete (${err.message.split(":").slice(-1)[0].trim()}); trying older`);
+    },
   })
-  .catch(err => {
-    debug.warn("clouds", `load failed: ${err.message ?? err}`);
-    dataRegistry.report("clouds", { source: "NASA GIBS VIIRS NOAA-20", error: String(err.message ?? err) });
-  });
+    .then(({ texture, date }) => {
+      const dateStr = date.toISOString().slice(0, 10);
+      viirsTexture = texture;
+      // Only push the texture into CloudLayer if VIIRS is the currently-selected source —
+      // otherwise applyActiveCloudSource() would clobber whatever GFS/etc had set.
+      if (menu.activeCloudSource() === "cloudsViirs") clouds.setTexture(texture);
+      flatMap.setCloudTexture(texture);
+      debug.info("viirs", `VIIRS NOAA-20 ${dateStr}`);
+      dataRegistry.report("viirs", {
+        source: "NASA GIBS · VIIRS NOAA-20 True Color",
+        fetched: new Date(),
+        detail: dateStr,
+        refreshSeconds: 24 * 3600,
+      });
+    })
+    .catch(err => {
+      debug.warn("viirs", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("viirs", { source: "NASA GIBS VIIRS NOAA-20", error: String(err.message ?? err) });
+    });
+}
+loadClouds();
 
 function updateAstro() {
   const now = new Date(simulatedTime);

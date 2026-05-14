@@ -27,6 +27,7 @@ export interface DataEntry {
 export class DataRegistry {
   private rows = new Map<string, DataEntry>();
   private subscribers = new Set<() => void>();
+  private orderIndex = new Map<string, number>();
 
   report(key: string, entry: DataEntry): void {
     this.rows.set(key, entry);
@@ -37,8 +38,26 @@ export class DataRegistry {
     return this.rows.get(key);
   }
 
+  /**
+   * Define a preferred display order. Keys in the array sort to the top in the listed
+   * order; any key not in the array falls back to alphabetical at the end. Called once
+   * at startup from main.ts to match the menu's group order — so the user sees data
+   * sources in the same visual order as their toggle buttons.
+   */
+  setOrder(keys: string[]): void {
+    this.orderIndex.clear();
+    keys.forEach((k, i) => this.orderIndex.set(k, i));
+    this.subscribers.forEach(fn => fn());
+  }
+
   entries(): Array<[string, DataEntry]> {
-    return Array.from(this.rows.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    const FALLBACK = Number.MAX_SAFE_INTEGER;
+    return Array.from(this.rows.entries()).sort((a, b) => {
+      const ia = this.orderIndex.get(a[0]) ?? FALLBACK;
+      const ib = this.orderIndex.get(b[0]) ?? FALLBACK;
+      if (ia !== ib) return ia - ib;
+      return a[0].localeCompare(b[0]);
+    });
   }
 
   /** Subscribe to changes. Returns an unsubscribe function. */

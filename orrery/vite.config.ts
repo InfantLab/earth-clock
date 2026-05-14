@@ -1,6 +1,11 @@
 import { defineConfig } from "vite";
 import { resolve, join } from "path";
-import { createReadStream, statSync, existsSync } from "fs";
+import { createReadStream, statSync, existsSync, readFileSync } from "fs";
+
+// Read app version from package.json so the UI badge always matches the published version.
+// Bumped each release; see qa-checklist.md for the QA round each version corresponds to.
+const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf-8")) as { version: string };
+const APP_VERSION = pkg.version;
 
 // Serve the classic project's /public/data tree at /data during dev so we can fetch the same
 // GFS weather files the legacy earth.js uses, without copying them or running the legacy server.
@@ -17,6 +22,9 @@ const outDir = BUILD_AS_ROOT
 
 export default defineConfig({
   base: "./",
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+  },
   build: {
     outDir,
     // emptyOutDir is dangerous when building to ../public (would wipe everything including

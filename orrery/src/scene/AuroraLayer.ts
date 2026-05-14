@@ -116,6 +116,8 @@ export class AuroraLayer {
     });
 
     this.points = new THREE.Points(geometry, this.material);
+    // See CloudLayer for the renderOrder budget — aurora sits on top of clouds/overlay/trails.
+    this.points.renderOrder = 4;
 
     // Same tilted-group pattern as Coastlines/Fires/Hurricanes — axial tilt fixed on parent,
     // daily spin applied to the inner points via setRotationY.

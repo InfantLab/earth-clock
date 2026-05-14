@@ -422,6 +422,7 @@ function fetchCurrentGFSData(callback) {
     // These overlays are not height-dependent in products.js, so filenames omit surface/level.
     var outTPW = path.join(WEATHER_DATA_DIR, "current-total_precipitable_water-gfs-1.0.json");
     var outTCW = path.join(WEATHER_DATA_DIR, "current-total_cloud_water-gfs-1.0.json");
+    var outTCDC = path.join(WEATHER_DATA_DIR, "current-total_cloud_cover-gfs-1.0.json");
     var outMSLP = path.join(WEATHER_DATA_DIR, "current-mean_sea_level_pressure-gfs-1.0.json");
 
     // Field patterns (inventory substring matches; multiple variants for robustness)
@@ -444,6 +445,12 @@ function fetchCurrentGFSData(callback) {
     // GFS 1p00 uses CWAT (cloud water) for this overlay.
     var patternsTCWAT = [
         ":CWAT:entire atmosphere"
+    ];
+    // Total cloud cover (TCDC, % 0-100) for the GFS clouds source. Different from TCW above:
+    // TCDC reports "fraction of sky covered" rather than "column water mass" — the right
+    // semantic for a cloud-display source (vs the TCW overlay which is for "rainmaker" intensity).
+    var patternsTCDC = [
+        ":TCDC:entire atmosphere"
     ];
     // Mean sea level pressure (PRMSL) uses complex packing in GFS and is not decoded by grib-js.
     // We generate MSLP from the decoded surface pressure record instead.
@@ -523,6 +530,8 @@ function fetchCurrentGFSData(callback) {
                 return downloadConvertWriteWithFile(dateStr, run, patternsPWAT, outTPW, file025);
             }).then(function () {
                 return downloadConvertWrite(dateStr, run, patternsTCWAT, outTCW);
+            }).then(function () {
+                return downloadConvertWrite(dateStr, run, patternsTCDC, outTCDC);
             }).then(function () {
                 console.log("Successfully updated weather overlays (using date " + dateStr + ", run " + run + ")");
                 if (callback) callback(null, outWind);

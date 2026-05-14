@@ -11,6 +11,10 @@
  *
  * Selections persist in `localStorage` under `orrery.menu.v1`.
  */
+// __APP_VERSION__ is injected by Vite from package.json at build time. See vite.config.ts.
+declare const __APP_VERSION__: string;
+const APP_VERSION: string = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+
 import type { Globe } from "../scene/Globe";
 import type { Atmosphere } from "../scene/Atmosphere";
 import type { Moon } from "../scene/Moon";
@@ -46,43 +50,62 @@ export interface MenuLayers {
 }
 
 export interface MenuPanels {
-  debug?: Debug;
-  data?: DataPanel;
+  /** Bottom-right diagnostic readout — astro / load status / fixture loader / find-moon /
+   *  jump-to-eclipse. Shown by the View row's "Data" button (renamed from "Debug"). */
+  data?: Debug;
+  /** Top-right per-layer source + last-fetched age listing. Shown by the View row's
+   *  "Sources" button (renamed from "Data"). */
+  sources?: DataPanel;
   clock?: Clock;
   location?: LocationPanel;
 }
 
 type LayerKey =
-  | "clouds" | "aurora" | "fires" | "hurricanes" | "tracks" | "lightning" | "wind"
-  | "coastlines" | "terminator" | "nightLights"
-  | "moon" | "atmosphere" | "eclipse"
+  // Weather row
+  | "wind" | "fires" | "lightning" | "hurricanes" | "tracks" | "aurora"
+  // Clouds row — mutex source picker (one selected at a time)
+  | "cloudsViirs" | "cloudsGfs" | "cloudsGoes"
+  // Overlay row — mutex (unchanged)
   | "mslp" | "temp" | "rh" | "tpw" | "tcw"
-  | "map" | "orbit" | "clock" | "data" | "location" | "debug";
+  // Geography row
+  | "coastlines" | "nightLights"
+  // Astro row
+  | "terminator" | "atmosphere" | "moon" | "eclipse"
+  // View row — `sources` replaces the old `data`; `data` is the renamed `debug` panel
+  | "map" | "orbit" | "clock" | "sources" | "location" | "data";
+
+/** Subset of LayerKey representing cloud-source picker entries (mutex). */
+export type CloudSourceKey = "cloudsViirs" | "cloudsGfs" | "cloudsGoes";
 
 const STORAGE_KEY = "orrery.menu.v1";
 const DEFAULTS: Record<LayerKey, boolean> = {
-  clouds: true, aurora: true, fires: true, hurricanes: true, tracks: true,
-  lightning: true, wind: true,
-  coastlines: true, terminator: true, nightLights: true,
-  moon: true, atmosphere: true,
-  eclipse: false,
+  // Weather
+  wind: true, fires: true, lightning: true, hurricanes: true, tracks: true, aurora: true,
+  // Clouds — VIIRS on by default (matches the previous single "Clouds" toggle behaviour)
+  cloudsViirs: true, cloudsGfs: false, cloudsGoes: false,
+  // Overlay
   mslp: false, temp: false, rh: false, tpw: false, tcw: false,
-  map: false, orbit: false, clock: true, data: false, location: false, debug: false,
+  // Geography
+  coastlines: true, nightLights: true,
+  // Astro
+  terminator: true, atmosphere: true, moon: true, eclipse: false,
+  // View
+  map: false, orbit: false, clock: true, sources: false, location: false, data: false,
 };
 
 const LABELS: Record<LayerKey, string> = {
-  clouds: "Clouds", aurora: "Aurora", fires: "Fires", hurricanes: "Hurricanes",
-  tracks: "Storm tracks",
-  lightning: "Lightning", wind: "Wind", coastlines: "Coastlines",
-  terminator: "Day/night", nightLights: "Night lights",
-  moon: "Moon", atmosphere: "Atmosphere",
-  eclipse: "Eclipse",
+  wind: "Wind", fires: "Fires", lightning: "Lightning",
+  hurricanes: "Hurricanes", tracks: "Storm tracks", aurora: "Aurora",
+  // Clouds row — source picker (mutex). Off is implicit (click active to turn off).
+  cloudsViirs: "VIIRS", cloudsGfs: "GFS", cloudsGoes: "GOES",
   // Overlay row: human-readable names rather than meteorological abbreviations. The
   // technical names + brief explanations are surfaced as tooltips below.
   mslp: "Pressure", temp: "Temperature", rh: "Humidity",
   tpw: "Moisture", tcw: "Cloud water",
+  coastlines: "Coastlines", nightLights: "Night lights",
+  terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", eclipse: "Eclipse",
   map: "Flat map", orbit: "Auto-spin",
-  clock: "Clock", data: "Data", location: "Location", debug: "Debug",
+  clock: "Clock", sources: "Sources", location: "Location", data: "Data",
 };
 
 /**
@@ -91,55 +114,73 @@ const LABELS: Record<LayerKey, string> = {
  * if relevant) so power-users aren't lost when they expect "MSLP" rather than "Pressure".
  */
 const TOOLTIPS: Partial<Record<LayerKey, string>> = {
-  // Layers
-  clouds:      "Cloud cover (NASA VIIRS true-color composite, refreshed daily)",
+  // Weather
   aurora:      "Aurora oval probability (NOAA SWPC Ovation, refreshed 5 min)",
   fires:       "Active wildfires from satellite thermal detections (NASA FIRMS, last 24 h)",
   hurricanes:  "Active tropical cyclones (NOAA NHC, refreshed 15 min)",
   tracks:      "Past track + 5-day forecast track + uncertainty cone for each active storm",
   lightning:   "Real-time lightning strikes from the Blitzortung community network",
   wind:        "Surface wind particle simulation (NOAA GFS, refreshed 6 h)",
-  coastlines:  "Natural Earth 50 m coastlines",
-  terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
-  nightLights: "City lights on the night side (Solar System Scope)",
-  moon:        "The moon at its true position and distance (~60 Earth radii)",
-  atmosphere:  "Atmospheric rim glow with day-twilight gradient",
-  eclipse:     "Live umbra + penumbra discs and path-of-totality for the next solar eclipse",
+  // Clouds source picker — mutually exclusive. Click the active source to turn clouds off.
+  cloudsViirs: "VIIRS true-colour daily mosaic (NASA GIBS) — photographic, can have swath gaps on partial days",
+  cloudsGfs:   "GFS Total Cloud Cover (NOAA, 6 h refresh) — model forecast, no coverage gaps, animates with time-warp",
+  cloudsGoes:  "GOES + Himawari + MSG geostationary composite — coming soon",
   // Overlays — each carries the GFS technical name in parentheses
   mslp:        "Mean sea level pressure (MSLP) — highs and lows drive weather systems",
   temp:        "2 m air temperature (Temp) — kelvin internally, displayed via colour ramp",
   rh:          "2 m relative humidity (RH) — 0 to 100 % of saturation",
   tpw:         "Total precipitable water (TPW, mm) — atmospheric water vapour column",
   tcw:         "Total cloud water (TCW, kg/m²) — liquid + ice in the atmospheric column",
-  // View row
+  // Geography
+  coastlines:  "Natural Earth 50 m coastlines",
+  nightLights: "City lights on the night side (Solar System Scope)",
+  // Astro
+  terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
+  atmosphere:  "Atmospheric rim glow with day-twilight gradient",
+  moon:        "The moon at its true position and distance (~60 Earth radii)",
+  eclipse:     "Live umbra + penumbra discs and path-of-totality for the next solar eclipse",
+  // View
   map:         "Switch to equirectangular flat-map projection",
   orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
-  clock:       "Time display (top-left). Click the zone to flip UTC ⇄ local.",
-  data:        "Per-layer source + last-fetched age",
+  clock:       "Time display. Click the zone to flip UTC ⇄ local.",
+  sources:     "Where each layer's data comes from + last-fetched age",
   location:    "Click the globe / map to pin a location and look it up",
-  debug:       "Diagnostic overlay — astro readout, fixture loader, find-moon, jump-to-eclipse",
+  data:        "Diagnostic readout — astro position, layer status, fixture data, find-moon, jump-to-eclipse",
 };
 
 /**
- * Overlay-row keys are mutually exclusive — turning one on turns the others off,
- * matching classic earth-clock's overlay selector. Click an active overlay key
- * a second time to turn the overlay off entirely.
+ * Mutually-exclusive rows: turning one on turns the others off in the same row.
+ * Click the active key a second time to turn the whole group off.
+ *   - Overlay: pick one GFS scalar field to render (or none)
+ *   - Clouds:  pick one cloud-source backend (or none = clouds hidden)
  */
 const OVERLAY_KEYS: LayerKey[] = ["mslp", "temp", "rh", "tpw", "tcw"];
+const CLOUD_KEYS:   LayerKey[] = ["cloudsViirs", "cloudsGfs", "cloudsGoes"];
 
 const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   {
-    label: "Layers",
-    keys: ["clouds", "aurora", "fires", "hurricanes", "tracks", "lightning", "wind", "coastlines",
-           "terminator", "nightLights", "moon", "atmosphere", "eclipse"],
+    label: "Weather",
+    keys: ["wind", "fires", "lightning", "hurricanes", "tracks", "aurora"],
+  },
+  {
+    label: "Clouds",
+    keys: CLOUD_KEYS,
   },
   {
     label: "Overlay",
     keys: OVERLAY_KEYS,
   },
   {
+    label: "Geography",
+    keys: ["coastlines", "nightLights"],
+  },
+  {
+    label: "Astro",
+    keys: ["terminator", "atmosphere", "moon", "eclipse"],
+  },
+  {
     label: "View",
-    keys: ["map", "orbit", "clock", "data", "location", "debug"],
+    keys: ["map", "orbit", "clock", "sources", "location", "data"],
   },
 ];
 
@@ -151,6 +192,7 @@ export class Menu {
   private readonly panel: HTMLElement;
   private open: boolean;
   private overlayChangeHandler: ((active: LayerKey | null) => void) | null = null;
+  private cloudsChangeHandler: ((active: CloudSourceKey | null) => void) | null = null;
 
   constructor(parent: HTMLElement, layers: MenuLayers, panels: MenuPanels = {}) {
     this.layers = layers;
@@ -162,9 +204,13 @@ export class Menu {
 
     const root = document.createElement("div");
     root.id = "orrery-ui";
+    // Version badge sits next to the wordmark so a tester can quote it on bug reports
+    // without opening DevTools. Sourced from package.json via Vite's `define` config so
+    // the badge stays in lock-step with whatever was actually built.
     root.innerHTML = `
       <div class="orrery-brand-row">
         <span class="orrery-brand" id="orrery-brand" title="menu">earth-clock</span>
+        <span class="orrery-version" title="package.json version">v${APP_VERSION}</span>
       </div>
       <div class="orrery-menu${this.open ? "" : " collapsed"}" id="orrery-menu">
         <div id="orrery-menu-categories"></div>
@@ -231,6 +277,12 @@ export class Menu {
     return null;
   }
 
+  /** Currently active cloud source, or null if clouds are hidden. */
+  activeCloudSource(): CloudSourceKey | null {
+    for (const k of CLOUD_KEYS) if (this.state[k]) return k as CloudSourceKey;
+    return null;
+  }
+
   /**
    * Hook for overlay changes. Called with the new active overlay key (or null when the
    * user clicks an active overlay a second time to turn it off). main.ts uses this to
@@ -238,6 +290,14 @@ export class Menu {
    */
   onOverlayChange(fn: (active: LayerKey | null) => void) {
     this.overlayChangeHandler = fn;
+  }
+
+  /**
+   * Hook for cloud-source changes. main.ts uses this to swap between VIIRS texture,
+   * GFS TCDC scalar field, GOES composite, or hidden — whichever the user just selected.
+   */
+  onCloudsChange(fn: (active: CloudSourceKey | null) => void) {
+    this.cloudsChangeHandler = fn;
   }
 
   /**
@@ -260,10 +320,13 @@ export class Menu {
     const wasActive = this.state[key];
     this.state[key] = !wasActive;
 
-    // Overlay-row keys are mutually exclusive: turning one on turns the others off, so the
-    // OverlayLayer only ever shows one variable at a time (matches classic earth-clock).
-    if (OVERLAY_KEYS.includes(key) && this.state[key]) {
-      for (const other of OVERLAY_KEYS) {
+    // Mutex rows: turning one entry on turns the others in the same row off. Used by
+    // overlay (one scalar field at a time) and clouds (one source backend at a time).
+    const mutexRow = OVERLAY_KEYS.includes(key) ? OVERLAY_KEYS
+                  : CLOUD_KEYS.includes(key)    ? CLOUD_KEYS
+                  : null;
+    if (mutexRow && this.state[key]) {
+      for (const other of mutexRow) {
         if (other !== key && this.state[other]) {
           this.state[other] = false;
           this.apply(other);
@@ -276,6 +339,9 @@ export class Menu {
 
     if (OVERLAY_KEYS.includes(key)) {
       this.overlayChangeHandler?.(this.activeOverlay());
+    }
+    if (CLOUD_KEYS.includes(key)) {
+      this.cloudsChangeHandler?.(this.activeCloudSource());
     }
   }
 
@@ -293,10 +359,17 @@ export class Menu {
     const on = this.state[key];
     const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse, flatMap } = this.layers;
     switch (key) {
-      case "clouds":
-        clouds.mesh.visible = on;
-        flatMap.setCloudsVisible(on);
+      // Cloud source picker — visibility is "is any source active?" The actual texture/
+      // scalar swap happens in main.ts via onCloudsChange. (CloudLayer doesn't know the
+      // difference between sources — see CloudLayer.setTexture vs setScalarField.)
+      case "cloudsViirs":
+      case "cloudsGfs":
+      case "cloudsGoes": {
+        const cloudsOn = this.activeCloudSource() !== null;
+        clouds.mesh.visible = cloudsOn;
+        flatMap.setCloudsVisible(cloudsOn);
         break;
+      }
       case "aurora":      aurora.mesh.visible = on; break;
       case "fires":
         fires.mesh.visible     = on;
@@ -319,8 +392,6 @@ export class Menu {
       case "rh":
       case "tpw":
       case "tcw":
-        // If this was the most-recently-toggled key, its `on` determines visibility.
-        // The mutex logic in `toggle()` has already turned off any others.
         overlay.mesh.visible = this.activeOverlay() !== null;
         break;
       case "coastlines":
@@ -345,9 +416,9 @@ export class Menu {
       case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
       case "orbit":       /* consumed by main loop via isAutoOrbit() → controls.autoRotate */ break;
       case "clock":       this.panels.clock?.setVisible(on); break;
-      case "data":        this.panels.data?.setVisible(on); break;
+      case "sources":     this.panels.sources?.setVisible(on); break;
       case "location":    this.panels.location?.setVisible(on); break;
-      case "debug":       this.panels.debug?.setVisible(on); break;
+      case "data":        this.panels.data?.setVisible(on); break;
     }
     const btn = this.buttons[key];
     if (btn) btn.classList.toggle("highlighted", on);
@@ -403,7 +474,7 @@ function injectStyles() {
       z-index: 10;
       user-select: none;
     }
-    .orrery-brand-row { pointer-events: none; }
+    .orrery-brand-row { pointer-events: none; display: flex; align-items: baseline; gap: 8px; }
     .orrery-brand {
       display: inline-block;
       pointer-events: all;
@@ -417,6 +488,13 @@ function injectStyles() {
       transition: color 125ms ease;
     }
     .orrery-brand:hover { color: #fff; }
+    .orrery-version {
+      font-size: 11px;
+      color: #6e7a90;
+      letter-spacing: 0.04em;
+      pointer-events: all;
+      user-select: text;
+    }
     .orrery-menu {
       pointer-events: all;
       margin-top: 6px;

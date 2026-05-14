@@ -167,6 +167,12 @@ export class OverlayLayer {
     });
 
     this.sphere = new THREE.Mesh(geometry, this.material);
+    // Overlay draws *under* clouds — see CloudLayer for the full renderOrder budget.
+    // QA feedback (2026-05-14): "Feel like GFS should be layer 1 — underneath clouds etc."
+    // Clouds are physically real (you see them through the cloud's translucency); overlay
+    // is a data colour-map, more useful in clear areas. Drawing it first means clouds
+    // composite naturally on top.
+    this.sphere.renderOrder = 1;
 
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
