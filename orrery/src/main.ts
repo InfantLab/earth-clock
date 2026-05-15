@@ -250,22 +250,28 @@ dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",      
 // Each loader reports its state (✓/✗/⋯) here. The "Use test data" button replaces live
 // fetches with synthetic fixtures so we can isolate "loader broken" vs "renderer broken".
 const debug = new Debug(document.body);
-debug.setOrder(DATA_ORDER);
-// Pre-register every loader so the panel shows a "⋯ fetching…" row before the first
-// network response. Order here doesn't matter — debug sorts by DATA_ORDER too.
-debug.pending("wind",       "fetching GFS surface wind…");
-debug.pending("fires",      "fetching FIRMS detections…");
-debug.pending("hurricanes", "fetching NHC CurrentStorms…");
-debug.pending("aurora",     "fetching SWPC Ovation…");
-debug.pending("kp",         "fetching SWPC K-index…");
-debug.pending("viirs",      "fetching VIIRS mosaic…");
-debug.pending("gfs-clouds", "fetching GFS cloud cover…");
-debug.pending("mslp",       "fetching GFS MSLP…");
-debug.pending("temp",       "fetching GFS 2 m temperature…");
-debug.pending("rh",         "fetching GFS 2 m RH…");
-debug.pending("tpw",        "fetching GFS TPW…");
-debug.pending("tcw",        "fetching GFS TCW…");
-debug.pending("coastlines", "fetching Natural Earth…");
+// Pre-register every loader as "pending" in the data registry so the unified Data panel
+// shows a `⋯ key  source  fetching…  —` row before the first network response. Loaders
+// overwrite each row's status on success/failure via dataRegistry.report().
+const PENDING_SOURCES: Array<[string, string, string]> = [
+  ["wind",       "NOAA GFS · surface wind",                 "fetching surface wind…"],
+  ["fires",      "NASA FIRMS · VIIRS S-NPP NRT",            "fetching FIRMS detections…"],
+  ["lightning",  "Blitzortung · community WebSocket",       "connecting to Blitzortung…"],
+  ["hurricanes", "NHC · CurrentStorms.json",                "fetching active storms…"],
+  ["aurora",     "NOAA SWPC · Ovation aurora forecast",     "fetching SWPC Ovation…"],
+  ["kp",         "NOAA SWPC · planetary K-index",           "fetching SWPC K-index…"],
+  ["viirs",      "NASA GIBS · VIIRS NOAA-20 True Color",    "fetching VIIRS mosaic…"],
+  ["gfs-clouds", "NOAA GFS · cloud cover",                  "fetching GFS cloud cover…"],
+  ["mslp",       "NOAA GFS · MSLP",                         "fetching MSLP…"],
+  ["temp",       "NOAA GFS · 2 m temperature",              "fetching temperature…"],
+  ["rh",         "NOAA GFS · 2 m relative humidity",        "fetching RH…"],
+  ["tpw",        "NOAA GFS · total precipitable water",     "fetching TPW…"],
+  ["tcw",        "NOAA GFS · total cloud water",            "fetching TCW…"],
+  ["coastlines", "Natural Earth · 50 m physical",           "fetching coastlines…"],
+];
+for (const [key, source, detail] of PENDING_SOURCES) {
+  dataRegistry.report(key, { source, detail });
+}
 
 // User-facing data sources panel (top-right). Lists source + last-fetched age per layer.
 const dataPanel = new DataPanel(document.body, dataRegistry);
@@ -290,7 +296,7 @@ const locationPanel = new LocationPanel(document.body);
 const menu = new Menu(document.body,
   { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks,
     lightning, overlay, eclipse: eclipseLayer, flatMap },
-  { data: debug, sources: dataPanel, clock, location: locationPanel },
+  { data: dataPanel, tools: debug, clock, location: locationPanel },
 );
 
 // QA v001dev: the ✕ button now closes the Location panel entirely (toggles off in the menu)

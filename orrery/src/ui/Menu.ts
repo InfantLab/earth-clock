@@ -50,12 +50,12 @@ export interface MenuLayers {
 }
 
 export interface MenuPanels {
-  /** Bottom-right diagnostic readout — astro / load status / fixture loader / find-moon /
-   *  jump-to-eclipse. Shown by the View row's "Data" button (renamed from "Debug"). */
-  data?: Debug;
-  /** Top-right per-layer source + last-fetched age listing. Shown by the View row's
-   *  "Sources" button (renamed from "Data"). */
-  sources?: DataPanel;
+  /** Unified per-layer panel: status icon + source link + detail + age. Top-right.
+   *  Shown by the View row's "Data" button. */
+  data?: DataPanel;
+  /** Diagnostic tools — astro readout + Use test data / Find moon / Jump to eclipse.
+   *  Bottom-right. Shown by the View row's "Tools" button. */
+  tools?: Debug;
   clock?: Clock;
   location?: LocationPanel;
 }
@@ -71,8 +71,10 @@ type LayerKey =
   | "coastlines" | "nightLights"
   // Astro row
   | "terminator" | "atmosphere" | "moon" | "eclipse"
-  // View row — `sources` replaces the old `data`; `data` is the renamed `debug` panel
-  | "map" | "orbit" | "clock" | "sources" | "location" | "data";
+  // View row. `data` toggles the unified panel (status + source + detail + age); `tools`
+  // toggles the diagnostic panel (astro readout + Use test data / Find moon / Jump to
+  // eclipse). Older sessions had a separate "Sources" entry — that role merged into `data`.
+  | "map" | "orbit" | "clock" | "data" | "location" | "tools";
 
 /** Subset of LayerKey representing cloud-source picker entries (mutex). */
 export type CloudSourceKey = "cloudsViirs" | "cloudsGfs" | "cloudsGoes";
@@ -90,7 +92,7 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   // Astro
   terminator: true, atmosphere: true, moon: true, eclipse: false,
   // View
-  map: false, orbit: false, clock: true, sources: false, location: false, data: false,
+  map: false, orbit: false, clock: true, data: false, location: false, tools: false,
 };
 
 const LABELS: Record<LayerKey, string> = {
@@ -105,7 +107,7 @@ const LABELS: Record<LayerKey, string> = {
   coastlines: "Coastlines", nightLights: "Night lights",
   terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", eclipse: "Eclipse",
   map: "Flat map", orbit: "Auto-spin",
-  clock: "Clock", sources: "Sources", location: "Location", data: "Data",
+  clock: "Clock", data: "Data", location: "Location", tools: "Tools",
 };
 
 /**
@@ -143,9 +145,9 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   map:         "Switch to equirectangular flat-map projection",
   orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
   clock:       "Time display. Click the zone to flip UTC ⇄ local.",
-  sources:     "Where each layer's data comes from + last-fetched age",
+  data:        "Unified data panel — per-layer status, source (linked), detail, last-fetched age",
   location:    "Click the globe / map to pin a location and look it up",
-  data:        "Diagnostic readout — astro position, layer status, fixture data, find-moon, jump-to-eclipse",
+  tools:       "Diagnostic readout — sub-solar / sub-lunar position, Use test data, Find moon, Jump to eclipse",
 };
 
 /**
@@ -180,7 +182,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "View",
-    keys: ["map", "orbit", "clock", "sources", "location", "data"],
+    keys: ["map", "orbit", "clock", "data", "location", "tools"],
   },
 ];
 
@@ -416,9 +418,9 @@ export class Menu {
       case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
       case "orbit":       /* consumed by main loop via isAutoOrbit() → controls.autoRotate */ break;
       case "clock":       this.panels.clock?.setVisible(on); break;
-      case "sources":     this.panels.sources?.setVisible(on); break;
-      case "location":    this.panels.location?.setVisible(on); break;
       case "data":        this.panels.data?.setVisible(on); break;
+      case "location":    this.panels.location?.setVisible(on); break;
+      case "tools":       this.panels.tools?.setVisible(on); break;
     }
     const btn = this.buttons[key];
     if (btn) btn.classList.toggle("highlighted", on);

@@ -1,11 +1,12 @@
 /**
- * Diagnostic overlay (top-right). Shows per-layer load status, astro readouts (sub-solar /
- * sub-lunar lat/lon, moon distance), and a "Use test data" button that swaps live fetches
- * for synthetic fixtures — useful for verifying the rendering pipeline when an upstream
- * data source is misbehaving.
+ * Diagnostic tools panel (bottom-right). Astro readouts (sub-solar / sub-lunar lat/lon,
+ * moon on-screen status, camera distance) + three QA buttons: Use test data (toggle),
+ * Find moon, Jump to eclipse.
  *
- * Each layer's loader is expected to call `debug.info("clouds", "loaded …")` on success and
- * `debug.warn("clouds", "fetch failed: …")` on failure. The panel re-renders on every set.
+ * Per-layer status used to render here as well — that role moved to the unified Data
+ * panel (top-right). The legacy `info`/`warn`/`pending` methods still exist and still
+ * log to the JS console so loader code didn't need rewriting, but they no longer paint
+ * rows here. The DataRegistry is now the single source of truth for source/status display.
  */
 export type DebugLevel = "info" | "warn" | "pending";
 
@@ -34,9 +35,8 @@ export class Debug {
     this.root.id = "orrery-debug";
     this.root.classList.add("hidden");
     this.root.innerHTML = `
-      <div class="orrery-debug-title">data</div>
+      <div class="orrery-debug-title">tools</div>
       <pre class="orrery-debug-astro" id="orrery-debug-astro"></pre>
-      <pre class="orrery-debug-rows" id="orrery-debug-rows"></pre>
       <div class="orrery-debug-btnrow">
         <button class="orrery-debug-btn" id="orrery-debug-testdata">Use test data</button>
         <button class="orrery-debug-btn" id="orrery-debug-findmoon">Find moon</button>
@@ -45,7 +45,10 @@ export class Debug {
     `;
     parent.appendChild(this.root);
 
-    this.statusEl = this.root.querySelector("#orrery-debug-rows") as HTMLElement;
+    // Status rows used to live in this panel; they now belong to the unified Data panel
+    // (top-right). statusEl is kept as a detached element so the legacy info/warn/pending
+    // methods retain their cached state without touching the DOM.
+    this.statusEl = document.createElement("pre");
     this.astroEl  = this.root.querySelector("#orrery-debug-astro")  as HTMLElement;
     this.testDataBtn = this.root.querySelector("#orrery-debug-testdata") as HTMLButtonElement;
     this.testDataBtn.addEventListener("click", () => {
