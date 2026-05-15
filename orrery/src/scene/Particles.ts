@@ -197,15 +197,16 @@ export class Particles {
     // The trail buffer is its own ortho-camera scene at the 2×1 plane, so this projection
     // becomes a write into the right texel of the trail texture for each particle.
     // Flat-projection stamp size is *independent* of the 3D points (which aren't even added
-     // to the scene any more — the wind is purely the trail-composite sphere reading the
-     // 2048×1024 buffer this material writes to). Stamp width should be ≥2 buffer texels
-     // so a particle that moves <1 texel/frame leaves a contiguous streak — at 1.5px we
-     // were seeing under-sampled "seams" in sparse-wind regions.
+    // to the scene any more — the wind is purely the trail-composite sphere reading the
+    // 2048×1024 buffer this material writes to). A small bump above 1.5 px closes the
+    // under-sampled "seams" without turning streaks into chunky stripes — 1.7 was the
+    // sweet spot in QA. uAlpha lowered correspondingly so additive accumulation doesn't
+    // brighten the wider stamps into white blobs.
     this.flatRenderMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uTexturePosition: { value: null },
-        uPointSize: { value: 2.5 },
-        uAlpha: { value: 0.25 },
+        uPointSize: { value: 1.7 },
+        uAlpha: { value: 0.18 },
       },
       vertexShader: /* glsl */`
         uniform sampler2D uTexturePosition;
