@@ -123,7 +123,7 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   wind:        "Surface wind particle simulation (NOAA GFS, refreshed 6 h)",
   // Clouds source picker — mutually exclusive. Click the active source to turn clouds off.
   cloudsViirs: "VIIRS true-colour daily mosaic (NASA GIBS) — photographic, can have swath gaps on partial days",
-  cloudsGfs:   "GFS Total Cloud Cover (NOAA, 6 h refresh) — model forecast, no coverage gaps, animates with time-warp",
+  cloudsGfs:   "GFS cloud cover (NOAA, 6 h refresh) — model forecast, no coverage gaps, animates with time-warp. Prefers TCDC; falls back to TCW until weather-service is re-run.",
   cloudsGoes:  "GOES + Himawari + MSG geostationary composite — coming soon",
   // Overlays — each carries the GFS technical name in parentheses
   mslp:        "Mean sea level pressure (MSLP) — highs and lows drive weather systems",

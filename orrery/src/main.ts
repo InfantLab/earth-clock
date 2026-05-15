@@ -227,7 +227,7 @@ dataRegistry.setOrder([
   // Weather row
   "wind", "fires", "lightning", "hurricanes", "storm-tracks", "aurora", "kp",
   // Clouds row
-  "viirs", "tcdc",
+  "viirs", "gfs-clouds",
   // Overlay row
   "mslp", "temp", "rh", "tpw", "tcw",
   // Geography row
@@ -252,7 +252,7 @@ debug.pending("hurricanes", "fetching NHC CurrentStorms…");
 debug.pending("aurora",     "fetching SWPC Ovation…");
 debug.pending("kp",         "fetching SWPC K-index…");
 debug.pending("viirs",      "fetching VIIRS mosaic…");
-debug.pending("tcdc",       "fetching GFS total cloud cover…");
+debug.pending("gfs-clouds", "fetching GFS cloud cover…");
 debug.pending("mslp",       "fetching GFS MSLP…");
 debug.pending("temp",       "fetching GFS 2 m temperature…");
 debug.pending("rh",         "fetching GFS 2 m RH…");
@@ -531,36 +531,75 @@ menu.onOverlayChange((active) => {
   // If active is null, overlay.mesh.visible is already false (apply() in Menu handled it).
 });
 
-// GFS Total Cloud Cover (TCDC) — separate scalar fetch driving the "GFS" cloud source.
-// Independent from the OVERLAY_CFGS map because it powers a different layer (CloudLayer in
-// scalar mode, not OverlayLayer). Stored on its own so applyActiveCloudSource() can grab it
-// without waiting for the overlay loop.
-let tcdcGrid: import("./data/DataSource").ScalarGrid | null = null;
-function loadTcdc() {
-  debug.pending("tcdc", "fetching GFS total cloud cover…");
-  dataSource.getScalar("total_cloud_cover", new Date())
-    .then(grid => {
-      tcdcGrid = grid;
-      const validZ = grid.validTime.toISOString().slice(0, 13);
-      debug.info("tcdc", `${grid.width}×${grid.height}, valid ${validZ}Z`);
-      dataRegistry.report("tcdc", {
-        source: "NOAA GFS · total cloud cover (TCDC)",
-        fetched: new Date(),
-        detail: `valid ${validZ}Z`,
-        refreshSeconds: 6 * 3600,
-      });
-      // If the user already picked the GFS clouds source while we were loading, apply now.
-      if (menu.activeCloudSource() === "cloudsGfs") applyActiveCloudSource();
-    })
-    .catch(err => {
-      debug.warn("tcdc", `load failed: ${err.message ?? err} — run \`npm run weather-service\` from the repo root`);
-      dataRegistry.report("tcdc", {
-        source: "NOAA GFS · total cloud cover (TCDC)",
-        error: String(err.message ?? err),
-      });
+// GFS cloud source — drives the "GFS" entry in the Clouds picker. Prefers TCDC (total
+// cloud cover, % 0-100, semantically correct) but falls back to TCW (total cloud water,
+// kg/m², already in the weather-service output) when TCDC isn't on disk. This means the
+// GFS button works as soon as *any* weather-service run has completed, even before the
+// user pulls the TCDC pattern addition and re-runs the service.
+type GfsCloudSource = {
+  grid: import("./data/DataSource").ScalarGrid;
+  /** Linear normalisation: alpha = clamp((value - vmin) / (vmax - vmin), 0, 1). */
+  vmin: number;
+  vmax: number;
+  sourceLabel: string;
+  detail: string;
+};
+let gfsCloudSource: GfsCloudSource | null = null;
+
+async function loadGfsCloudGrid() {
+  debug.pending("gfs-clouds", "fetching GFS cloud cover…");
+
+  // Tier 1: TCDC (% cover 0-100). Native cloud-cover product.
+  try {
+    const grid = await dataSource.getScalar("total_cloud_cover", new Date());
+    const validZ = grid.validTime.toISOString().slice(0, 13);
+    gfsCloudSource = {
+      grid, vmin: 0, vmax: 100,
+      sourceLabel: "NOAA GFS · total cloud cover (TCDC)",
+      detail: `TCDC valid ${validZ}Z`,
+    };
+    debug.info("gfs-clouds", `${grid.width}×${grid.height}, TCDC valid ${validZ}Z`);
+    dataRegistry.report("gfs-clouds", {
+      source: gfsCloudSource.sourceLabel,
+      fetched: new Date(),
+      detail: gfsCloudSource.detail,
+      refreshSeconds: 6 * 3600,
     });
+    if (menu.activeCloudSource() === "cloudsGfs") applyActiveCloudSource();
+    return;
+  } catch (err) {
+    debug.pending("gfs-clouds", `TCDC unavailable (${(err as Error).message?.split(":")[0] ?? "error"}); trying TCW fallback…`);
+  }
+
+  // Tier 2: TCW (kg/m²). Vmax=1.0 covers the typical visible-cloud range; storm-cell cores
+  // saturate to fully opaque, which is fine — they're solid cloud anyway. Slightly different
+  // visual character from TCDC (favours rainmaker clouds over thin cirrus) but recognisable
+  // and shipped by every recent weather-service run, so the GFS button always works.
+  try {
+    const grid = await dataSource.getScalar("total_cloud_water", new Date());
+    const validZ = grid.validTime.toISOString().slice(0, 13);
+    gfsCloudSource = {
+      grid, vmin: 0, vmax: 1.0,
+      sourceLabel: "NOAA GFS · total cloud water (TCW)",
+      detail: `TCW fallback, valid ${validZ}Z — add :TCDC: pattern + restart weather-service for native cover`,
+    };
+    debug.info("gfs-clouds", `${grid.width}×${grid.height}, TCW fallback valid ${validZ}Z`);
+    dataRegistry.report("gfs-clouds", {
+      source: gfsCloudSource.sourceLabel,
+      fetched: new Date(),
+      detail: gfsCloudSource.detail,
+      refreshSeconds: 6 * 3600,
+    });
+    if (menu.activeCloudSource() === "cloudsGfs") applyActiveCloudSource();
+  } catch (err2) {
+    debug.warn("gfs-clouds", `both TCDC and TCW failed: ${(err2 as Error).message ?? err2} — run \`npm run weather-service\` from the repo root`);
+    dataRegistry.report("gfs-clouds", {
+      source: "NOAA GFS · cloud cover",
+      error: String((err2 as Error).message ?? err2),
+    });
+  }
 }
-loadTcdc();
+loadGfsCloudGrid();
 
 // Cloud-source switching. Handles the three menu picker entries:
 //   cloudsViirs → CloudLayer.setTexture(viirsTexture)   — true-color GIBS daily mosaic
@@ -577,11 +616,13 @@ function applyActiveCloudSource() {
     if (viirsTexture) clouds.setTexture(viirsTexture);
     // else: VIIRS still loading; loadClouds() applies on resolve.
   } else if (active === "cloudsGfs") {
-    if (tcdcGrid) {
-      // TCDC is % cover, 0..100 → map 0..100 to alpha 0..1
-      clouds.setScalarField(tcdcGrid, 0, 100);
+    if (gfsCloudSource) {
+      // vmin/vmax carried alongside the grid so the same code path handles both TCDC
+      // (0..100 %) and the TCW fallback (0..1 kg/m²). CloudLayer's scalar mode does the
+      // linear normalisation; outside this block we don't need to know which field is in play.
+      clouds.setScalarField(gfsCloudSource.grid, gfsCloudSource.vmin, gfsCloudSource.vmax);
     }
-    // else: TCDC still loading; loadTcdc() applies on resolve.
+    // else: still loading; loadGfsCloudGrid() applies on resolve.
   } else if (active === "cloudsGoes") {
     if (!goesWarned) {
       goesWarned = true;
