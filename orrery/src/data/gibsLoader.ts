@@ -77,8 +77,13 @@ export async function fetchGibsTexture(opts: GibsTileOptions): Promise<THREE.Can
   // where a recent orbital swath hasn't been published yet — tiles return HTTP 200 with
   // the no-data area encoded as solid black in the JPG. Sample a coarse grid; if too
   // many samples are pure black, the day is incomplete and we should fall back further.
+  //
+  // 5 % was originally too strict — polar night during equinox seasons can produce 8-15 %
+  // legitimately-dark samples, causing every fallback date to fail. 20 % is a better
+  // pragmatic threshold: catches the genuine "half the day is missing" cases without
+  // false-rejecting valid imagery during polar night.
   const NODATA_LUMA_THRESH = 6;   // sRGB byte; real ocean is ~30+, polar night is dark but rarely <6
-  const NODATA_MAX_FRAC    = 0.05; // > 5 % black → reject as incomplete (sahara/antarctica are bright)
+  const NODATA_MAX_FRAC    = 0.20; // > 20 % black → reject as incomplete
   const samplesX = 32, samplesY = 16; // 512 sample points
   let nodataCount = 0;
   for (let sy = 0; sy < samplesY; sy++) {

@@ -16,6 +16,10 @@ export class Debug {
   private readonly testDataBtn: HTMLButtonElement;
   private readonly rows = new Map<string, { msg: string; level: DebugLevel }>();
   private astroLine = "";
+  /** Display-order index for `render()`. Keys in the list sort first in the given order;
+   *  any key not in the list falls back to alphabetical at the end. Matches the same
+   *  order applied to the user-facing Sources panel via DataRegistry. */
+  private orderIndex = new Map<string, number>();
   private testDataHandler: (() => void) | null = null;
   private liveDataHandler: (() => void) | null = null;
   private findMoonHandler: (() => void) | null = null;
@@ -90,6 +94,18 @@ export class Debug {
     this.jumpEclipseHandler = fn;
   }
 
+  /**
+   * Set the preferred row order — matches the order applied to the user-facing Sources
+   * panel via DataRegistry.setOrder. Keys in the list sort first in this order; any key
+   * not listed falls through to alphabetical at the end. Called once from main.ts at
+   * startup. Safe to call again later if keys evolve.
+   */
+  setOrder(keys: string[]) {
+    this.orderIndex.clear();
+    keys.forEach((k, i) => this.orderIndex.set(k, i));
+    this.render();
+  }
+
   info(key: string, msg: string)    { this.set(key, msg, "info"); }
   warn(key: string, msg: string)    { this.set(key, msg, "warn"); }
   pending(key: string, msg: string) { this.set(key, msg, "pending"); }
@@ -108,7 +124,13 @@ export class Debug {
   }
 
   private render() {
-    const keys = Array.from(this.rows.keys()).sort();
+    const FALLBACK = Number.MAX_SAFE_INTEGER;
+    const keys = Array.from(this.rows.keys()).sort((a, b) => {
+      const ia = this.orderIndex.get(a) ?? FALLBACK;
+      const ib = this.orderIndex.get(b) ?? FALLBACK;
+      if (ia !== ib) return ia - ib;
+      return a.localeCompare(b);
+    });
     const lines = keys.map(k => {
       const r = this.rows.get(k)!;
       const mark = r.level === "warn" ? "✗" : r.level === "pending" ? "⋯" : "✓";

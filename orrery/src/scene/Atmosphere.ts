@@ -8,18 +8,29 @@ import * as THREE from "three";
 export class Atmosphere {
   readonly mesh: THREE.Mesh;
   private readonly sunDirUniform: { value: THREE.Vector3 };
+  private readonly material: THREE.ShaderMaterial;
 
-  constructor(earthRadius = 1, thickness = 0.025) {
+  /**
+   * @param earthRadius  Sphere radius in scene units (1 = Earth's radius).
+   * @param thickness    Atmosphere shell thickness in the same units. Default 0.018 ≈ 115 km
+   *                     real-world equivalent — slightly above the Karman line at 100 km.
+   *                     Visible Rayleigh scattering effectively ends ~80 km up; the extra
+   *                     padding gives the rim glow room to feather without looking shaved.
+   *                     QA round set this to 0.018 (was 0.025 ≈ 160 km) which read as too thick.
+   */
+  constructor(earthRadius = 1, thickness = 0.018) {
     this.sunDirUniform = { value: new THREE.Vector3(1, 0, 0) };
 
     const geometry = new THREE.SphereGeometry(earthRadius + thickness, 96, 48);
 
-    const material = new THREE.ShaderMaterial({
+    this.material = new THREE.ShaderMaterial({
       uniforms: {
         uSunDirection: this.sunDirUniform,
         uColorDay: { value: new THREE.Color(0x88bbff) },
         uColorTwilight: { value: new THREE.Color(0xff9966) },
-        uPower: { value: 2.6 },     // Fresnel exponent — higher = thinner rim
+        // Higher Fresnel exponent = bright band concentrates at the limb. 3.2 reads as a
+        // crisp halo rather than a wash; 2.6 (previous default) looked diffuse / fat.
+        uPower: { value: 3.2 },
         uIntensity: { value: 1.4 },
       },
       vertexShader: /* glsl */`
@@ -65,10 +76,15 @@ export class Atmosphere {
       side: THREE.FrontSide,
     });
 
-    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh = new THREE.Mesh(geometry, this.material);
   }
 
   setSunDirection(dir: THREE.Vector3) {
     this.sunDirUniform.value.copy(dir);
   }
+
+  /** Live Fresnel exponent — higher = thinner rim. Console-tunable for visual experiments. */
+  setPower(p: number)     { this.material.uniforms.uPower.value = p; }
+  /** Overall multiplier on the atmosphere brightness. */
+  setIntensity(i: number) { this.material.uniforms.uIntensity.value = i; }
 }

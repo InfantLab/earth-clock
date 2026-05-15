@@ -58,8 +58,10 @@ scene.add(sky.mesh);
 const globe = new Globe();
 scene.add(globe.mesh);
 
-// Atmospheric rim glow — separate mesh in world space, doesn't rotate with Earth
-const atmosphere = new Atmosphere(1.0, 0.025);
+// Atmospheric rim glow — separate mesh in world space, doesn't rotate with Earth.
+// Default thickness 0.018 (~115 km) — see Atmosphere.ts for the units rationale.
+// Live-tunable: `__orrery.atmosphere.setPower(4)` (sharper rim) / `setIntensity(0.9)` (dimmer).
+const atmosphere = new Atmosphere();
 scene.add(atmosphere.mesh);
 
 // Moon — positioned at the actual sub-lunar location * distance (in Earth radii)
@@ -201,6 +203,7 @@ declare global {
     __orrery?: {
       particles: Particles;
       globe: Globe;
+      atmosphere: Atmosphere;
       trails: Trails;
       coastlines: Coastlines;
       clouds: CloudLayer;
@@ -216,14 +219,13 @@ declare global {
 }
 
 // Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer };
+window.__orrery = { particles, globe, atmosphere, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer };
 
-// Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
-// Static / bundled assets are reported up-front so they appear in the panel without waiting.
-const dataRegistry = new DataRegistry();
 // Display order matches the bottom-left Menu's group order so users can map a button to
-// its source row without scanning. Keys not listed sort alphabetically at the end.
-dataRegistry.setOrder([
+// its source row without scanning. Keys not listed sort alphabetically at the end. The
+// same list seeds both the user-facing Sources panel (via DataRegistry) and the diagnostic
+// Data panel (via Debug.setOrder), so the two panels show entries in the same sequence.
+const DATA_ORDER = [
   // Weather row
   "wind", "fires", "lightning", "hurricanes", "storm-tracks", "aurora", "kp",
   // Clouds row
@@ -234,7 +236,12 @@ dataRegistry.setOrder([
   "coastlines", "day map", "night map",
   // Astro row
   "moon", "eclipse",
-]);
+];
+
+// Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
+// Static / bundled assets are reported up-front so they appear in the panel without waiting.
+const dataRegistry = new DataRegistry();
+dataRegistry.setOrder(DATA_ORDER);
 dataRegistry.report("day map",   { source: "Solar System Scope · 2k_earth_daymap.jpg",   bundled: true });
 dataRegistry.report("night map", { source: "Solar System Scope · 2k_earth_nightmap.jpg", bundled: true });
 dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",                 bundled: true });
@@ -243,9 +250,9 @@ dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",      
 // Each loader reports its state (✓/✗/⋯) here. The "Use test data" button replaces live
 // fetches with synthetic fixtures so we can isolate "loader broken" vs "renderer broken".
 const debug = new Debug(document.body);
+debug.setOrder(DATA_ORDER);
 // Pre-register every loader so the panel shows a "⋯ fetching…" row before the first
-// network response. Order here doesn't matter — DataPanel + DataRegistry sort by the
-// menu group order (see DATA_ORDER below).
+// network response. Order here doesn't matter — debug sorts by DATA_ORDER too.
 debug.pending("wind",       "fetching GFS surface wind…");
 debug.pending("fires",      "fetching FIRMS detections…");
 debug.pending("hurricanes", "fetching NHC CurrentStorms…");
@@ -626,9 +633,11 @@ function applyActiveCloudSource() {
   } else if (active === "cloudsGoes") {
     if (!goesWarned) {
       goesWarned = true;
-      debug.warn("clouds", "GOES geostationary composite not yet implemented — falling back to VIIRS");
+      console.warn("[orrery] GOES geostationary composite not yet implemented — falling back to whichever source has data");
     }
+    // Try whichever source actually loaded so the picker stays useful even if GOES is stub.
     if (viirsTexture) clouds.setTexture(viirsTexture);
+    else if (gfsCloudSource) clouds.setScalarField(gfsCloudSource.grid, gfsCloudSource.vmin, gfsCloudSource.vmax);
   }
 }
 menu.onCloudsChange(() => applyActiveCloudSource());

@@ -146,16 +146,15 @@ export class CloudLayer {
 
   /**
    * Swap in a VIIRS true-color mosaic. Switches the shader to TrueColor mode automatically.
-   * The previous source's texture (whichever it was) is disposed.
+   *
+   * Crucially, the GFS scalar texture (if any) is **left alive** so the user can flip back
+   * to it via the Clouds picker without a re-fetch. We only dispose the prior TrueColor
+   * texture if a brand-new one is replacing it — refreshing VIIRS data.
    */
   setTexture(tex: THREE.Texture) {
-    // Don't dispose if the caller passed back the same texture we already hold (e.g.
-    // refresh that resolved to the cached one) — Three.js gets unhappy with disposed-then-
-    // reattached textures.
     if (this.currentTrueColorTexture && this.currentTrueColorTexture !== tex) {
       this.currentTrueColorTexture.dispose();
     }
-    this.disposeScalarTexture();
     this.material.uniforms.uMap.value = tex;
     this.material.uniforms.uMode.value = 0;
     this.currentTrueColorTexture = tex;
@@ -164,27 +163,20 @@ export class CloudLayer {
   /**
    * Swap in a GFS scalar cloud-cover grid (TCDC or TCW). Switches to Scalar mode.
    * `vmin`/`vmax` control the linear normalisation — for TCDC pass (0, 100); for TCW use (0, 1.5).
+   *
+   * The TrueColor texture is left alive so the user can flip back to it via the picker.
+   * Only the prior scalar texture (if any) gets disposed.
    */
   setScalarField(grid: ScalarGrid, vmin: number, vmax: number) {
     const tex = scalarGridToTexture(grid);
-    this.disposeScalarTexture();
-    if (this.currentTrueColorTexture) {
-      this.currentTrueColorTexture.dispose();
-      this.currentTrueColorTexture = null;
+    if (this.currentScalarTexture) {
+      this.currentScalarTexture.dispose();
     }
     this.material.uniforms.uScalar.value = tex;
     this.material.uniforms.uMode.value = 1;
     this.material.uniforms.uVmin.value = vmin;
     this.material.uniforms.uVmax.value = vmax;
-    this.material.uniforms.uMap.value = null;
     this.currentScalarTexture = tex;
-  }
-
-  private disposeScalarTexture() {
-    if (this.currentScalarTexture) {
-      this.currentScalarTexture.dispose();
-      this.currentScalarTexture = null;
-    }
   }
 
   /** Sun direction in world space — drives the day/night terminator mask. */
