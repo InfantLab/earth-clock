@@ -2,6 +2,41 @@ import * as THREE from "three";
 import type { ScalarGrid } from "./DataSource";
 
 /**
+ * Pre-normalise a `ScalarGrid` into a byte texture mapped [vmin..vmax] → [0..255].
+ *
+ * Why a byte texture: linear filtering on `R8` is mandatory in core WebGL2 (and ES3), no
+ * extension required — unlike `R16F` (needs `OES_texture_half_float_linear`) or `R32F`
+ * (needs `OES_texture_float_linear`). Some integrated GPUs silently fall back to nearest
+ * neighbour for the floating-point formats, which shows up as the GFS 1°-grid pixelating
+ * heavily when stretched over the globe. Bytes are universally smooth.
+ *
+ * Caller bakes vmin/vmax into the texture, so the shader can sample directly as `t ∈
+ * [0, 1]` — no need for `uVmin` / `uVmax` uniforms. Costs flexibility (re-normalising
+ * requires a fresh texture) which is fine for a layer that's only re-uploaded on data
+ * refresh anyway. Precision: 1/256 ≈ 0.4 % of the value range, plenty for visualisation.
+ */
+export function scalarGridToByteTexture(grid: ScalarGrid, vmin: number, vmax: number): THREE.DataTexture {
+  const { width, height, data } = grid;
+  if (data.length !== width * height) {
+    throw new Error(`scalarGridToByteTexture: data length ${data.length} ≠ width*height ${width * height}`);
+  }
+  const range = Math.max(vmax - vmin, 1e-6);
+  const buf = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    const t = (data[i] - vmin) / range;
+    buf[i] = Math.round(Math.max(0, Math.min(1, t)) * 255);
+  }
+  const tex = new THREE.DataTexture(buf, width, height, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
  * Pack a single-channel `ScalarGrid` into an R-only half-float texture for shader sampling.
  *
  * **Why half-float and not float32**: WebGL2 linear filtering of `R32F` requires the

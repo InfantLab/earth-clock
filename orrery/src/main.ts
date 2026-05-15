@@ -401,13 +401,13 @@ debug.onUseTestData(() => {
   const debugTex = debugCloudTexture();
   clouds.setTexture(debugTex);
   flatMap.setCloudTexture(debugTex);
-  // Sync menu state so the fixture is visible regardless of previous toggle state — and
-  // so the menu's button highlight reflects what's currently visible. The user can then
-  // toggle layers off via the menu in the usual way.
-  menu.setLayer("clouds",     true);
-  menu.setLayer("aurora",     true);
-  menu.setLayer("fires",      true);
-  menu.setLayer("hurricanes", true);
+  // Force the cloud picker onto VIIRS so the fixture texture (which goes through the
+  // true-color path) actually shows. After v002 there's no plain "clouds" key — the
+  // menu's source picker is the only way to make the layer visible.
+  menu.setLayer("cloudsViirs", true);
+  menu.setLayer("aurora",      true);
+  menu.setLayer("fires",       true);
+  menu.setLayer("hurricanes",  true);
   debug.info("clouds",     `fixture: procedural noise (${1024}×${512})`);
   debug.info("aurora",     `fixture: ${auroraGrid.pointCount} pts in 6 bands ±55°…±80°`);
   debug.info("fires",      `fixture: ${fireGrid.detections.length} pts across 8 known fire zones`);
@@ -417,12 +417,19 @@ debug.onUseTestData(() => {
 // Second click on the (now "Use live data") button: re-trigger the live loaders so the
 // fixtures get overwritten by fresh network data. Menu visibility is left untouched —
 // if the user turned off a layer while inspecting fixtures, it stays off.
+//
+// `applyActiveCloudSource()` is also called: the fixture handler used `clouds.setTexture`
+// to install a debug texture, which leaves CloudLayer in true-color mode with that
+// texture even after the live loaders kick off. Re-running the source picker writes
+// whichever cached source the user has selected (VIIRS / GFS) back into the layer so
+// the display reverts immediately rather than waiting for a slow VIIRS refetch.
 debug.onUseLiveData(() => {
   console.log("[orrery] debug: restoring live data");
   loadClouds();
   loadAurora();
   loadFires();
   loadHurricanes();
+  applyActiveCloudSource();
 });
 
 // Fetch real GFS surface wind and hand it to the particles. Mock east-wind keeps running until

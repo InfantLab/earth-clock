@@ -78,12 +78,14 @@ export async function fetchGibsTexture(opts: GibsTileOptions): Promise<THREE.Can
   // the no-data area encoded as solid black in the JPG. Sample a coarse grid; if too
   // many samples are pure black, the day is incomplete and we should fall back further.
   //
-  // 5 % was originally too strict — polar night during equinox seasons can produce 8-15 %
-  // legitimately-dark samples, causing every fallback date to fail. 20 % is a better
-  // pragmatic threshold: catches the genuine "half the day is missing" cases without
-  // false-rejecting valid imagery during polar night.
-  const NODATA_LUMA_THRESH = 6;   // sRGB byte; real ocean is ~30+, polar night is dark but rarely <6
-  const NODATA_MAX_FRAC    = 0.20; // > 20 % black → reject as incomplete
+  // The sample grid is 32×16 across the canvas — ~12 % of samples sit in each polar band.
+  // During solstice seasons one entire polar cap is in night and reads near-black even
+  // when the mosaic is otherwise complete. NODATA_MAX_FRAC=0.30 absorbs that without
+  // false-rejecting valid days; NODATA_LUMA_THRESH=4 keeps the test sensitive only to
+  // the literal RGB(0,0,0) fill that GIBS uses for missing data (dark ocean in genuine
+  // night zones still reads ~15-30 from atmospheric scattering even on the unlit side).
+  const NODATA_LUMA_THRESH = 4;
+  const NODATA_MAX_FRAC    = 0.30;
   const samplesX = 32, samplesY = 16; // 512 sample points
   let nodataCount = 0;
   for (let sy = 0; sy < samplesY; sy++) {

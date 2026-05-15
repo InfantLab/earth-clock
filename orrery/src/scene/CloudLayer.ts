@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { ScalarGrid } from "../data/DataSource";
-import { scalarGridToTexture } from "../data/scalarToTexture";
+import { scalarGridToByteTexture } from "../data/scalarToTexture";
 
 const AXIAL_TILT = 23.44 * Math.PI / 180;
 
@@ -40,11 +40,12 @@ export class CloudLayer {
         uMap:         { value: null },
         uScalar:      { value: null },
         // 0 = true-color luminance extraction, 1 = scalar cloud-fraction grid.
+        // Scalar mode reads a *pre-normalised* byte texture so the sampled value is
+        // already in [0, 1] — no need for vmin/vmax uniforms inside the shader. The
+        // bake-into-the-texture approach (see scalarGridToByteTexture) gets us linear
+        // filtering on every GPU; floating-point textures depend on optional WebGL2
+        // extensions that some integrated drivers silently skip.
         uMode:        { value: 0 },
-        // Scalar normalisation — `value = (raw - uVmin) / (uVmax - uVmin)` clamped to 0..1.
-        // For TCDC the range is 0..100 (% cover); for TCW use 0..1.5 kg/m².
-        uVmin:        { value: 0.0 },
-        uVmax:        { value: 100.0 },
         uSunDirection:{ value: this.sunDirUniform.value },
         uThreshold:   { value: 0.50 },   // luminance below this → fully transparent (true-color)
         uSoftness:    { value: 0.30 },   // smoothstep width (true-color)
@@ -71,8 +72,6 @@ export class CloudLayer {
         uniform sampler2D uMap;
         uniform sampler2D uScalar;
         uniform int   uMode;
-        uniform float uVmin;
-        uniform float uVmax;
         uniform vec3 uSunDirection;
         uniform float uThreshold;
         uniform float uSoftness;
@@ -100,7 +99,7 @@ export class CloudLayer {
             // green/brown tinting from land features that survived the luma threshold.
             cloudColor = mix(c.rgb, vec3(1.0), 0.4);
           } else {
-            // ---- GFS scalar cloud-cover grid ----
+            // ---- GFS scalar cloud-cover grid (pre-normalised byte texture) ----
             // Per-fragment UV from local normal (avoids prime-meridian seam discontinuity).
             // Convention: x = cos(lat)·cos(lon), y = sin(lat), z = -cos(lat)·sin(lon).
             // GFS grid: first column at lon=0, first row at lat=+90.
@@ -108,9 +107,8 @@ export class CloudLayer {
             float lon = atan(-vLocalNormal.z, vLocalNormal.x);
             float u = (lon < 0.0 ? lon + 2.0 * PI : lon) / (2.0 * PI);
             float vv = (0.5 * PI - lat) / PI;
-            float val = texture2D(uScalar, vec2(u, vv)).r;
-            float t = clamp((val - uVmin) / max(uVmax - uVmin, 1e-6), 0.0, 1.0);
-            cloudAlpha = t;
+            // Byte texture: value already normalised [0, 1] by scalarGridToByteTexture.
+            cloudAlpha = texture2D(uScalar, vec2(u, vv)).r;
             cloudColor = vec3(1.0);
           }
 
@@ -162,20 +160,19 @@ export class CloudLayer {
 
   /**
    * Swap in a GFS scalar cloud-cover grid (TCDC or TCW). Switches to Scalar mode.
-   * `vmin`/`vmax` control the linear normalisation — for TCDC pass (0, 100); for TCW use (0, 1.5).
+   * `vmin`/`vmax` are baked into the byte texture's normalisation — for TCDC pass
+   * (0, 100); for TCW use (0, 1.0).
    *
    * The TrueColor texture is left alive so the user can flip back to it via the picker.
    * Only the prior scalar texture (if any) gets disposed.
    */
   setScalarField(grid: ScalarGrid, vmin: number, vmax: number) {
-    const tex = scalarGridToTexture(grid);
+    const tex = scalarGridToByteTexture(grid, vmin, vmax);
     if (this.currentScalarTexture) {
       this.currentScalarTexture.dispose();
     }
     this.material.uniforms.uScalar.value = tex;
     this.material.uniforms.uMode.value = 1;
-    this.material.uniforms.uVmin.value = vmin;
-    this.material.uniforms.uVmax.value = vmax;
     this.currentScalarTexture = tex;
   }
 
