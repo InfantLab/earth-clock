@@ -28,7 +28,6 @@ export class CloudLayer {
   private readonly material: THREE.ShaderMaterial;
   private readonly sunDirUniform: { value: THREE.Vector3 };
   private currentScalarTexture: THREE.DataTexture | null = null;
-  private currentTrueColorTexture: THREE.Texture | null = null;
 
   constructor(radius: number = 1.003) {
     const geometry = new THREE.SphereGeometry(radius, 128, 64);
@@ -143,19 +142,19 @@ export class CloudLayer {
   }
 
   /**
-   * Swap in a VIIRS true-color mosaic. Switches the shader to TrueColor mode automatically.
+   * Swap in a VIIRS true-color mosaic (or a fixture texture). Switches the shader to
+   * TrueColor mode automatically.
    *
-   * Crucially, the GFS scalar texture (if any) is **left alive** so the user can flip back
-   * to it via the Clouds picker without a re-fetch. We only dispose the prior TrueColor
-   * texture if a brand-new one is replacing it — refreshing VIIRS data.
+   * **Disposal is the caller's responsibility.** This used to free the previous texture
+   * here, but it broke a real user flow: the test-data button passes in a fixture
+   * texture and the user wants to toggle back to the live VIIRS texture — but the live
+   * texture was disposed by the test-data swap, so flipping back rendered nothing. main.ts
+   * now disposes the prior VIIRS texture inside `loadClouds()` when it refreshes; transient
+   * fixture textures leak a tiny amount (~512 KB) until the next refresh, which is fine.
    */
   setTexture(tex: THREE.Texture) {
-    if (this.currentTrueColorTexture && this.currentTrueColorTexture !== tex) {
-      this.currentTrueColorTexture.dispose();
-    }
     this.material.uniforms.uMap.value = tex;
     this.material.uniforms.uMode.value = 0;
-    this.currentTrueColorTexture = tex;
   }
 
   /**

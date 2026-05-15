@@ -934,6 +934,10 @@ function loadClouds() {
   })
     .then(({ texture, date }) => {
       const dateStr = date.toISOString().slice(0, 10);
+      // The viirsTexture variable owns the lifetime of the loaded mosaic. Dispose the
+      // previous one explicitly when refreshing — CloudLayer.setTexture no longer
+      // free-on-swap, so we'd otherwise leak ~6 MB per 24 h refresh.
+      if (viirsTexture) viirsTexture.dispose();
       viirsTexture = texture;
       // Only push the texture into CloudLayer if VIIRS is the currently-selected source —
       // otherwise applyActiveCloudSource() would clobber whatever GFS/etc had set.

@@ -305,8 +305,16 @@ export class Menu {
   /**
    * Set a layer's on/off state programmatically (e.g. from the Debug "Use test data" button
    * which wants to force-show layers that the user may have turned off). The menu's button
-   * highlight, internal state, and persisted localStorage entry all stay in sync, so a
-   * subsequent click on the menu still toggles correctly.
+   * highlight, internal state, and persisted localStorage entry all stay in sync.
+   *
+   * Mutex rows (overlay scalar fields, cloud sources) are honoured: turning one entry on
+   * turns the others in the same row off, the same way an interactive click does. Without
+   * this, the test-data handler could leave two cloud-source buttons highlighted at once.
+   *
+   * Doesn't fire `onOverlayChange` / `onCloudsChange` — those are reserved for user-driven
+   * toggles. The caller is expected to handle data-side state themselves (the test-data
+   * handler installs its fixture texture directly, for instance).
+   *
    * Unknown keys are silently ignored.
    */
   setLayer(name: string, on: boolean) {
@@ -314,6 +322,21 @@ export class Menu {
     const key = name as LayerKey;
     if (this.state[key] === on) return;
     this.state[key] = on;
+
+    if (on) {
+      const mutexRow = OVERLAY_KEYS.includes(key) ? OVERLAY_KEYS
+                    : CLOUD_KEYS.includes(key)    ? CLOUD_KEYS
+                    : null;
+      if (mutexRow) {
+        for (const other of mutexRow) {
+          if (other !== key && this.state[other]) {
+            this.state[other] = false;
+            this.apply(other);
+          }
+        }
+      }
+    }
+
     this.apply(key);
     saveState(this.state);
   }
@@ -481,9 +504,9 @@ function injectStyles() {
       display: inline-block;
       pointer-events: all;
       background: rgba(0, 0, 5, 0.55);
-      padding: 4px 12px;
-      border-radius: 6px;
-      font-size: 16px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 32px;
       letter-spacing: 0.08em;
       color: #c9d2e3;
       cursor: pointer;
@@ -491,7 +514,7 @@ function injectStyles() {
     }
     .orrery-brand:hover { color: #fff; }
     .orrery-version {
-      font-size: 11px;
+      font-size: 14px;
       color: #6e7a90;
       letter-spacing: 0.04em;
       pointer-events: all;

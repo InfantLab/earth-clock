@@ -89,7 +89,7 @@ Open the Data panel (View → Data). Verify each row:
 We have renamed the overlays to be more beginner friendsly
 
 ## Day/night terminator
-
+                                                                                                                                     
 - [x] Time-warp through 24 h (set `window.__orreryTimeWarp = 3600` in console): the day/night line sweeps across Earth at a believable speed
 - [x] At the terminator: smooth gradient, not a hard line
 - [x] Night side: city lights texture visible (subtle), clouds dimmed but not erased
