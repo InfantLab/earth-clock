@@ -196,6 +196,20 @@ Classic earth-clock had Temp, RH, MSLP, TPW, TCW, AD, WPD overlays — all from 
   - `EclipseLayer.mesh.visible` is correctly toggled on; but the `Group → inner Group → Line` parenting means `Line.frustumCulled` defaults to true and the bounding sphere may be wrong for a polyline that wraps the globe.
   - Add a console log inside `computePathOfTotality()` reporting sample count + max magnitude as a quick diagnostic.
 
+### Earth-clock branding — lean into the name
+
+The project is *earth-clock*. The geometry already encodes the clock metaphor — Earth's rotation, the sun direction, the moon's orbit — but the UI doesn't yet make it explicit. A few moves to drive it home:
+
+- **Sun + moon hour-hand vectors** ✅ landed: two thin lines from Earth's centre extending past the surface in the sun and moon directions. Sun-line = the "hour hand" (one rotation per simulated day); moon-line creeps ~13 % slower (synodic period). Beautiful under time-warp — you literally watch the dial move. Implemented in `src/scene/RadiusVectors.ts` with a corresponding sub-solar / sub-lunar marker pair on the flat map. Toggle: Astro row → "Hands".
+- **Time-zones overlay** ⬜ deferred — political timezone boundaries are an ugly human mess and the layout problem (24+ floating labels around a sphere) needs careful UX. Likely v003 territory. Most promising approaches:
+  - *Hover-highlight only*: cursor → single zone label, no clutter. Coherent with the existing Location panel.
+  - *Equatorial ring of chips*: 24 small time-labels around the visible hemisphere only, fading at the limb.
+  - *Real IANA zones*: needs Natural Earth's `timezones` polygon layer (~300 features) + label centroids. Higher fidelity, much more work.
+- **Hour rings** ⬜ — faint meridian lines every 15° as the dial face. Quick to add; reads the globe more like a sundial.
+- **Equator + ecliptic rings** ⬜ — thin gold equator + thin blue ecliptic so the geometric story is visible. Subtle reference scaffolding.
+- **Analemma trace** ⬜ — annual figure-8 path of the sun in the sky at a pinned location. Beautiful under year-scale time-warp. Tied to the existing Location panel.
+- **Sub-solar "noon" marker** ⬜ — a small bright glyph that travels along Earth's surface where the sun is directly overhead right now. The "second hand" of the clock metaphor.
+
 ### Other backlog
 
 - **10-min live cloud stitch** (GOES-East + Himawari + Meteosat) — replaces daily VIIRS mosaic. Now the third option in the Clouds source picker, currently stubbed; full implementation needs three satellite disk-view reprojections to equirectangular and a daily/seasonal latitude-coverage adjustment.

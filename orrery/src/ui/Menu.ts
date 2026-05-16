@@ -26,6 +26,7 @@ import type { HurricaneLayer } from "../scene/HurricaneLayer";
 import type { HurricaneTrackLayer } from "../scene/HurricaneTrackLayer";
 import type { LightningLayer } from "../scene/LightningLayer";
 import type { OverlayLayer } from "../scene/OverlayLayer";
+import type { RadiusVectors } from "../scene/RadiusVectors";
 import type { EclipseLayer } from "../scene/EclipseLayer";
 import type { FlatMap } from "../scene/FlatMap";
 import type { Debug } from "./Debug";
@@ -45,6 +46,7 @@ export interface MenuLayers {
   hurricaneTracks: HurricaneTrackLayer;
   lightning: LightningLayer;
   overlay: OverlayLayer;
+  radiusVectors: RadiusVectors;
   eclipse: EclipseLayer;
   flatMap: FlatMap;
 }
@@ -70,7 +72,7 @@ type LayerKey =
   // Geography row
   | "coastlines" | "nightLights"
   // Astro row
-  | "terminator" | "atmosphere" | "moon" | "eclipse"
+  | "terminator" | "atmosphere" | "moon" | "hands" | "eclipse"
   // View row. `data` toggles the unified panel (status + source + detail + age); `tools`
   // toggles the diagnostic panel (astro readout + Use test data / Find moon / Jump to
   // eclipse). Older sessions had a separate "Sources" entry — that role merged into `data`.
@@ -90,7 +92,7 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   // Geography
   coastlines: true, nightLights: true,
   // Astro
-  terminator: true, atmosphere: true, moon: true, eclipse: false,
+  terminator: true, atmosphere: true, moon: true, hands: true, eclipse: false,
   // View
   map: false, orbit: false, clock: true, data: false, location: false, tools: false,
 };
@@ -105,7 +107,7 @@ const LABELS: Record<LayerKey, string> = {
   mslp: "Pressure", temp: "Temperature", rh: "Humidity",
   tpw: "Moisture", tcw: "Cloud water",
   coastlines: "Coastlines", nightLights: "Night lights",
-  terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", eclipse: "Eclipse",
+  terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", hands: "Hands", eclipse: "Eclipse",
   map: "Flat map", orbit: "Auto-spin",
   clock: "Clock", data: "Data", location: "Location", tools: "Tools",
 };
@@ -140,6 +142,7 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
   moon:        "The moon at its true position and distance (~60 Earth radii)",
+  hands:       "Earth-clock hour hands — gold ray to the sun, pale-blue ray to the moon. Under time-warp the sun-ray sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality for the next solar eclipse",
   // View
   map:         "Switch to equirectangular flat-map projection",
@@ -178,7 +181,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "Astro",
-    keys: ["terminator", "atmosphere", "moon", "eclipse"],
+    keys: ["terminator", "atmosphere", "moon", "hands", "eclipse"],
   },
   {
     label: "View",
@@ -382,7 +385,7 @@ export class Menu {
 
   private apply(key: LayerKey) {
     const on = this.state[key];
-    const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse, flatMap } = this.layers;
+    const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap } = this.layers;
     switch (key) {
       // Cloud source picker — visibility is "is any source active?" The actual texture/
       // scalar swap happens in main.ts via onCloudsChange. (CloudLayer doesn't know the
@@ -425,6 +428,7 @@ export class Menu {
         break;
       case "moon":        moon.mesh.visible = on; break;
       case "atmosphere":  atmosphere.mesh.visible = on; break;
+      case "hands":       radiusVectors.setVisible(on); break;
       case "terminator":
         // Day/night rendering switch — applies to globe AND flat map. With it off, both
         // modes show a uniformly-lit Earth and clouds render uniformly bright (no night dim).

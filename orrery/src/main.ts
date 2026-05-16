@@ -15,6 +15,7 @@ import type { StormGeometry } from "./scene/HurricaneTrackLayer";
 import { EclipseLayer } from "./scene/EclipseLayer";
 import { LightningLayer } from "./scene/LightningLayer";
 import { OverlayLayer } from "./scene/OverlayLayer";
+import { RadiusVectors } from "./scene/RadiusVectors";
 import { FlatMap } from "./scene/FlatMap";
 import { LocationPin } from "./scene/LocationPin";
 import { Menu } from "./ui/Menu";
@@ -139,6 +140,13 @@ function worldToGeographic(worldPoint: THREE.Vector3, date: Date, out: THREE.Vec
 const overlay = new OverlayLayer(1.006);
 scene.add(overlay.mesh);
 
+// Earth-clock "hour hands" — thin sun + moon pointers from Earth's centre (3D mode) and
+// matching sub-solar / sub-lunar dots on the flat map. The visible-by-default toggle lives
+// in the Astro row as "Hands"; updated each frame from the same sun/moon directions that
+// drive the lighting and the moon mesh.
+const radiusVectors = new RadiusVectors();
+scene.add(radiusVectors.mesh);
+
 // Equirectangular flat-map mode. Owns its own scene + ortho camera; rendered instead of the
 // 3D scene when the menu's "Map" toggle is on. v1 has day + night + clouds + terminator;
 // aurora/fires/hurricanes/wind in flat-map are deferred (see PLAN.md).
@@ -155,6 +163,7 @@ flatMap.scene.add(coastlines.flatMesh);
 flatMap.scene.add(fires.flatMesh);
 flatMap.scene.add(hurricanes.flatMesh);
 flatMap.scene.add(lightning.flatMesh);
+flatMap.scene.add(radiusVectors.flatMesh);
 
 // GPU wind particles. Live-tune from the console:
 //   __orrery.particles.setSpeed(0.05) / setPointSize(3) / setAlpha(0.4)
@@ -295,7 +304,7 @@ const locationPanel = new LocationPanel(document.body);
 // natural "Data" name for the live readout panel.
 const menu = new Menu(document.body,
   { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks,
-    lightning, overlay, eclipse: eclipseLayer, flatMap },
+    lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap },
   { data: dataPanel, tools: debug, clock, location: locationPanel },
 );
 
@@ -969,13 +978,24 @@ function updateAstro() {
 
   // Flat map renders in the geographic frame — pass sub-solar (lat, lon) directly.
   const sol = solarPosition(now);
+  const lun = lunarPosition(now);
   const RAD = 180 / Math.PI;
+  const gmstDeg = gmst(now) * RAD;
   const subSolLat = sol.dec * RAD;
-  const subSolLon = ((sol.ra * RAD - gmst(now) * RAD + 180) % 360 + 360) % 360 - 180;
+  const subSolLon = wrapLon(sol.ra * RAD - gmstDeg);
+  const subLunLat = lun.dec * RAD;
+  const subLunLon = wrapLon(lun.ra * RAD - gmstDeg);
   flatMap.setSubSolar(subSolLat, subSolLon);
 
   moonPositionWorld(now, moonPos);
   moon.setPosition(moonPos);
+
+  // Sun + moon "hour-hand" vectors — 3D rays in the inertial world frame, dots at
+  // sub-solar / sub-lunar on the flat map. Same astro plumbing used for lighting & moon.
+  radiusVectors.setSunDirection(sunDir);
+  radiusVectors.setMoonPosition(moonPos);
+  radiusVectors.setSubSolar(subSolLat, subSolLon);
+  radiusVectors.setSubLunar(subLunLat, subLunLon);
 
   // Particles, coastlines, clouds, fires, and hurricanes share Earth's rotation so they stay glued to the ground frame
   const earthY = earthRotationY(now);
