@@ -18,9 +18,14 @@ const AXIAL_TILT = 23.44 * Math.PI / 180;
  */
 export class AuroraLayer {
   readonly mesh: THREE.Group;
+  /** Flat-map mirror: same point cloud rendered at (lon/180, lat/180) on the 2×1 plane.
+   *  Shares the probability attribute with the 3D mesh so update() fills both at once. */
+  readonly flatMesh: THREE.Points;
   private readonly points: THREE.Points;
   private readonly material: THREE.ShaderMaterial;
+  private readonly flatMaterial: THREE.ShaderMaterial;
   private readonly posAttr: THREE.BufferAttribute;
+  private readonly flatPosAttr: THREE.BufferAttribute;
   private readonly probAttr: THREE.BufferAttribute;
   private readonly sunDirUniform: { value: THREE.Vector3 };
   private readonly timeUniform: { value: number };
@@ -41,6 +46,16 @@ export class AuroraLayer {
     geometry.setAttribute("position", this.posAttr);
     geometry.setAttribute("aProbability", this.probAttr);
     geometry.setDrawRange(0, 0);
+
+    // Flat-map geometry — own position buffer (different coords), shared probability so the
+    // single update() loop writes both views simultaneously.
+    const flatGeom = new THREE.BufferGeometry();
+    const flatPositions = new Float32Array(AuroraLayer.MAX_POINTS * 3);
+    this.flatPosAttr = new THREE.BufferAttribute(flatPositions, 3);
+    this.flatPosAttr.setUsage(THREE.DynamicDrawUsage);
+    flatGeom.setAttribute("position", this.flatPosAttr);
+    flatGeom.setAttribute("aProbability", this.probAttr);
+    flatGeom.setDrawRange(0, 0);
 
     this.sunDirUniform = { value: new THREE.Vector3(1, 0, 0) };
     this.timeUniform   = { value: 0 };
@@ -124,13 +139,64 @@ export class AuroraLayer {
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
     this.mesh.add(this.points);
+
+    // Flat-map material: simpler than the 3D version because the flat map doesn't have a
+    // physical sun direction — terminator masking comes from the FlatMap's day/night
+    // shader. Share the time uniform so the shimmer stays in lock-step.
+    this.flatMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime:    this.material.uniforms.uTime,    // shared ref → shimmer phases match
+        uOpacity: this.material.uniforms.uOpacity, // shared ref → opacity slider works on both
+      },
+      vertexShader: /* glsl */`
+        attribute float aProbability;
+        varying float vProb;
+        void main() {
+          vProb = aProbability;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = 3.0 + 6.0 * pow(aProbability / 100.0, 1.5);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform float uTime;
+        uniform float uOpacity;
+        varying float vProb;
+
+        vec3 hsv2rgb(vec3 c) {
+          vec3 p = abs(fract(c.xxx + vec3(0.0,2.0/3.0,1.0/3.0)) * 6.0 - 3.0);
+          return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+        }
+
+        void main() {
+          float p = vProb / 100.0;
+          if (p < 0.02) discard;
+          float shimmer = 1.0 + 0.08 * sin(uTime * 2.3 + vProb * 17.3);
+          float hue = 0.35 + 0.50 * p;
+          float sat = mix(0.6, 1.0, p);
+          float val = mix(0.4, 1.0, p) * shimmer;
+          vec3 col = hsv2rgb(vec3(hue, sat, val));
+          float alpha = pow(p, 1.8) * uOpacity;
+          float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          alpha *= smoothstep(0.5, 0.2, d);
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.flatMesh = new THREE.Points(flatGeom, this.flatMaterial);
+    this.flatMesh.position.z = 0.004; // above coastlines, below location pin
   }
 
-  /** Replace aurora data from a fresh NOAA fetch. */
+  /** Replace aurora data from a fresh NOAA fetch. Fills both the 3D sphere positions and
+   *  the flat-map (lon/180, lat/180) positions in one loop. */
   update(grid: AuroraGrid) {
     const R = this.RADIUS;
     const n = Math.min(grid.pointCount, AuroraLayer.MAX_POINTS);
     const pos  = this.posAttr.array as Float32Array;
+    const flat = this.flatPosAttr.array as Float32Array;
     const prob = this.probAttr.array as Float32Array;
 
     for (let i = 0; i < n; i++) {
@@ -145,12 +211,18 @@ export class AuroraLayer {
       pos[i * 3 + 0] =  R * cosLat * Math.cos(lonRad);
       pos[i * 3 + 1] =  R * Math.sin(latRad);
       pos[i * 3 + 2] = -R * cosLat * Math.sin(lonRad);
+      // Flat-map: lon → x in [-1, 1], lat → y in [-0.5, 0.5], small z above plane.
+      flat[i * 3 + 0] = lon / 180;
+      flat[i * 3 + 1] = lat / 180;
+      flat[i * 3 + 2] = 0.004;
       prob[i] = p;
     }
 
-    this.posAttr.needsUpdate  = true;
-    this.probAttr.needsUpdate = true;
+    this.posAttr.needsUpdate     = true;
+    this.flatPosAttr.needsUpdate = true;
+    this.probAttr.needsUpdate    = true;
     this.points.geometry.setDrawRange(0, n);
+    this.flatMesh.geometry.setDrawRange(0, n);
   }
 
   setSunDirection(dir: THREE.Vector3) {

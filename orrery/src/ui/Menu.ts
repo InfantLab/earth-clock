@@ -398,7 +398,10 @@ export class Menu {
         flatMap.setCloudsVisible(cloudsOn);
         break;
       }
-      case "aurora":      aurora.mesh.visible = on; break;
+      case "aurora":
+        aurora.mesh.visible     = on;
+        aurora.flatMesh.visible = on;
+        break;
       case "fires":
         fires.mesh.visible     = on;
         fires.flatMesh.visible = on;
@@ -407,7 +410,10 @@ export class Menu {
         hurricanes.mesh.visible     = on;
         hurricanes.flatMesh.visible = on;
         break;
-      case "tracks":      hurricaneTracks.mesh.visible = on; break;
+      case "tracks":
+        hurricaneTracks.mesh.visible     = on;
+        hurricaneTracks.flatMesh.visible = on;
+        break;
       case "eclipse":     eclipse.mesh.visible = on; break;
       case "lightning":
         lightning.mesh.visible     = on;

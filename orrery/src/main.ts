@@ -163,6 +163,8 @@ flatMap.scene.add(coastlines.flatMesh);
 flatMap.scene.add(fires.flatMesh);
 flatMap.scene.add(hurricanes.flatMesh);
 flatMap.scene.add(lightning.flatMesh);
+flatMap.scene.add(aurora.flatMesh);
+flatMap.scene.add(hurricaneTracks.flatMesh);
 flatMap.scene.add(radiusVectors.flatMesh);
 
 // GPU wind particles. Live-tune from the console:
