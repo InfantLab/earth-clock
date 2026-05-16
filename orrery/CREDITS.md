@@ -53,6 +53,13 @@ Update this file every time a new external source is introduced. The whole proje
 - **License**: Public domain
 - `attribution_required`: no, but credited
 
+### Skybox — stars + Milky Way ([`2k_stars_milky_way.jpg`](public/textures/2k_stars_milky_way.jpg), [`8k_stars_milky_way.jpg`](public/textures/8k_stars_milky_way.jpg))
+- **Source**: [Solar System Scope textures](https://www.solarsystemscope.com/textures/) — `2k_stars_milky_way.jpg` / `8k_stars_milky_way.jpg`
+- **Author**: Solar System Scope (INOVE s.r.o.)
+- **License**: CC-BY 4.0
+- `attribution_required`: **yes**
+- **Use**: equirectangular `scene.background` for the 3D view (loader: [src/scene/Skybox.ts](src/scene/Skybox.ts)). Defaults to the 2K asset for fast first paint; quality toggle planned (Phase A polish, see PLAN.md).
+
 ---
 
 ## Astronomical formulae

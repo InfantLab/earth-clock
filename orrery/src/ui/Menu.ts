@@ -107,7 +107,7 @@ const LABELS: Record<LayerKey, string> = {
   mslp: "Pressure", temp: "Temperature", rh: "Humidity",
   tpw: "Moisture", tcw: "Cloud water",
   coastlines: "Coastlines", nightLights: "Night lights",
-  terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", hands: "Hands", eclipse: "Eclipse",
+  terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", hands: "Beams", eclipse: "Eclipse",
   map: "Flat map", orbit: "Auto-spin",
   clock: "Clock", data: "Data", location: "Location", tools: "Tools",
 };
@@ -142,7 +142,7 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
   moon:        "The moon at its true position and distance (~60 Earth radii)",
-  hands:       "Earth-clock hour hands — gold ray to the sun, pale-blue ray to the moon. Under time-warp the sun-ray sweeps one rotation per simulated day.",
+  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon. Under time-warp the sun beam sweeps one rotation per simulated day. On the flat map the moon dot shows the current phase.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality for the next solar eclipse",
   // View
   map:         "Switch to equirectangular flat-map projection",

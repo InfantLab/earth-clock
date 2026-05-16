@@ -20,10 +20,12 @@ export class Moon {
       // Self-illuminate the lunar texture so the moon is visible (a dim disc) even when its
       // unlit side faces the camera or when it sits far from any other lit object. Lit side
       // still picks up extra brightness from the directional sun light, so lunar phases
-      // remain visible as a slight gradient across the disc.
+      // remain visible as a slight gradient across the disc. Bumped from 0.5 → 0.95 so
+      // the moon reads as a bright object even at typical zoom — the moon's true albedo
+      // is low (~0.12) but it's much brighter than the sky behind it.
       emissive: 0xffffff,
       emissiveMap: texture,
-      emissiveIntensity: 0.5,
+      emissiveIntensity: 0.95,
     });
 
     this.mesh = new THREE.Mesh(geometry, material);

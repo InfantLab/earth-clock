@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import { Globe } from "./scene/Globe";
 import { Sky } from "./scene/Sky";
+import { tryLoadSkybox } from "./scene/Skybox";
 import { Atmosphere } from "./scene/Atmosphere";
 import { Moon } from "./scene/Moon";
+import { Sun } from "./scene/Sun";
 import { Particles } from "./scene/Particles";
 import { Trails } from "./scene/Trails";
 import { Coastlines } from "./scene/Coastlines";
@@ -53,8 +55,21 @@ container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 
+// Procedural Points-based starfield. Acts as a fallback while no real skybox texture is
+// installed; hidden the moment tryLoadSkybox() finds one in textures/.
 const sky = new Sky();
 scene.add(sky.mesh);
+
+// Real-photograph skybox loader (cubemap or NASA equirectangular). If textures/starmap.jpg
+// (or textures/starmap_{px,nx,py,ny,pz,nz}.jpg) is present, it's installed as scene.background
+// and the procedural Points fallback is hidden. If not, the fallback stays visible and the
+// loader logs a one-time warning with download instructions. See [Skybox.ts](scene/Skybox.ts).
+tryLoadSkybox().then(tex => {
+  if (tex) {
+    scene.background = tex;
+    sky.mesh.visible = false;
+  }
+});
 
 const globe = new Globe();
 scene.add(globe.mesh);
@@ -188,6 +203,12 @@ sun.position.set(50, 0, 0);
 scene.add(sun);
 scene.add(new THREE.AmbientLight(0x101824, 0.35));
 
+// Visible sun: a true-scale sphere + corona sprite at 1 AU along sunDirectionWorld(now).
+// Tiny but visible from default Earth-orbit views thanks to the corona; grows naturally
+// as you zoom out toward it (OrbitControls.maxDistance bumped to 25000 R⊕ in Camera.ts).
+const sunBody = new Sun();
+scene.add(sunBody.mesh);
+
 const camera = createCamera(window.innerWidth / window.innerHeight);
 const controls = attachOrbitControls(camera, renderer.domElement);
 
@@ -202,6 +223,13 @@ window.addEventListener("resize", () => {
 // Reusable scratch vectors — avoid allocating each frame
 const sunDir = new THREE.Vector3();
 const moonPos = new THREE.Vector3();
+const _moonUnit = new THREE.Vector3();
+const _waxCross = new THREE.Vector3();
+
+// Cached sub-solar / sub-lunar coords, refreshed each frame by updateAstro(). Read by
+// the LocationPanel "sun beam / moon beam direction" buttons when the user clicks them.
+const latestSubSolar = { lat: 0, lon: 0 };
+const latestSubLunar = { lat: 0, lon: 0 };
 
 // Time control: real wall-clock by default. Set window.__orreryTimeWarp = N to make 1 real second
 // advance N simulated seconds (e.g. 3600 for hour-per-second). Useful while developing.
@@ -225,12 +253,13 @@ declare global {
       lightning: LightningLayer;
       overlay: OverlayLayer;
       eclipse: EclipseLayer;
+      sun: Sun;
     };
   }
 }
 
 // Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, atmosphere, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer };
+window.__orrery = { particles, globe, atmosphere, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer, sun: sunBody };
 
 // Display order matches the bottom-left Menu's group order so users can map a button to
 // its source row without scanning. Keys not listed sort alphabetically at the end. The
@@ -323,6 +352,12 @@ locationPanel.onClear(() => {
 locationPanel.onGeolocate((lat, lon) => {
   pinLocation(lat, lon, "geolocation");
 });
+
+// "Sun beam direction" / "Moon beam direction" buttons → drop the pin at the current
+// sub-solar or sub-lunar geographic point. Coords are cached by updateAstro() each
+// frame; the buttons just read the latest snapshot.
+locationPanel.onSunBeam(()  => pinLocation(latestSubSolar.lat, latestSubSolar.lon, "sun beam"));
+locationPanel.onMoonBeam(() => pinLocation(latestSubLunar.lat, latestSubLunar.lon, "moon beam"));
 
 // Centralised pin-drop. Sets the 3D + flat pin meshes, fills the panel coords, and kicks
 // off a reverse-geocode lookup that fills in the place name asynchronously.
@@ -998,6 +1033,8 @@ function updateAstro() {
   sunDirectionWorld(now, sunDir);
   // Move the directional light to sit along the sun direction (50 units away keeps it well outside the scene)
   sun.position.copy(sunDir).multiplyScalar(50);
+  // Visible sun body: placed at the true geometric position along sunDir × 1 AU.
+  sunBody.setSunDirection(sunDir);
   globe.setSunDirection(sunDir);
   globe.setRotationY(earthRotationY(now));
   atmosphere.setSunDirection(sunDir);
@@ -1016,12 +1053,30 @@ function updateAstro() {
   moonPositionWorld(now, moonPos);
   moon.setPosition(moonPos);
 
-  // Sun + moon "hour-hand" vectors — 3D rays in the inertial world frame, dots at
-  // sub-solar / sub-lunar on the flat map. Same astro plumbing used for lighting & moon.
+  // Cache the latest sub-solar / sub-lunar coords for the LocationPanel beam-direction
+  // buttons (clicked from the UI; needs current astro values).
+  latestSubSolar.lat = subSolLat; latestSubSolar.lon = subSolLon;
+  latestSubLunar.lat = subLunLat; latestSubLunar.lon = subLunLon;
+  locationPanel.setBeamCoords(latestSubSolar, latestSubLunar);
+
+  // Sun + moon beams — gold gnomon at the sun, silver gnomon at the moon. Sub-solar /
+  // sub-lunar dots on the flat map. Same astro plumbing used for lighting & moon.
   radiusVectors.setSunDirection(sunDir);
   radiusVectors.setMoonPosition(moonPos);
   radiusVectors.setSubSolar(subSolLat, subSolLon);
   radiusVectors.setSubLunar(subLunLat, subLunLon);
+
+  // Moon phase for the flat-map disc. Illuminated fraction = (1 − cos(elongation))/2
+  // where elongation is the angle between sun and moon as seen from Earth. Sign of the
+  // Y-component of (sunDir × moonUnit) tells us waxing/waning. Empirically the cross-
+  // product's Y is +ve while waning and −ve while waxing in this scene (consequence of
+  // our world frame's −Z = east convention reversing the handedness vs. the textbook
+  // ecliptic-north derivation), so waxing is `_waxCross.y < 0`.
+  _moonUnit.copy(moonPos).normalize();
+  const cosElongation = THREE.MathUtils.clamp(sunDir.dot(_moonUnit), -1, 1);
+  const illumFraction = (1 - cosElongation) * 0.5;
+  _waxCross.crossVectors(sunDir, _moonUnit);
+  radiusVectors.setMoonPhase(illumFraction, _waxCross.y < 0);
 
   // Particles, coastlines, clouds, fires, and hurricanes share Earth's rotation so they stay glued to the ground frame
   const earthY = earthRotationY(now);

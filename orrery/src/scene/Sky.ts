@@ -6,7 +6,12 @@ import * as THREE from "three";
 export class Sky {
   readonly mesh: THREE.Points;
 
-  constructor(starCount = 6000, radius = 1500) {
+  // Radius must sit *outside* the visible sun (1 AU ≈ 23 482 R⊕) and *inside* the
+  // camera far-plane (30 000) so the stars are always the most distant thing the
+  // viewer sees. Bumped from 1500 when the sun became a true-position object — at
+  // the old radius the camera could zoom past the star sphere into empty space.
+  // This is a placeholder; the proper Tycho-2 / NASA deepstar cubemap will replace it.
+  constructor(starCount = 8000, radius = 28000) {
     const positions = new Float32Array(starCount * 3);
     const sizes     = new Float32Array(starCount); // unused by PointsMaterial but kept for future custom shader
     for (let i = 0; i < starCount; i++) {

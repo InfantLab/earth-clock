@@ -101,6 +101,12 @@ The goal: while the user time-warps through an eclipse, the moon's umbra and pen
 - **Out of scope for v1**: lunar eclipses (Earth's shadow on the moon — same geometry, just inverted, but moon-only visual), Saros series browsing, terrestrial weather forecast for the eclipse path.
 - **Time budget**: ~1 week of work for the headline feature. Worth scheduling before the docs-polish + cutover so we can ship orrery to the public with this as the lede.
 
+### 🔄 Skybox  ← v1 landed; quality toggle TODO
+- **Source**: Solar System Scope `*_stars_milky_way.jpg` (CC-BY 4.0). Same provenance as the existing earth/moon textures, so the visual style stays consistent. Bundled at 2K (~250 KB, fast load) and 8K (~1.9 MB, sharper Milky Way). See [CREDITS.md](CREDITS.md).
+- **Implementation**: [src/scene/Skybox.ts](src/scene/Skybox.ts) HEAD-probes candidates in order — cubemap faces, then 2K equirectangular, then `starmap.jpg`, then 8K — installs the first available as `scene.background`. Procedural Points starfield in `Sky.ts` remains as a fallback if no asset is present.
+- **Quality toggle (TODO)**: a small UI control (Astro row? View row?) to flip between 2K and 8K at runtime. Default to 2K for the first paint; user can opt in to 8K once everything else has loaded. Persist choice in `localStorage` alongside the existing menu state.
+- **Future**: Tycho-2 / Gaia procedural skybox at >100k stars (Phase C entry) replaces the JPG once we want science-grade star positions.
+
 ### ✅ Lightning (Blitzortung WebSocket)  ← landed
 - **Source**: `wss://ws1.blitzortung.org/` — community network, no auth, ~200 ms latency. LZW-style-compressed JSON payload (subscription message `{"a": 111}` requests the global firehose). Time is in nanoseconds since epoch; the loader handles ns / μs / ms gracefully.
 - `src/data/lightningLoader.ts` — auto-reconnecting WebSocket wrapper. Emits `onStrike` callbacks; tracks total count + last-strike time for the DataPanel. Status callbacks (connecting / connected / disconnected / error) flow into both Debug and Data panels.

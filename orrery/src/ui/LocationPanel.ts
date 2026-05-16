@@ -20,6 +20,10 @@ export class LocationPanel {
   private lon: number | null = null;
   private clearHandler: (() => void) | null = null;
   private geoHandler: ((lat: number, lon: number) => void) | null = null;
+  private sunBeamHandler: (() => void) | null = null;
+  private moonBeamHandler: (() => void) | null = null;
+  private readonly sunBeamReadoutEl: HTMLElement;
+  private readonly moonBeamReadoutEl: HTMLElement;
 
   constructor(parent: HTMLElement) {
     injectStyles();
@@ -29,23 +33,36 @@ export class LocationPanel {
     this.root = document.createElement("div");
     this.root.id = "orrery-location";
     this.root.classList.add("hidden");
+    // Panel layout: three independent blocks.
+    //   1. detail  — current pin (place/coords/solar). Visible only when a pin exists.
+    //   2. no-pin  — short hint shown only when nothing is pinned yet.
+    //   3. actions — buttons + live sub-solar / sub-lunar readouts. ALWAYS visible so
+    //                the user can switch between locations without losing the ability
+    //                to read the current beam coordinates. All click sources (globe,
+    //                map, geolocation, sun beam, moon beam) flow through pinLocation()
+    //                in main.ts → setLocation() here, so they all land identically.
     this.root.innerHTML = `
       <div class="orrery-loc-row">
         <span class="orrery-loc-title">location</span>
         <span class="orrery-loc-clear" id="orrery-loc-clear" title="Close panel">✕</span>
       </div>
-      <div class="orrery-loc-hint" id="orrery-loc-hint">
-        click the globe to drop a pin
-        ${geoAvailable ? `
-          <div class="orrery-loc-or">— or —</div>
-          <button class="orrery-loc-geo" id="orrery-loc-geo">use my location</button>
-          <div class="orrery-loc-geostatus" id="orrery-loc-geostatus"></div>
-        ` : ""}
-      </div>
       <div class="orrery-loc-detail" id="orrery-loc-detail" style="display:none">
         <div><span class="orrery-loc-label">place</span>  <span id="orrery-loc-place">—</span></div>
         <div><span class="orrery-loc-label">coords</span> <span id="orrery-loc-coords">—</span></div>
         <div><span class="orrery-loc-label">solar</span>  <span id="orrery-loc-solar">—</span></div>
+      </div>
+      <div class="orrery-loc-no-pin" id="orrery-loc-hint">
+        click the globe, or pick a destination below
+      </div>
+      <div class="orrery-loc-actions">
+        ${geoAvailable ? `
+          <button class="orrery-loc-geo" id="orrery-loc-geo">use my location</button>
+          <div class="orrery-loc-geostatus" id="orrery-loc-geostatus"></div>
+        ` : ""}
+        <button class="orrery-loc-geo" id="orrery-loc-sunbeam"  title="Pin where the sun is directly overhead right now">sun beam direction</button>
+        <div class="orrery-loc-beam-readout" id="orrery-loc-sunbeam-rd">—</div>
+        <button class="orrery-loc-geo" id="orrery-loc-moonbeam" title="Pin where the moon is directly overhead right now">moon beam direction</button>
+        <div class="orrery-loc-beam-readout" id="orrery-loc-moonbeam-rd">—</div>
       </div>
     `;
     parent.appendChild(this.root);
@@ -57,12 +74,35 @@ export class LocationPanel {
     this.detailEl = this.root.querySelector("#orrery-loc-detail") as HTMLElement;
     this.geoButton = this.root.querySelector("#orrery-loc-geo")       as HTMLButtonElement;
     this.geoStatus = this.root.querySelector("#orrery-loc-geostatus") as HTMLElement;
+    this.sunBeamReadoutEl  = this.root.querySelector("#orrery-loc-sunbeam-rd")  as HTMLElement;
+    this.moonBeamReadoutEl = this.root.querySelector("#orrery-loc-moonbeam-rd") as HTMLElement;
     const clearEl = this.root.querySelector("#orrery-loc-clear")  as HTMLElement;
     clearEl.addEventListener("click", () => this.clearHandler?.());
 
     if (this.geoButton) {
       this.geoButton.addEventListener("click", () => this.requestGeolocation());
     }
+
+    const sunBeamBtn  = this.root.querySelector("#orrery-loc-sunbeam")  as HTMLButtonElement;
+    const moonBeamBtn = this.root.querySelector("#orrery-loc-moonbeam") as HTMLButtonElement;
+    sunBeamBtn.addEventListener("click",  () => this.sunBeamHandler?.());
+    moonBeamBtn.addEventListener("click", () => this.moonBeamHandler?.());
+  }
+
+  /** Wire the "sun beam direction" button — fires when clicked. main.ts hooks this to
+   *  drop the location pin at the current sub-solar (lat, lon). */
+  onSunBeam(fn: () => void)  { this.sunBeamHandler  = fn; }
+  /** Wire the "moon beam direction" button — fires when clicked. main.ts hooks this to
+   *  drop the location pin at the current sub-lunar (lat, lon). */
+  onMoonBeam(fn: () => void) { this.moonBeamHandler = fn; }
+
+  /** Update the live sub-solar / sub-lunar coords shown under the two beam-direction
+   *  buttons. Called every frame from main.ts; cheap string comparison avoids DOM thrash. */
+  setBeamCoords(subSolar: { lat: number; lon: number }, subLunar: { lat: number; lon: number }) {
+    const sunStr = `${fmtLat(subSolar.lat)}, ${fmtLon(subSolar.lon)}`;
+    const moonStr = `${fmtLat(subLunar.lat)}, ${fmtLon(subLunar.lon)}`;
+    if (this.sunBeamReadoutEl.textContent  !== sunStr)  this.sunBeamReadoutEl.textContent  = sunStr;
+    if (this.moonBeamReadoutEl.textContent !== moonStr) this.moonBeamReadoutEl.textContent = moonStr;
   }
 
   setVisible(visible: boolean) {
@@ -195,6 +235,18 @@ function injectStyles() {
     }
     .orrery-loc-clear:hover { color: #ff7a7a; }
     .orrery-loc-hint   { color: #8a93a7; font-size: 12px; }
+    /* Short single-line hint shown only when nothing is pinned yet. Subtler than
+       the action buttons so it doesn't distract once the user has pinned anything. */
+    .orrery-loc-no-pin {
+      color: #6e7a90; font-size: 11px; font-style: italic;
+      margin: 4px 0 6px 0; text-align: center;
+    }
+    /* Container for the buttons + live readouts. Always visible regardless of pin state. */
+    .orrery-loc-actions {
+      margin-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 6px;
+    }
     .orrery-loc-or     {
       color: #555c6b; text-align: center; font-size: 11px;
       margin: 6px 0 4px 0; letter-spacing: 0.06em;
@@ -213,6 +265,12 @@ function injectStyles() {
     .orrery-loc-geo:disabled { opacity: 0.5; cursor: progress; }
     .orrery-loc-geostatus {
       color: #8a93a7; font-size: 11px; margin-top: 4px; min-height: 1em;
+    }
+    /* Live sub-solar / sub-lunar coords sit just below each beam button so the user
+       can see the destination before clicking. Subtler than the main coords readout. */
+    .orrery-loc-beam-readout {
+      color: #8a93a7; font-size: 11px; margin-top: 3px; margin-bottom: 2px;
+      text-align: center; letter-spacing: 0.02em;
     }
     .orrery-loc-label  { color: #6e7a90; display: inline-block; width: 4em; }
     .orrery-loc-detail { color: #cfd6e4; }
