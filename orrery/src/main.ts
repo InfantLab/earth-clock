@@ -399,8 +399,16 @@ debug.onFindMoon(() => {
   console.log(`[orrery] find moon: camera repositioned to ${dist.toFixed(1)} r along moon direction`);
 });
 
+// The fixture cloud texture only renders through CloudLayer's true-color path (uMode=0),
+// so onUseTestData has to force the picker onto cloudsViirs — that mutex-collapses
+// whatever the user had selected. We stash the prior selection here so onUseLiveData can
+// put the picker back where it was instead of leaving the user on VIIRS (which may not
+// have any data loaded, in which case applyActiveCloudSource correctly hides the layer).
+let preFixtureCloudSource: ReturnType<typeof menu.activeCloudSource> = null;
+
 debug.onUseTestData(() => {
   console.log("[orrery] debug: loading fixture data");
+  preFixtureCloudSource = menu.activeCloudSource();
   const auroraGrid = debugAuroraGrid();
   const fireGrid = debugFireDetections();
   const stormGrid = debugStormGrid();
@@ -410,9 +418,8 @@ debug.onUseTestData(() => {
   const debugTex = debugCloudTexture();
   clouds.setTexture(debugTex);
   flatMap.setCloudTexture(debugTex);
-  // Force the cloud picker onto VIIRS so the fixture texture (which goes through the
-  // true-color path) actually shows. After v002 there's no plain "clouds" key — the
-  // menu's source picker is the only way to make the layer visible.
+  // Force VIIRS active so the fixture (true-color path) is visible. Mutex collapses any
+  // prior source. onUseLiveData restores the original selection.
   menu.setLayer("cloudsViirs", true);
   menu.setLayer("aurora",      true);
   menu.setLayer("fires",       true);
@@ -424,20 +431,22 @@ debug.onUseTestData(() => {
 });
 
 // Second click on the (now "Use live data") button: re-trigger the live loaders so the
-// fixtures get overwritten by fresh network data. Menu visibility is left untouched —
-// if the user turned off a layer while inspecting fixtures, it stays off.
-//
-// `applyActiveCloudSource()` is also called: the fixture handler used `clouds.setTexture`
-// to install a debug texture, which leaves CloudLayer in true-color mode with that
-// texture even after the live loaders kick off. Re-running the source picker writes
-// whichever cached source the user has selected (VIIRS / GFS) back into the layer so
-// the display reverts immediately rather than waiting for a slow VIIRS refetch.
+// fixtures get overwritten by fresh network data, restore the cloud source the user had
+// selected before fixtures were loaded, then re-apply that source to overwrite the
+// debug texture immediately.
 debug.onUseLiveData(() => {
   console.log("[orrery] debug: restoring live data");
   loadClouds();
   loadAurora();
   loadFires();
   loadHurricanes();
+  // Step 1: restore prior source picker selection (mutex collapses whatever onUseTestData
+  // forced on).
+  if (preFixtureCloudSource && preFixtureCloudSource !== menu.activeCloudSource()) {
+    menu.setLayer(preFixtureCloudSource, true);
+  }
+  // Step 2: push the right data into CloudLayer for the now-active source — or hide the
+  // layer if the active source has no data loaded (so the fixture texture doesn't linger).
   applyActiveCloudSource();
 });
 
@@ -640,26 +649,36 @@ let viirsTexture: THREE.Texture | null = null;
 let goesWarned = false;
 function applyActiveCloudSource() {
   const active = menu.activeCloudSource();
-  if (!active) return;
+  if (!active) {
+    clouds.mesh.visible = false;
+    return;
+  }
+  // Reset to visible at the top — each branch below either confirms a real data binding
+  // or hides the layer because the chosen source isn't loaded. This is what stops a
+  // previously-installed fixture texture from lingering when the user toggles back to
+  // live data after Use test data: an unloaded VIIRS now *hides* the layer instead of
+  // silently leaving whatever debug texture was last installed.
+  clouds.mesh.visible = true;
   if (active === "cloudsViirs") {
     if (viirsTexture) clouds.setTexture(viirsTexture);
-    // else: VIIRS still loading; loadClouds() applies on resolve.
+    else clouds.mesh.visible = false;
   } else if (active === "cloudsGfs") {
     if (gfsCloudSource) {
       // vmin/vmax carried alongside the grid so the same code path handles both TCDC
       // (0..100 %) and the TCW fallback (0..1 kg/m²). CloudLayer's scalar mode does the
       // linear normalisation; outside this block we don't need to know which field is in play.
       clouds.setScalarField(gfsCloudSource.grid, gfsCloudSource.vmin, gfsCloudSource.vmax);
+    } else {
+      clouds.mesh.visible = false;
     }
-    // else: still loading; loadGfsCloudGrid() applies on resolve.
   } else if (active === "cloudsGoes") {
     if (!goesWarned) {
       goesWarned = true;
       console.warn("[orrery] GOES geostationary composite not yet implemented — falling back to whichever source has data");
     }
-    // Try whichever source actually loaded so the picker stays useful even if GOES is stub.
     if (viirsTexture) clouds.setTexture(viirsTexture);
     else if (gfsCloudSource) clouds.setScalarField(gfsCloudSource.grid, gfsCloudSource.vmin, gfsCloudSource.vmax);
+    else clouds.mesh.visible = false;
   }
 }
 menu.onCloudsChange(() => applyActiveCloudSource());
@@ -948,9 +967,10 @@ function loadClouds() {
       // free-on-swap, so we'd otherwise leak ~6 MB per 24 h refresh.
       if (viirsTexture) viirsTexture.dispose();
       viirsTexture = texture;
-      // Only push the texture into CloudLayer if VIIRS is the currently-selected source —
-      // otherwise applyActiveCloudSource() would clobber whatever GFS/etc had set.
-      if (menu.activeCloudSource() === "cloudsViirs") clouds.setTexture(texture);
+      // Re-run the source picker if VIIRS is what's active. This both installs the new
+      // texture and re-shows the layer (applyActiveCloudSource hides the layer when its
+      // active source has no data loaded, so a successful VIIRS load needs to un-hide it).
+      if (menu.activeCloudSource() === "cloudsViirs") applyActiveCloudSource();
       flatMap.setCloudTexture(texture);
       debug.info("viirs", `VIIRS NOAA-20 ${dateStr}`);
       dataRegistry.report("viirs", {
