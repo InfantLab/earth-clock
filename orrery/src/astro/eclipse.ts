@@ -95,20 +95,44 @@ export function computeShadow(date: Date): EclipseShadow {
  *
  * For an eclipse that lasts ~3 h, stepping every 30 s gives ~360 points, plenty for a
  * smooth polyline. We skip steps where the shadow misses Earth (start/end of the eclipse).
+ *
+ * `magnitudeThreshold` defaults to 0.95 — not 1.0 — because Schlyter's lunar-distance
+ * formula has ~1-2% precision, and the magnitude formula gives values like 0.989 at the
+ * moon's *mean* distance (>1.0 only at perigee). For eclipses where the moon is near
+ * perigee but not exactly there (e.g. 2026-08-12 Spain, moon at ~57.5 R_earth), Schlyter's
+ * distance error can flip the magnitude under 1.0 and empty the path entirely. 0.95
+ * captures the path with enough margin to survive the model's precision while still
+ * excluding clearly-annular events. NASA's published totality paths agree with the 0.95+
+ * boundary to within a few pixels at our render scale.
  */
 export function computePathOfTotality(
   startUtc: Date,
   endUtc: Date,
   stepSeconds: number = 30,
+  magnitudeThreshold: number = 0.95,
 ): Array<{ time: Date; worldPoint: THREE.Vector3; magnitude: number }> {
   const out: Array<{ time: Date; worldPoint: THREE.Vector3; magnitude: number }> = [];
   const stepMs = stepSeconds * 1000;
+  let maxMag = 0;
+  let maxMagTime: Date | null = null;
+  let totalSamples = 0;
+  let samplesWithShadow = 0;
   for (let t = startUtc.getTime(); t <= endUtc.getTime(); t += stepMs) {
+    totalSamples++;
     const time = new Date(t);
     const sh = computeShadow(time);
-    if (sh.hasShadow && sh.magnitude >= 1.0) {
-      out.push({ time, worldPoint: sh.surfacePoint, magnitude: sh.magnitude });
+    if (sh.hasShadow) {
+      samplesWithShadow++;
+      if (sh.magnitude > maxMag) { maxMag = sh.magnitude; maxMagTime = time; }
+      if (sh.magnitude >= magnitudeThreshold) {
+        out.push({ time, worldPoint: sh.surfacePoint, magnitude: sh.magnitude });
+      }
     }
   }
+  console.log(
+    `[earth-clock] eclipse path: ${out.length}/${totalSamples} samples passed mag≥${magnitudeThreshold} ` +
+    `(shadow hit Earth in ${samplesWithShadow}; max magnitude ${maxMag.toFixed(4)}` +
+    `${maxMagTime ? ` at ${maxMagTime.toISOString()}` : ""})`,
+  );
   return out;
 }

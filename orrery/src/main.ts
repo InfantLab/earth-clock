@@ -847,6 +847,10 @@ if (activeEclipse) {
 // Per-frame: feed the live umbra centre to the eclipse layer in the geographic frame.
 // The layer then applies the same daily-rotation we apply below, putting it back in world.
 const _liveShadowGeoPt = new THREE.Vector3();
+// Edge-trigger diagnostic: log once whenever the live shadow transitions on (so we can
+// confirm the per-frame eclipse pipeline is firing when the user time-warps into an event,
+// without spamming the console every frame). Reset to false whenever the shadow drops.
+let _liveShadowWasOn = false;
 
 async function loadHurricaneTracks(storms: import("./data/nhcLoader").Storm[]) {
   const results = await Promise.all(storms.map(async (s): Promise<StormGeometry> => {
@@ -1041,8 +1045,21 @@ function updateAstro() {
   if (sh.hasShadow) {
     worldToGeographic(sh.surfacePoint, now, _liveShadowGeoPt);
     eclipseLayer.setLiveShadow(_liveShadowGeoPt);
+    if (!_liveShadowWasOn) {
+      _liveShadowWasOn = true;
+      const lat = Math.asin(_liveShadowGeoPt.y) * 180 / Math.PI;
+      const lon = Math.atan2(-_liveShadowGeoPt.z, _liveShadowGeoPt.x) * 180 / Math.PI;
+      console.log(
+        `[earth-clock] eclipse live shadow ON at ${now.toISOString()} · ` +
+        `magnitude ${sh.magnitude.toFixed(3)} · geographic (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+      );
+    }
   } else {
     eclipseLayer.setLiveShadow(null);
+    if (_liveShadowWasOn) {
+      _liveShadowWasOn = false;
+      console.log(`[earth-clock] eclipse live shadow OFF at ${now.toISOString()}`);
+    }
   }
   // Aurora data is in geographic lat/lon for the forecast time, so it shares Earth's spin.
   // Drift between 5-min fetches is <1.3° and gets corrected next refresh.
