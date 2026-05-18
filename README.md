@@ -30,156 +30,67 @@ For day-to-day development of the 3D version, work in the `orrery/` subdirectory
 
 This project began as a fork of Cameron Beccario's [`earth`](https://github.com/cambecc/earth) (the visualisation behind <https://earth.nullschool.net>, itself derived from the earlier [Tokyo Wind Map](https://github.com/cambecc/air)). The classic 2D visualisation preserved under [`/classic/`](https://earth-clock.onemonkey.org/classic/) is essentially that codebase, with a day/night terminator overlay and a clock display added on top. All upstream credit retained per MIT.
 
-building and launching
-----------------------
+## Running locally
 
-After installing node.js and npm, clone "earth" and install dependencies:
+```bash
+git clone https://github.com/infantlab/earth-clock
+cd earth-clock
+```
 
-    git clone https://github.com/infantlab/earth-clock
-    cd earth-clock  
-    npm install
+What you do next depends on which part you want to work on.
 
-Next, launch the development web server:
+### Develop the 3D experience (orrery — the current default)
 
-Using npm:
-    npm start
+```bash
+cd orrery
+npm install
+npm run dev
+```
 
-Or using node directly:
-    node dev-server.js 8080
+Vite dev server at <http://localhost:5173>. Hot module reload, source maps, full TypeScript checking. The dev server also reverse-proxies `/proxy/nhc/*` to NHC's CORS-blocked feeds so hurricanes work in development. See [`orrery/README.md`](orrery/README.md) and [`orrery/PLAN.md`](orrery/PLAN.md) for architecture notes and the current development plan.
 
-Or using bun (if installed):
-    bun dev-server.js 8080
+### Run the classic 2D archive locally
 
-Finally, point your browser to:
+```bash
+npm install          # from the repo root
+npm start            # → node dev-server.js 8080 → serves public/ on :8080
+```
 
-    http://localhost:8080
+Then open <http://localhost:8080/classic/>. The classic 2D experience is preserved verbatim under `public/classic/` after the v0.1.0 cutover; you can still develop or debug it the way the original `earth` project was developed. The original implementation notes (terminator math, world rotation, moon-phase overlay, projection distortion handling) are at [`public/classic/docs/`](public/classic/docs/).
 
-The server acts as a stand-in for static S3 bucket hosting and so contains almost no server-side logic. It
-serves all files located in the `earth/public` directory. See `public/index.html` and `public/libs/earth/*.js`
-for the main entry points. Data files are located in the `public/data` directory, and there is one sample
-weather layer located at `data/weather/current`.
+### Run the GFS weather backend
 
-*For Ubuntu, Mint, and elementary OS, use `nodejs` instead of `node` instead due to a [naming conflict](https://github.com/joyent/node/wiki/Installing-Node.js-via-package-manager#ubuntu-mint-elementary-os).
+```bash
+npm install
+npm run weather-service
+```
 
-getting map data
-----------------
+This downloads current GFS data from NOAA NOMADS, decodes it from GRIB2 to JSON using pure JavaScript (no Java dependency), writes the JSONs to `public/data/weather/current/`, then sleeps for 6 hours and repeats. Both the 3D and classic frontends read those JSONs. Full architecture in [`WEATHER_SERVICE.md`](WEATHER_SERVICE.md).
 
-Map data is provided by [Natural Earth](http://www.naturalearthdata.com) but must be converted to
-[TopoJSON](https://github.com/mbostock/topojson/wiki) format. We make use of a couple different map scales: a
-simplified, larger scale for animation and a more detailed, smaller scale for static display. After installing
-[GDAL](http://www.gdal.org/) and TopoJSON (see [here](http://bost.ocks.org/mike/map/#installing-tools)), the
-following commands build these files:
+### Build orrery for production
 
-    curl "http://www.nacis.org/naturalearth/50m/physical/ne_50m_coastline.zip" -o ne_50m_coastline.zip
-    curl "http://www.nacis.org/naturalearth/50m/physical/ne_50m_lakes.zip" -o ne_50m_lakes.zip
-    curl "http://www.nacis.org/naturalearth/110m/physical/ne_110m_coastline.zip" -o ne_110m_coastline.zip
-    curl "http://www.nacis.org/naturalearth/110m/physical/ne_110m_lakes.zip" -o ne_110m_lakes.zip
-    unzip -o ne_\*.zip
-    ogr2ogr -f GeoJSON coastline_50m.json ne_50m_coastline.shp
-    ogr2ogr -f GeoJSON coastline_110m.json ne_110m_coastline.shp
-    ogr2ogr -f GeoJSON -where "scalerank < 4" lakes_50m.json ne_50m_lakes.shp
-    ogr2ogr -f GeoJSON -where "scalerank < 2 AND admin='admin-0'" lakes_110m.json ne_110m_lakes.shp
-    ogr2ogr -f GeoJSON -simplify 1 coastline_tiny.json ne_110m_coastline.shp
-    ogr2ogr -f GeoJSON -simplify 1 -where "scalerank < 2 AND admin='admin-0'" lakes_tiny.json ne_110m_lakes.shp
-    topojson -o earth-topo.json coastline_50m.json coastline_110m.json lakes_50m.json lakes_110m.json
-    topojson -o earth-topo-mobile.json coastline_110m.json coastline_tiny.json lakes_110m.json lakes_tiny.json
-    cp earth-topo*.json <earth-git-repository>/public/data/
+```bash
+cd orrery
+BUILD_AS_ROOT=1 npm run build
+```
 
-getting weather data
---------------------
+Writes `public/index.html` + `public/assets/*` at the repo root (alongside the existing `public/classic/`, `public/data/`, `public/textures/`, `public/about/`). The `BUILD_AS_ROOT` env var flips Vite's `outDir` and disables `emptyOutDir` so the archived classic site and the shared data tree survive the rebuild. See [`orrery/docs/cutover.md`](orrery/docs/cutover.md) for the original cutover procedure and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the CapRover deployment.
 
-Weather data is automatically fetched by the weather service (see [WEATHER_SERVICE.md](WEATHER_SERVICE.md) for details).
+## Other components
 
-The weather service:
-- Automatically downloads current GFS data from NOAA NOMADS
-- Converts GRIB2 to JSON using native JavaScript (no Java required)
-- Updates every 6 hours
-- Saves data to `public/data/weather/current/`
+- [`wallpaper-engine/`](wallpaper-engine/) — a Wallpaper Engine packaging of the classic 2D experience. See its [README](wallpaper-engine/README.md) for installation and [MAINTENANCE.md](wallpaper-engine/MAINTENANCE.md) for sync/architecture.
+- [`screensaver/`](screensaver/) — a Windows `.scr` wrapper that hosts the wallpaper inside a WebView2 control. Built with C#/.NET; full build & install procedure in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+- [`public/about/`](public/about/) — the detailed online about page, also linked from the in-app menu and reachable at <https://earth-clock.onemonkey.org/about/>.
 
-To run the weather service:
+## Inspirations
 
-    npm run weather-service
+- The original [earth](https://github.com/cambecc/earth) project — Cameron Beccario's global weather visualisation that this whole codebase descends from.
+- [Tokyo Wind Map](https://github.com/cambecc/air) — Beccario's earlier per-city demonstration that animated wind particles could be a primary medium for atmospheric data.
+- [World Clock](https://www.worldclock.ws/index.html) — the early "what time is it where" project that motivated adding a clock readout to a wind visualisation in the first place.
+- [hint.fm wind map](http://hint.fm/wind/) — the spiritual predecessor to all browser-rendered wind visualisations.
+- [D3.js](http://d3js.org) — the projection library that powers the classic 2D site.
+- [Three.js](https://threejs.org/) — the WebGL renderer that powers the 3D rebuild.
 
-For manual data fetching (original method), weather data is produced by the [Global Forecast System](http://en.wikipedia.org/wiki/Global_Forecast_System) (GFS),
-operated by the US National Weather Service. Forecasts are produced four times daily and made available for
-download from [NOMADS](http://nomads.ncep.noaa.gov/). The files are in [GRIB2](http://en.wikipedia.org/wiki/GRIB)
-format and contain over [300 records](http://www.nco.ncep.noaa.gov/pmb/products/gfs/gfs.t00z.pgrbf00.grib2.shtml).
-We need only a few of these records to visualize wind data at a particular isobar.
+## Licence
 
-font subsetting
----------------
-
-This project uses [M+ FONTS](http://mplus-fonts.sourceforge.jp/). To reduce download size, a subset font is
-constructed out of the unique characters utilized by the site. See the `earth/server/font/findChars.js` script
-for details. Font subsetting is performed by the [M+Web FONTS Subsetter](http://mplus.font-face.jp/), and
-the resulting font is placed in `earth/public/styles`.
-
-[Mono Social Icons Font](http://drinchev.github.io/monosocialiconsfont/) is used for scalable, social networking
-icons. This can be subsetted using [Font Squirrel's WebFont Generator](http://www.fontsquirrel.com/tools/webfont-generator).
-
-implementation notes
---------------------
-
-Building this project required solutions to some interesting problems. Here are a few:
-
-   * The GFS grid has a resolution of 1°. Intermediate points are interpolated in the browser using [bilinear
-     interpolation](http://en.wikipedia.org/wiki/Bilinear_interpolation). This operation is quite costly.
-   * Each type of projection warps and distorts the earth in a particular way, and the degree of distortion must
-     be calculated for each point (x, y) to ensure wind particle paths are rendered correctly. For example,
-     imagine looking at a globe where a wind particle is moving north from the equator. If the particle starts
-     from the center, it will trace a path straight up. However, if the particle starts from the globe's edge,
-     it will trace a path that curves toward the pole. [Finite difference approximations](http://gis.stackexchange.com/a/5075/23451)
-     are used to estimate this distortion during the interpolation process.
-   * The SVG map of the earth is overlaid with an HTML5 Canvas, where the animation is drawn. Another HTML5
-     Canvas sits on top and displays the colored overlay. Both canvases must know where the boundaries of the
-     globe are rendered by the SVG engine, but this pixel-for-pixel information is difficult to obtain directly
-     from the SVG elements. To workaround this problem, the globe's bounding sphere is re-rendered to a
-     detached Canvas element, and the Canvas' pixels operate as a mask to distinguish points that lie outside
-     and inside the globe's bounds.
-   * Most configuration options are persisted in the hash fragment to allow deep linking and back-button
-     navigation. I use a [backbone.js Model](http://backbonejs.org/#Model) to represent the configuration.
-     Changes to the model persist to the hash fragment (and vice versa) and trigger "change" events which flow to
-     other components.
-   * Components use [backbone.js Events](http://backbonejs.org/#Events) to trigger changes in other downstream
-     components. For example, downloading a new layer produces a new grid, which triggers reinterpolation, which
-     in turn triggers a new particle animator. Events flow through the page without much coordination,
-     sometimes causing visual artifacts that (usually) quickly disappear.
-   * There's gotta be a better way to do this. Any ideas?
-
-earth-clock features
---------------------
-
-### Day/Night Terminator Overlay
-
-Real-time visualization of the day/night terminator line showing which parts of the Earth are currently in daylight or darkness. The calculation uses solar position algorithms to determine sun elevation for each geographic coordinate. See [DAY_NIGHT_CALCULATION.md](DAY_NIGHT_CALCULATION.md) for technical details.
-
-### Current Weather Data
-
-Automatic fetching and display of current GFS weather data with no Java dependency. The weather service uses native JavaScript GRIB2 parsing. See [WEATHER_SERVICE.md](WEATHER_SERVICE.md) for architecture and setup details.
-
-### Time Display
-
-Shows current time with UTC/Local toggle, updating every second when day/night overlay is active.
-
-wallpaper engine
-----------------
-
-This project includes a **Wallpaper Engine** version available in the `wallpaper-engine/` directory. The wallpaper version:
-
-- Supports all 8 projections with full control via user properties
-- Configurable overlays, height levels, and orientation
-- Auto-rotation feature (globe spinning)
-- Clock visibility control
-- Live or bundled data sources
-
-See [WALLPAPER_ENGINE.md](WALLPAPER_ENGINE.md) for details on maintaining and updating the wallpaper version.
-
-**Code Sync**: The wallpaper version is a minimal wrapper around the core web version. After making changes to core files, run `node sync-wallpaper.js` to keep versions in sync.
-
-inspiration
------------
-
-This project is inspired by:
-- [World Clock](https://www.worldclock.ws/index.html) - World clock with time zone displays
-- The original [earth](https://github.com/cambecc/earth) project - Global weather visualization
-- The awesome [hint.fm wind map](http://hint.fm/wind/) and [D3.js visualization library](http://d3js.org)
+MIT, inherited from `cambecc/earth`. See [`LICENSE.md`](LICENSE.md). Per-asset and per-feed licences (CC-BY for Solar System Scope and OpenStreetMap derivatives, public-domain for NOAA/NASA imagery, MIT/Apache for libraries) are catalogued in [`orrery/CREDITS.md`](orrery/CREDITS.md).

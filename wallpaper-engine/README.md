@@ -71,13 +71,18 @@ The wallpaper-engine directory contains copies of core files. To keep them in sy
    node sync-wallpaper.js
    ```
 
-2. This copies updated files from `public/libs/earth/` to `wallpaper-engine/libs/earth/`
+2. This copies updated files from `public/classic/libs/earth/` to `wallpaper-engine/libs/earth/`.
+   (Before the v0.1.0 cutover the source was `public/libs/earth/`; the classic 2D
+   codebase the wallpaper engine wraps moved into `public/classic/` when orrery took
+   over the root.)
 
 3. Test the wallpaper in Wallpaper Engine editor
 
 4. Update on Steam Workshop if changes are working
 
 **Note**: Wallpaper Engine requires files to be in the same directory (no parent directory access), so we maintain local copies rather than using relative paths.
+
+For more detailed architecture notes, file inventory, and per-file edit guidance, see [MAINTENANCE.md](MAINTENANCE.md).
 
 ## Credits
 

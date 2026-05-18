@@ -1,7 +1,12 @@
 /**
- * Sync script to copy updated files from public/ to wallpaper-engine/
- * Run this after making changes to core earth.js code to keep versions in sync
- * 
+ * Sync script to copy updated files from public/classic/ to wallpaper-engine/
+ * Run this after making changes to core earth.js code to keep versions in sync.
+ *
+ * After the v0.1.0 cutover, the classic 2D codebase (which the wallpaper-engine
+ * wraps) moved from public/ → public/classic/. The wallpaper-engine still expects
+ * its bundled libs/data/styles to be flat-relative, so sources here come from
+ * public/classic/ but destinations stay at wallpaper-engine/.
+ *
  * Usage: node sync-wallpaper.js
  */
 
@@ -23,10 +28,10 @@ var filesToSync = [
     // 'styles/styles.css',
 ];
 
-var publicDir = path.join(__dirname, 'public');
+var publicDir = path.join(__dirname, 'public', 'classic');
 var wallpaperDir = path.join(__dirname, 'wallpaper-engine');
 
-console.log('Syncing files from public/ to wallpaper-engine/...');
+console.log('Syncing files from public/classic/ to wallpaper-engine/...');
 console.log('');
 
 var synced = 0;
