@@ -34,6 +34,8 @@ export interface ClockCallbacks {
   /** Reset button hook: snap the simulated clock back to wall-clock now. main.ts owns
    *  `simulatedTime` so the Clock can't write to it directly. */
   onSnapToLive?: () => void;
+  /** Close-button hook — main.ts wires this to flip the Clock menu toggle off. */
+  onClose?: () => void;
 }
 
 export class Clock {
@@ -73,6 +75,7 @@ export class Clock {
           <span class="orrery-clock-date" id="orrery-clock-date">—</span>
           <span class="orrery-clock-zone" id="orrery-clock-zone">UTC</span>
           <span class="orrery-clock-expand" id="orrery-clock-expand" title="Time controls">⏱</span>
+          <span class="orrery-clock-close" id="orrery-clock-close" title="Close clock">✕</span>
         </div>
       </div>
       <div class="orrery-clock-controls hidden" id="orrery-clock-controls">
@@ -95,10 +98,12 @@ export class Clock {
     this.pauseBtn      = this.root.querySelector("#orrery-clock-pause")    as HTMLElement;
 
     // The whole time block (not just the zone label) toggles zone. Catch clicks on the
-    // ⏱ icon at the capture phase so the click doesn't also flip the zone — it lives
-    // inside the click area for layout, not for behaviour.
+    // ⏱ icon or ✕ button so the click doesn't ALSO flip the zone — they live inside
+    // the click area for layout, not for behaviour.
+    const closeBtn = this.root.querySelector("#orrery-clock-close") as HTMLElement;
     this.clickArea.addEventListener("click", (ev) => {
       if (ev.target === this.expandBtn) return;
+      if (ev.target === closeBtn) return;
       this.zone = this.zone === "utc" ? "local" : "utc";
       saveZone(this.zone);
       this.lastTimeStr = this.lastDateStr = this.lastZoneStr = "";
@@ -110,6 +115,8 @@ export class Clock {
       this.refreshExpandState();
     });
     this.refreshExpandState();
+
+    closeBtn.addEventListener("click", () => this.callbacks.onClose?.());
 
     // ⏪ / ⏩ walk through SPEED_PRESETS in either direction. The presets are symmetric
     // around 0, so ⏪ at 1× steps to 0 (pause), another ⏪ to -1× (real-time reverse), and
@@ -320,6 +327,18 @@ function injectStyles() {
     .orrery-clock-expand:hover           { color: #fff; }
     .orrery-clock-expand.active          { color: #cfd6e4; }
     .orrery-clock-expand.warped          { color: #e2b42e; }
+
+    /* Matches the close-X pattern from LocationPanel (✕ in panel top-right that
+       flips the relevant menu toggle off). Subtle by default, red on hover. */
+    .orrery-clock-close {
+      pointer-events: all;
+      cursor: pointer;
+      color: #6e7a90;
+      font-size: 13px;
+      margin-left: 0.5em;
+      transition: color 125ms ease;
+    }
+    .orrery-clock-close:hover { color: #ff7a7a; }
 
     .orrery-clock-controls {
       pointer-events: all;

@@ -25,6 +25,7 @@ export class Debug {
   private liveDataHandler: (() => void) | null = null;
   private findMoonHandler: (() => void) | null = null;
   private jumpEclipseHandler: (() => void) | null = null;
+  private closeHandler: (() => void) | null = null;
   /** Whether the user has currently swapped in synthetic fixtures via the button. */
   private testDataActive = false;
 
@@ -35,7 +36,10 @@ export class Debug {
     this.root.id = "orrery-debug";
     this.root.classList.add("hidden");
     this.root.innerHTML = `
-      <div class="orrery-debug-title">tools</div>
+      <div class="orrery-debug-titlebar">
+        <span class="orrery-debug-title">tools</span>
+        <span class="orrery-debug-close" id="orrery-debug-close" title="Close panel">✕</span>
+      </div>
       <pre class="orrery-debug-astro" id="orrery-debug-astro"></pre>
       <div class="orrery-debug-btnrow">
         <button class="orrery-debug-btn" id="orrery-debug-testdata">Use test data</button>
@@ -66,7 +70,12 @@ export class Debug {
     findBtn.addEventListener("click", () => this.findMoonHandler?.());
     const eclipseBtn = this.root.querySelector("#orrery-debug-eclipse") as HTMLButtonElement;
     eclipseBtn.addEventListener("click", () => this.jumpEclipseHandler?.());
+    const closeBtn = this.root.querySelector("#orrery-debug-close") as HTMLElement;
+    closeBtn.addEventListener("click", () => this.closeHandler?.());
   }
+
+  /** Wire the close-X button. main.ts flips the Tools menu toggle off when fired. */
+  onClose(fn: () => void) { this.closeHandler = fn; }
 
   setVisible(b: boolean) {
     this.root.classList.toggle("hidden", !b);
@@ -167,11 +176,23 @@ function injectStyles() {
       user-select: text;
     }
     #orrery-debug.hidden { display: none; }
+    /* Title bar: section name on the left, close-X on the right — matches Location +
+       Data panels so all info panels read consistently. */
+    .orrery-debug-titlebar {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 6px;
+    }
     .orrery-debug-title {
       color: #6e7a90; letter-spacing: 0.1em;
       text-transform: uppercase;
-      margin-bottom: 6px;
     }
+    .orrery-debug-close {
+      color: #6e7a90;
+      cursor: pointer;
+      transition: color 125ms ease;
+      margin-left: 1em;
+    }
+    .orrery-debug-close:hover { color: #ff7a7a; }
     .orrery-debug-astro {
       margin: 0 0 8px 0; padding: 0;
       color: #a4b0c6; font-family: inherit; font-size: inherit;

@@ -28,6 +28,7 @@ export class DataPanel {
   private readonly body: HTMLElement;
   private readonly registry: DataRegistry;
   private readonly ageTimer: number;
+  private closeHandler: (() => void) | null = null;
 
   constructor(parent: HTMLElement, registry: DataRegistry) {
     injectStyles();
@@ -37,16 +38,24 @@ export class DataPanel {
     this.root.id = "orrery-data";
     this.root.classList.add("hidden");
     this.root.innerHTML = `
-      <div class="orrery-data-title">data</div>
+      <div class="orrery-data-titlebar">
+        <span class="orrery-data-title">data</span>
+        <span class="orrery-data-close" id="orrery-data-close" title="Close panel">✕</span>
+      </div>
       <div class="orrery-data-rows" id="orrery-data-rows"></div>
     `;
     parent.appendChild(this.root);
     this.body = this.root.querySelector("#orrery-data-rows") as HTMLElement;
+    const closeEl = this.root.querySelector("#orrery-data-close") as HTMLElement;
+    closeEl.addEventListener("click", () => this.closeHandler?.());
 
     registry.subscribe(() => this.render());
     this.ageTimer = window.setInterval(() => this.render(), 15_000);
     this.render();
   }
+
+  /** Wire the close-X button. main.ts flips the Data menu toggle off when fired. */
+  onClose(fn: () => void) { this.closeHandler = fn; }
 
   setVisible(visible: boolean) {
     this.root.classList.toggle("hidden", !visible);
@@ -157,11 +166,23 @@ function injectStyles() {
       user-select: text;
     }
     #orrery-data.hidden { display: none; }
+    /* Title bar: section name on the left, close-X on the right. Same pattern as
+       LocationPanel so all info panels read the same. */
+    .orrery-data-titlebar {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 6px;
+    }
     .orrery-data-title {
       color: #6e7a90; letter-spacing: 0.1em;
       text-transform: uppercase;
-      margin-bottom: 6px;
     }
+    .orrery-data-close {
+      color: #6e7a90;
+      cursor: pointer;
+      transition: color 125ms ease;
+      margin-left: 1em;
+    }
+    .orrery-data-close:hover { color: #ff7a7a; }
     .orrery-data-rows {
       display: flex; flex-direction: column; gap: 2px;
     }

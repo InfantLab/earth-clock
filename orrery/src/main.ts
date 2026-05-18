@@ -291,6 +291,7 @@ dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",      
 // Each loader reports its state (✓/✗/⋯) here. The "Use test data" button replaces live
 // fetches with synthetic fixtures so we can isolate "loader broken" vs "renderer broken".
 const debug = new Debug(document.body);
+debug.onClose(() => { menu.setLayer("tools", false); });
 // Pre-register every loader as "pending" in the data registry so the unified Data panel
 // shows a `⋯ key  source  fetching…  —` row before the first network response. Loaders
 // overwrite each row's status on success/failure via dataRegistry.report().
@@ -316,6 +317,7 @@ for (const [key, source, detail] of PENDING_SOURCES) {
 
 // User-facing data sources panel (top-right). Lists source + last-fetched age per layer.
 const dataPanel = new DataPanel(document.body, dataRegistry);
+dataPanel.onClose(() => { menu.setLayer("data", false); });
 
 // Clock readout (top-left). Big monospace UTC/local clock driven by simulatedTime so it
 // reflects time-warp. Click anywhere on the time to flip UTC ⇄ Local; ⏱ reveals time
@@ -323,6 +325,7 @@ const dataPanel = new DataPanel(document.body, dataRegistry);
 // `simulatedTime` so the Clock can't write to it directly.
 const clock = new Clock(document.body, {
   onSnapToLive: () => { simulatedTime = Date.now(); },
+  onClose:      () => { menu.setLayer("clock", false); },
 });
 
 // Location panel (top-left). Shows pinned-location coords + solar time. Hidden until the
