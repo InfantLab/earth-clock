@@ -30,8 +30,11 @@ export class EclipseLayer {
   private inner: THREE.Group;
 
   /** Angular radii in radians (great-circle distance on Earth's surface). */
-  // Umbra is ~75 km wide on average → 75/6371 ≈ 0.012 rad ≈ 0.7°.
-  private static readonly UMBRA_ANGULAR_RADIUS = 0.012;
+  // Umbra (path of totality) is ~290 km wide for the 2026 Spain eclipse → half-width
+  // 145 km → asin(145/6371) ≈ 0.023 rad ≈ 1.3°. Widening this from the old 0.012 rad
+  // (which was tracking a much narrower "centerline-only" idea) so the umbra disc on
+  // the globe matches the size of the actual path of totality visually.
+  private static readonly UMBRA_ANGULAR_RADIUS = 0.023;
   // Penumbra is ~3 000 km radius → 3000/6371 ≈ 0.47 rad ≈ 27°.
   private static readonly PENUMBRA_ANGULAR_RADIUS = 0.47;
 
@@ -72,31 +75,58 @@ export class EclipseLayer {
           // cosAng = 1 at the shadow centre, cos(penumbra) at the penumbra edge.
           if (cosAng < uPenumbraCosCutoff) discard;
 
-          // Within the umbra → solid dim. Between umbra and penumbra → smoothly fade.
+          // Dim ramp: solid uMaxDim inside the umbra, smooth fade out through the
+          // penumbra to fully transparent at the penumbra edge. Same dark-blue tint
+          // for the whole shadow — matches what you actually see during an eclipse
+          // (deep dim that softens off, not two coloured regions).
           float dim;
           if (cosAng >= uUmbraCosCutoff) {
             dim = uMaxDim;
           } else {
-            // Smooth ramp from uMaxDim at umbra edge → 0 at penumbra edge.
             float t = (cosAng - uPenumbraCosCutoff) / (uUmbraCosCutoff - uPenumbraCosCutoff);
             dim = uMaxDim * smoothstep(0.0, 1.0, t);
           }
-          // Alpha-blend a dark colour: the more "dim" we want, the higher the alpha of black.
-          gl_FragColor = vec4(0.0, 0.0, 0.05, dim);
+          vec3 color = vec3(0.0, 0.0, 0.05);
+
+          // Diamond-ring at the umbra boundary — a thin, hard-edged warm outline
+          // straddling the umbra/penumbra cutoff.
+          //
+          // CRITICAL: in cos-angle space the entire umbra interior only spans
+          // 1 − cos(UMBRA_ANGULAR_RADIUS) ≈ 0.00026, so ringHalfWidth must be
+          // *much* smaller than that or the band swallows the whole disc and the
+          // umbra reads as solid orange. Mapping cos-distance back to surface
+          // arc: at the umbra edge, sin(0.023) ≈ 0.023, so 1° on the surface
+          // equals about 0.023 × π/180 = 4 × 10⁻⁴ rad → cos-distance ≈ 0.023 ×
+          // 4 × 10⁻⁴ = ~10⁻⁵. Hence the values below: 0.0001 cos-half-width is
+          // a ~0.5° band on each side of the boundary, ~1° total — visible but
+          // narrow. AA is one-tenth of that for crisp edges.
+          float ringDist      = abs(cosAng - uUmbraCosCutoff);
+          float ringHalfWidth = 0.00006;    // ~0.3° per side → ~0.6° band total
+          float ringEdgeAA    = 0.000010;   // crisp edges
+          float ring = 1.0 - smoothstep(ringHalfWidth, ringHalfWidth + ringEdgeAA, ringDist);
+          color = mix(color, vec3(1.0, 0.75, 0.30), ring * 0.9);
+
+          gl_FragColor = vec4(color, dim);
         }
       `,
       transparent: true,
       depthWrite: false,
     });
     this.shell = new THREE.Mesh(geom, this.shellMat);
+    // Draw the shell BEFORE coastlines / clouds / atmosphere so it never z-fight-flickers
+    // over them (both shell and coastlines are transparent + concentric, so the default
+    // distance-sort is undefined and flips as the camera moves).
+    this.shell.renderOrder = -1;
     this.inner.add(this.shell);
 
     // Path of totality polyline. Coloured bright orange so it stands out against the
-    // dimmed shadow corridor.
+    // dimmed shadow corridor. renderOrder is set above coastlines so the path is always
+    // visible on top — without this, transparent sort flips and the path winks in/out.
     this.pathMat = new THREE.LineBasicMaterial({
       color: 0xff9933, transparent: true, opacity: 0.9, depthWrite: false,
     });
     this.pathLine = new THREE.Line(new THREE.BufferGeometry(), this.pathMat);
+    this.pathLine.renderOrder = 2;
     this.inner.add(this.pathLine);
 
     this.mesh = new THREE.Group();
@@ -120,7 +150,19 @@ export class EclipseLayer {
     this.shellMat.uniforms.uHasShadow.value = 1.0;
   }
 
-  /** Replace the path-of-totality polyline. Pass points in the *geographic* frame. */
+  /** Number of slerp-interpolated points to insert between each pair of input waypoints
+   *  when building the path-of-totality polyline. NASA paths arrive as sparse 9-11 point
+   *  centerlines; without subdivision the rendered "line" is a sequence of straight 3D
+   *  chords through the planet, which reads as a broken zigzag against the curved
+   *  surface. 24 sub-segments per waypoint pair = ~220 total points for the 2026 path
+   *  → smooth-looking great-circle arc. */
+  private static readonly PATH_SUBDIVISIONS_PER_SEGMENT = 24;
+
+  /**
+   * Replace the path-of-totality polyline. Pass points in the *geographic* frame.
+   * Each consecutive pair is interpolated with slerp (great-circle interpolation on
+   * the unit sphere) so the rendered line follows Earth's curvature.
+   */
   setPath(geographicPoints: THREE.Vector3[]) {
     if (geographicPoints.length === 0) {
       this.pathLine.geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3));
@@ -128,13 +170,62 @@ export class EclipseLayer {
     }
     // Lift the path slightly above the shadow shell so the orange line draws on top.
     const R = 1.0015;
-    const positions = new Float32Array(geographicPoints.length * 3);
-    for (let i = 0; i < geographicPoints.length; i++) {
-      const p = geographicPoints[i].clone().normalize().multiplyScalar(R);
-      positions[i * 3]     = p.x;
-      positions[i * 3 + 1] = p.y;
-      positions[i * 3 + 2] = p.z;
+    const subs = EclipseLayer.PATH_SUBDIVISIONS_PER_SEGMENT;
+    // Output point count: each segment between adjacent inputs contributes `subs` new
+    // points + the inputs themselves at the seams. Last input added explicitly at the end.
+    const segmentCount = geographicPoints.length - 1;
+    const totalPoints  = geographicPoints.length === 1 ? 1 : segmentCount * subs + 1;
+    const positions    = new Float32Array(totalPoints * 3);
+
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const out = new THREE.Vector3();
+
+    let cursor = 0;
+    const writeUnit = (v: THREE.Vector3) => {
+      positions[cursor * 3]     = v.x * R;
+      positions[cursor * 3 + 1] = v.y * R;
+      positions[cursor * 3 + 2] = v.z * R;
+      cursor++;
+    };
+
+    if (geographicPoints.length === 1) {
+      a.copy(geographicPoints[0]).normalize();
+      writeUnit(a);
+    } else {
+      for (let i = 0; i < segmentCount; i++) {
+        a.copy(geographicPoints[i]).normalize();
+        b.copy(geographicPoints[i + 1]).normalize();
+        // Slerp: spherical linear interpolation between two unit vectors.
+        //   omega = angle between a and b; if very small, fall back to lerp+normalize
+        //   to avoid numerical instability.
+        const dot   = THREE.MathUtils.clamp(a.dot(b), -1, 1);
+        const omega = Math.acos(dot);
+        const sinOmega = Math.sin(omega);
+        for (let j = 0; j < subs; j++) {
+          const t = j / subs;
+          if (sinOmega < 1e-6) {
+            // Adjacent points are essentially coincident — linear interpolation is fine.
+            out.copy(a).lerp(b, t).normalize();
+          } else {
+            const wa = Math.sin((1 - t) * omega) / sinOmega;
+            const wb = Math.sin(t * omega) / sinOmega;
+            out.set(
+              a.x * wa + b.x * wb,
+              a.y * wa + b.y * wb,
+              a.z * wa + b.z * wb,
+            );
+            // Already unit length within float precision; explicit normalize is cheap insurance.
+            out.normalize();
+          }
+          writeUnit(out);
+        }
+      }
+      // Final endpoint.
+      b.copy(geographicPoints[segmentCount]).normalize();
+      writeUnit(b);
     }
+
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geom.computeBoundingSphere();
