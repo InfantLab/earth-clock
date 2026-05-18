@@ -1,18 +1,34 @@
 earth-clock
 ===========
 
-![earth-clock](https://github.com/InfantLab/earth-clock/raw/master/public/cover.jpg)
+![earth-clock](https://github.com/InfantLab/earth-clock/raw/master/public/classic/cover.jpg)
 
-**[earth-clock](https://earth-clock.onemonkey.org/)** is a fork of [earth](https://github.com/cambecc/earth) that transforms the classic Earth weather visualization into a world clock with real-time day/night terminator overlay, inspired by [World Clock](https://www.worldclock.ws/index.html).
+**[earth-clock](https://earth-clock.onemonkey.org/)** is a real-time 3D visualisation of planet Earth — live wind, weather, clouds, auroras, fires, hurricanes, lightning, and the sun, moon, and stars in their true positions. It is a clock told by Earth's place in space.
 
-This project extends the original earth visualization with:
-- **Real-time day/night terminator overlay** - Shows which parts of the Earth are currently in daylight or darkness
-- **Time display** - Shows current time with UTC/Local toggle
-- **Native JavaScript weather service** - No Java dependency required for weather data processing
+The current 3D experience (codenamed **orrery**) is the spiritual successor to Cameron Beccario's [`earth`](https://github.com/cambecc/earth). The classic 2D version this repo started from is preserved as an archival fallback.
 
-You can view the live version at [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/).
+| | |
+|---|---|
+| 3D earth-clock (default) | [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/) |
+| Classic 2D archive       | [earth-clock.onemonkey.org/classic/](https://earth-clock.onemonkey.org/classic/) |
+| Project plan             | [orrery/PLAN.md](orrery/PLAN.md) |
+| Credits & licences       | [orrery/CREDITS.md](orrery/CREDITS.md) |
 
-The original "earth" project visualizes global weather conditions and is available at http://earth.nullschool.net. The original project is based on the earlier [Tokyo Wind Map](https://github.com/cambecc/air) project.
+The 3D version is built on [Three.js](https://threejs.org/) with GPU wind particles, modern satellite feeds (NASA GIBS, NOAA SWPC, NASA FIRMS, NOAA NHC, NOAA SPC, Blitzortung), and physically-based lighting from a true-position sun. It includes a NASA-derived solar-eclipse renderer (path of totality + live umbra disc, targeting the 2026-08-12 Spain eclipse as a headline event).
+
+## What's in this repo
+
+- [`orrery/`](orrery/) — the 3D rebuild (TypeScript + Three.js + Vite). This is what serves at `/`.
+- [`public/classic/`](public/classic/) — the classic 2D earth-clock, preserved verbatim at `/classic/`. Fork of [`cambecc/earth`](https://github.com/cambecc/earth) with day/night terminator overlay and a clock display.
+- [`weather-service.js`](weather-service.js), [`lib/`](lib/) — the GFS weather backend that downloads GRIB2 from NOAA NOMADS and produces the JSON feeds in [`public/data/weather/current/`](public/data/weather/current/). Shared by both the 3D and classic frontends.
+- [`screensaver/`](screensaver/) — a Windows .scr wrapper hosting the classic experience inside a WebView2 control. See [`DEPLOYMENT.md`](DEPLOYMENT.md).
+- [`wallpaper-engine/`](wallpaper-engine/) — a Wallpaper Engine output mode.
+
+For day-to-day development of the 3D version, work in the `orrery/` subdirectory — its own README has dev-server instructions, architecture notes, and the live development plan.
+
+## Original lineage
+
+This project began as a fork of Cameron Beccario's [`earth`](https://github.com/cambecc/earth) (the visualisation behind <https://earth.nullschool.net>, itself derived from the earlier [Tokyo Wind Map](https://github.com/cambecc/air)). The classic 2D visualisation preserved under [`/classic/`](https://earth-clock.onemonkey.org/classic/) is essentially that codebase, with a day/night terminator overlay and a clock display added on top. All upstream credit retained per MIT.
 
 building and launching
 ----------------------

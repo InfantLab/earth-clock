@@ -21,3 +21,7 @@ public/data/weather/current/current-*.json
 # Orrery dev build output. Vite writes here when BUILD_AS_ROOT is unset; the production
 # cutover writes to ../public/ directly. Either way it's a build artefact, not source.
 public/orrery/
+
+# Pre-cutover snapshot of /public/ kept on disk as rollback insurance during the
+# v0.1.0 cutover. Never commit — large + redundant with the classic/ subtree.
+public.backup/
