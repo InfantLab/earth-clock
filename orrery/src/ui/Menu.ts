@@ -223,7 +223,7 @@ export class Menu {
       <div class="orrery-menu${this.open ? "" : " collapsed"}" id="orrery-menu">
         <div id="orrery-menu-categories"></div>
         <p class="orrery-meta">
-          <a href="https://github.com/infantlab/earth-clock" target="_blank" rel="noopener">about</a>
+          <a href="/about/">about</a> · <a href="https://github.com/infantlab/earth-clock" target="_blank" rel="noopener">source</a>
         </p>
       </div>
     `;

@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About · earth-clock</title>
+  <meta name="description" content="A real-time 3D visualisation of planet Earth — live weather, clouds, auroras, fires, hurricanes, lightning, with the sun, moon, and stars in their true positions. Notes on the data, the astronomy, and how it's put together.">
+  <meta property="og:title" content="About earth-clock">
+  <meta property="og:description" content="A real-time 3D Earth visualisation — live data, real astronomy, NASA-derived eclipse paths. The nerdy details.">
+  <meta property="og:url" content="https://earth-clock.onemonkey.org/about/">
+  <meta property="og:type" content="article">
+  <link rel="canonical" href="https://earth-clock.onemonkey.org/about/">
+  <style>
+    :root {
+      --bg: #050a1e;
+      --bg-panel: rgba(10, 16, 36, 0.85);
+      --fg: #cfd6e4;
+      --fg-mute: #8a93a7;
+      --fg-dim: #6e7a90;
+      --accent: #e2b42e;
+      --accent-warm: #ffcc66;
+      --link: #9ab8e6;
+      --link-hover: #cfe0ff;
+      --rule: rgba(255, 255, 255, 0.08);
+      --max-width: 760px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    body {
+      background-image: radial-gradient(ellipse at top, rgba(20, 30, 60, 0.6), transparent 60%);
+      min-height: 100vh;
+    }
+    a { color: var(--link); text-decoration: none; border-bottom: 1px solid rgba(154, 184, 230, 0.25); transition: color 125ms ease, border-color 125ms ease; }
+    a:hover { color: var(--link-hover); border-bottom-color: rgba(207, 224, 255, 0.6); }
+    code, pre, .mono {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    code {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: var(--accent-warm);
+    }
+
+    /* ---- Top bar ---- */
+    header.topbar {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(5, 10, 30, 0.92);
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--rule);
+      padding: 12px 0;
+    }
+    .topbar-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    }
+    .brand {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 22px;
+      letter-spacing: 0.06em;
+      color: var(--fg);
+    }
+    .brand-tag { color: var(--fg-dim); margin-left: 0.4em; font-size: 0.82em; }
+    .back {
+      font-size: 13px;
+      color: var(--fg-mute);
+      border-bottom: none;
+    }
+    .back:hover { color: var(--accent); border-bottom: none; }
+
+    /* ---- Hero ---- */
+    .hero {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 64px 24px 32px;
+    }
+    .hero h1 {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      font-size: 40px;
+      line-height: 1.15;
+      margin: 0 0 16px;
+    }
+    .hero p.lede {
+      font-size: 18px;
+      color: var(--fg-mute);
+      margin: 0;
+    }
+
+    /* ---- TOC ---- */
+    nav.toc {
+      max-width: var(--max-width);
+      margin: 32px auto 0;
+      padding: 16px 24px;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      font-size: 13px;
+      color: var(--fg-mute);
+    }
+    nav.toc strong { color: var(--fg-mute); font-weight: normal; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 1em; }
+    nav.toc a { color: var(--fg); border: none; margin-right: 1.2em; display: inline-block; padding: 2px 0; }
+    nav.toc a:hover { color: var(--accent); }
+
+    /* ---- Sections ---- */
+    main {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 24px 96px;
+    }
+    section {
+      padding-top: 56px;
+      scroll-margin-top: 72px;
+    }
+    section > h2 {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 24px;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      margin: 0 0 20px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rule);
+    }
+    section > h3 {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 17px;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      color: var(--accent-warm);
+      margin: 28px 0 10px;
+    }
+    section p { margin: 0 0 14px; }
+    section p:last-child { margin-bottom: 0; }
+    ul { padding-left: 1.4em; margin: 0 0 14px; }
+    li { margin-bottom: 6px; }
+
+    /* ---- Data feed list ---- */
+    .feeds {
+      margin: 0 0 14px;
+      padding: 0;
+      list-style: none;
+    }
+    .feeds li {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .feeds li:first-child { padding-top: 0; }
+    .feeds li:last-child  { border-bottom: none; }
+    .feed-title {
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 4px;
+    }
+    .feed-name { color: var(--accent-warm); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 15px; }
+    .feed-cadence { color: var(--fg-dim); font-size: 13px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .feed-desc { color: var(--fg); margin: 0; font-size: 15px; }
+    .feed-src { color: var(--fg-mute); font-size: 13px; margin-top: 4px; }
+
+    /* ---- Callouts ---- */
+    .note {
+      border-left: 2px solid var(--accent);
+      background: rgba(226, 180, 46, 0.06);
+      padding: 14px 18px;
+      margin: 18px 0;
+      font-size: 14.5px;
+      color: var(--fg-mute);
+    }
+    .note strong { color: var(--accent); }
+
+    /* ---- Footer ---- */
+    footer {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+      border-top: 1px solid var(--rule);
+      color: var(--fg-dim);
+      font-size: 13px;
+    }
+    footer p { margin: 0 0 6px; }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 30px; }
+      .hero { padding-top: 32px; }
+      section { padding-top: 40px; }
+      .brand { font-size: 18px; }
+      .feed-cadence { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand">earth-clock <span class="brand-tag">/about</span></span>
+    <a class="back" href="/">← back to the globe</a>
+  </div>
+</header>
+
+<div class="hero">
+  <h1>What you're looking at</h1>
+  <p class="lede">
+    A real-time view of planet Earth in its actual orientation in space, lit by the actual sun in its actual position, with weather and atmospheric phenomena drawn from live scientific data feeds. The clock isn't on the wall — it <em>is</em> the Earth.
+  </p>
+</div>
+
+<nav class="toc">
+  <strong>jump to</strong>
+  <a href="#what">What you see</a>
+  <a href="#feeds">Live data</a>
+  <a href="#astronomy">Astronomy</a>
+  <a href="#eclipse">Eclipses</a>
+  <a href="#philosophy">Why this exists</a>
+  <a href="#lineage">Lineage</a>
+  <a href="#tech">How it's built</a>
+  <a href="#credits">Credits</a>
+</nav>
+
+<main>
+
+<section id="what">
+  <h2>What you see, exactly</h2>
+
+  <p>Most globes you see are stylised. This one isn't.</p>
+
+  <h3>The sun and the day/night terminator</h3>
+  <p>
+    The position of the sun in the scene is computed from <em>actual celestial mechanics</em> — your computer's clock, fed through a sub-degree-accurate solar-ephemeris formula, gives the sun's right ascension and declination. The day/night terminator on Earth's surface is therefore exactly where reality has placed it at this instant. If the sub-solar point shows over the Caribbean, it's because the sun really is overhead in the Caribbean.
+  </p>
+  <p>
+    The sun itself is rendered as a billboard sprite at the true distance (1 AU ≈ 23 482 Earth radii). Zoom out far enough and you can fly toward it.
+  </p>
+
+  <h3>The moon</h3>
+  <p>
+    The moon is placed at its true geocentric position — distance 56 to 63 Earth radii from us, phase consistent with the sun–earth–moon geometry as you'd see it tonight. Lunar texturing is real NASA / USGS imagery. The moon mesh is lit by the same directional light that lights Earth, so the phase emerges naturally — no painted-on shadow.
+  </p>
+
+  <h3>The stars behind everything</h3>
+  <p>
+    A real photographic equirectangular star map (from Solar System Scope, derived from extensive deep-sky imagery) wraps the scene at the far horizon. The Milky Way band visible behind Earth is in approximately the right celestial orientation.
+  </p>
+</section>
+
+<section id="feeds">
+  <h2>Where the live data comes from</h2>
+  <p>
+    Almost everything moving on the globe is fetched directly from public-domain scientific data feeds. Click any source name in the in-app Data panel to open the originating organisation's overview page.
+  </p>
+
+  <ul class="feeds">
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Clouds</span>
+        <span class="feed-cadence">refreshed daily</span>
+      </div>
+      <p class="feed-desc">VIIRS NOAA-20 daily true-color global mosaic. Stitched from 50 tiles of the 250 m TileMatrixSet at zoom 3 into a 5120 × 2560 equirectangular texture.</p>
+      <p class="feed-src">Source: NASA GIBS · <a href="https://gibs.earthdata.nasa.gov/">gibs.earthdata.nasa.gov</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Wind</span>
+        <span class="feed-cadence">refreshed every 6 h</span>
+      </div>
+      <p class="feed-desc">GFS surface wind (10 m above ground, U and V components). 65 536 GPU-simulated particles trace the actual flow, anti-aliased into world-space accumulator buffers for the streamline effect.</p>
+      <p class="feed-src">Source: NOAA NOMADS · <a href="https://nomads.ncep.noaa.gov/">nomads.ncep.noaa.gov</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Pressure, temperature, humidity, moisture, cloud water</span>
+        <span class="feed-cadence">refreshed every 6 h</span>
+      </div>
+      <p class="feed-desc">GFS mean sea-level pressure (MSLP), 2 m air temperature, 2 m relative humidity, total precipitable water (TPW), and total cloud water (TCW). Switchable as a single mutex-row overlay; each rendered as a coloured shell at radius 1.006 R⊕.</p>
+      <p class="feed-src">Source: NOAA NOMADS GFS</p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Aurora</span>
+        <span class="feed-cadence">refreshed every 5 min</span>
+      </div>
+      <p class="feed-desc">Ovation aurora oval probability over both polar regions — ~65 000 grid points coloured by probability, rendered on the night side only (a real aurora is invisible against bright daylight).</p>
+      <p class="feed-src">Source: NOAA SWPC · <a href="https://www.swpc.noaa.gov/products/aurora-30-minute-forecast">swpc.noaa.gov</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Kp index</span>
+        <span class="feed-cadence">refreshed every 15 min</span>
+      </div>
+      <p class="feed-desc">Planetary K-index, the standard 0–9 scale of geomagnetic disturbance. Drives a plain-language "quiet / unsettled / active / minor storm / …" label on the in-app Data panel.</p>
+      <p class="feed-src">Source: NOAA SWPC · <a href="https://www.swpc.noaa.gov/products/planetary-k-index">swpc.noaa.gov</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Active fires</span>
+        <span class="feed-cadence">refreshed hourly</span>
+      </div>
+      <p class="feed-desc">VIIRS S-NPP near-real-time fire detections over the past 24 h, worldwide. Each pin sized by fire-radiative-power (FRP); colour ramps from deep red (small) to white-yellow (intense). Flicker frequency proportional to brightness.</p>
+      <p class="feed-src">Source: NASA FIRMS · <a href="https://firms.modaps.eosdis.nasa.gov/">firms.modaps.eosdis.nasa.gov</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Tropical cyclones</span>
+        <span class="feed-cadence">refreshed every 15 min</span>
+      </div>
+      <p class="feed-desc">All currently-active tropical cyclones worldwide. Each storm rendered as a pulsing spiral sprite (eye + arms + outer ring) sized and coloured by Saffir–Simpson intensity (TD → TS → Cat 1-5). Past-track and 5-day forecast lines plus cone-of-uncertainty polygons from per-storm KMZ feeds.</p>
+      <p class="feed-src">Source: NOAA NHC · <a href="https://www.nhc.noaa.gov/">nhc.noaa.gov</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Lightning</span>
+        <span class="feed-cadence">live stream</span>
+      </div>
+      <p class="feed-desc">Real-time lightning strikes from the worldwide Blitzortung community network — typically ~200 ms after each detected stroke. Renders as a brief additive flash that fades over ~0.6 s. The Data panel shows a rolling 60-second strike rate.</p>
+      <p class="feed-src">Source: Blitzortung · <a href="https://www.blitzortung.org/">blitzortung.org</a> — a community of volunteer-operated VLF receiving stations</p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Eclipses</span>
+        <span class="feed-cadence">bundled (3 catalogued events)</span>
+      </div>
+      <p class="feed-desc">Path of totality + live umbra disc for the next upcoming total solar eclipse, derived directly from NASA Goddard's Espenak/Meeus predictions. Currently bundled: 2024-04-08 (North America, historical), 2026-08-12 (Spain — the headline event), 2027-08-02 (Egypt — the long one).</p>
+      <p class="feed-src">Source: NASA GSFC · <a href="https://eclipse.gsfc.nasa.gov/SEcat5/SE2021-2030.html">eclipse.gsfc.nasa.gov</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
+        <span class="feed-name">Coastlines</span>
+        <span class="feed-cadence">bundled</span>
+      </div>
+      <p class="feed-desc">Natural Earth 50 m coastlines, encoded as TopoJSON and rendered as line segments rotating with Earth.</p>
+      <p class="feed-src">Source: <a href="https://www.naturalearthdata.com/">naturalearthdata.com</a> (public domain)</p>
+    </li>
+  </ul>
+</section>
+
+<section id="astronomy">
+  <h2>The astronomy</h2>
+
+  <h3>Sub-solar point</h3>
+  <p>
+    The sub-solar point is the place on Earth where the sun is currently directly overhead. It moves westward at 15° per hour as Earth rotates underneath. Its latitude varies between +23.44° (June solstice) and −23.44° (December solstice) as Earth's tilted axis precesses against the ecliptic plane.
+  </p>
+  <p>
+    Computed from a low-precision (~0.01° accuracy) solar ephemeris using mean longitude, mean anomaly, and the obliquity of the ecliptic. The same formula drives day-of-year lighting in every Earth visualisation since cambecc/earth.
+  </p>
+
+  <h3>Greenwich mean sidereal time</h3>
+  <p>
+    The angle Earth has rotated past the J2000 epoch reference point, after correcting for precession of the equinoxes. This is the conversion factor between the inertial celestial frame (where stars sit at fixed positions) and Earth's geographic frame (where Greenwich is at longitude 0°). Everything that has to stay "glued to the ground" — coastlines, weather overlays, fire detections, hurricane tracks — applies a daily rotation by GMST.
+  </p>
+
+  <h3>Moon</h3>
+  <p>
+    The moon's position uses Paul Schlyter's simplified orbital elements with main perturbation terms (evection, variation, yearly equation, parallactic equation, and a handful of smaller corrections from the sun's gravitational pull). Accuracy is ~0.3° angular, ~0.5 R⊕ in distance.
+  </p>
+  <div class="note">
+    <p><strong>A bug worth naming.</strong> Schlyter's published epoch is <code>1999-12-31 00:00 UT</code>, not the more famous J2000 (<code>2000-01-01 12:00 UTC</code>). Using J2000 by accident — easy to do, since every other astronomy formula on Earth uses it — introduces a 1.5-day epoch offset, which the moon's 13.065°/day mean-anomaly rate amplifies into a 19.6° lunar-position error. This was a real bug here, fixed in v0.0.5. If you build something similar from Schlyter, watch for it.</p>
+  </div>
+</section>
+
+<section id="eclipse">
+  <h2>The solar-eclipse renderer</h2>
+
+  <p>
+    When you toggle "Eclipse" in the menu and your simulated time is within 24 h of the next eclipse window, three things appear on the globe: a smooth orange <strong>path of totality</strong>, a dark <strong>umbra disc</strong> sliding along it, and a thin <strong>diamond-ring</strong> outlining the boundary between full totality and partial eclipse.
+  </p>
+
+  <h3>Why we use NASA's data, not runtime computation</h3>
+  <p>
+    Eclipse geometry is brutally sensitive. The moon's umbra is ~290 km wide on Earth's surface — a thin pencil dragged across the planet over four hours. A 0.5° angular error in the moon's position translates to a ~30° displacement of the shadow on Earth's surface. So even our 0.3°-accurate lunar model puts the 2026 Spain eclipse at the wrong continent.
+  </p>
+  <p>
+    For the three catalogued headline eclipses (2024-04-08 North America, 2026-08-12 Spain, 2027-08-02 Egypt) we use NASA Goddard's published centerline coordinates directly. Each is a small array of (time, lat, lon, magnitude) waypoints from Fred Espenak and Jean Meeus's predictions. The runtime renderer interpolates these via slerp (spherical linear interpolation) into a smooth great-circle path along Earth's surface, and snaps the live umbra disc to the interpolated position at the current simulated time.
+  </p>
+
+  <h3>The umbra, the penumbra, and the diamond ring</h3>
+  <p>
+    The dark disc rendered at the umbra centre is sized to match the real path width (~290 km, ~1.3° of angular radius from Earth's centre). Around it is a wider but softer penumbra — the region where observers see a partial eclipse, only some of the sun blocked. A thin warm-gold ring is drawn at the umbra/penumbra boundary, named for the photographic <em>diamond ring</em> effect: the instant just before or after totality when one bright bead of sunlight breaks past the lunar limb.
+  </p>
+  <p>
+    The shadow is rendered as a single transparent spherical shell at radius 1.001 R⊕, with a fragment shader computing per-pixel angular distance from the umbra centre and assigning umbra/ring/penumbra dimming accordingly. Cheaper than three separate meshes and self-consistent under camera motion.
+  </p>
+
+  <h3>How to drive it</h3>
+  <p>
+    Click <code>Tools → Jump to eclipse</code> to snap the simulated clock to T-minus-one-minute and start a 60× time-warp. The whole four-hour event plays out in about four minutes. Pause / step backward through speeds with the time-control row (revealed by the <code>⏱</code> icon next to the clock).
+  </p>
+</section>
+
+<section id="philosophy">
+  <h2>Why this exists</h2>
+  <p>
+    A solar eclipse, watched live, can be among the most affecting experiences of a human life. People travel across the world for one. But the eclipse is only the most concentrated version of something always available — the planet you live on rotates, orbits, tilts, weathers, burns, freezes, and rains, every day. Most of us look up and see <em>none</em> of it.
+  </p>
+  <p>
+    earth-clock is an attempt to make the everyday version of that experience continuously accessible. A clock you can look at and see, in one glance, where you are on the only planet we have — what time it is in the sense that matters: where the sun is, what the weather is doing, which storms are spinning up, where the fires are burning, where the auroras are this hour, when the moon's shadow will pass over us again.
+  </p>
+  <p>
+    The design philosophy is articulated in <a href="https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/">a longer essay at onemonkey.org</a>.
+  </p>
+</section>
+
+<section id="lineage">
+  <h2>Lineage</h2>
+  <p>
+    earth-clock stands on the shoulders of several earlier projects, all of which deserve naming.
+  </p>
+
+  <h3>cambecc/air — Tokyo Wind Map (2013)</h3>
+  <p>
+    Cameron Beccario's original demonstration that animated wind particles, drawn over a map, could communicate the structure of the atmosphere more clearly than any static chart. Showed a single city's wind in real time.
+  </p>
+
+  <h3>cambecc/earth — earth.nullschool.net (2014–)</h3>
+  <p>
+    The global generalisation of the Tokyo Wind Map. For more than a decade <a href="https://earth.nullschool.net/">earth.nullschool.net</a> has been the reference for what a beautiful, accurate, public-domain-data-driven Earth visualisation looks like. The 2D wind-particle layer in earth-clock's classic archive is essentially that codebase. We retain the original copyright and MIT license.
+  </p>
+
+  <h3>earth-clock classic (2024–)</h3>
+  <p>
+    A fork of cambecc/earth by <a href="https://onemonkey.org">Caspar Addyman</a>, adding a real-time day/night terminator overlay and a clock readout — making the visualisation literally a clock told by the planet's orientation, rather than only a weather map. Preserved at <a href="/classic/">/classic/</a>.
+  </p>
+
+  <h3>orrery — the current 3D experience (2026)</h3>
+  <p>
+    A ground-up rebuild for 2026 in TypeScript and Three.js. The 2D wind particles became GPU-accelerated 3D particles drifting on a tilted sphere; the day-night overlay became real shader-based lighting from a true-position sun; the moon got placed at its real distance; the weather feeds expanded to clouds, fires, hurricanes, lightning, aurora; and a NASA-data-driven eclipse renderer was added as the headline feature targeting the August 2026 total solar eclipse over Spain.
+  </p>
+  <p>
+    Same project, same purpose, twelve more years of accumulated atmospheric data and a decade of WebGL maturity to draw on.
+  </p>
+</section>
+
+<section id="tech">
+  <h2>How it's built</h2>
+  <p>
+    The current 3D experience is a TypeScript SPA built with <a href="https://vitejs.dev/">Vite</a>, rendering to WebGL2 via <a href="https://threejs.org/">Three.js</a>. No backend per page load; all data is fetched from public endpoints client-side. The one exception is the GFS weather pipeline (<code>weather-service.js</code> at the repo root), which runs a small Node service on the server every 6 hours to download GRIB2 from NOAA NOMADS, decode it with a pure-JS GRIB2 parser, and write JSON files that the frontend reads.
+  </p>
+  <p>
+    Wind particles are simulated on the GPU using a <code>GPUComputationRenderer</code> ping-pong with two 256×256 RGBA float textures (one for positions, one for ages). 65 536 particles total; each step samples the current wind vector field, advects, and re-emits on a probabilistic basis. Streak trails are accumulated into a separate offscreen render target with an additive blend + slow exponential fade, then composited as a screen-space quad behind the planet.
+  </p>
+  <p>
+    Atmosphere, clouds, eclipse shadow, and beams are all custom GLSL fragment shaders on transparent concentric spherical shells around Earth, with explicit <code>renderOrder</code> to keep the alpha-sort deterministic.
+  </p>
+  <p>
+    Source: <a href="https://github.com/infantlab/earth-clock">github.com/infantlab/earth-clock</a> (MIT). The full development plan and per-layer status tracker is in <a href="https://github.com/infantlab/earth-clock/blob/master/orrery/PLAN.md">orrery/PLAN.md</a>.
+  </p>
+</section>
+
+<section id="credits">
+  <h2>Credits</h2>
+
+  <p>
+    Anything you can see, animate, or measure on this site exists because of the patient, accurate, mostly-public work of dozens of people, organisations, and government agencies. The full machine-readable list lives in <a href="https://github.com/infantlab/earth-clock/blob/master/orrery/CREDITS.md">CREDITS.md</a>. Highlights:
+  </p>
+
+  <ul>
+    <li><strong>Cameron Beccario</strong> — the original <a href="https://github.com/cambecc/earth"><code>earth</code></a> codebase and design language that earth-clock descends from.</li>
+    <li><strong>NASA</strong> — VIIRS imagery (GIBS), FIRMS fire detections, eclipse predictions (Goddard / Espenak / Meeus), public-domain texture derivatives.</li>
+    <li><strong>NOAA</strong> — GFS weather model (NOMADS), tropical cyclones (NHC), space weather and aurora (SWPC).</li>
+    <li><strong>Blitzortung</strong> — community-volunteer-operated VLF lightning detection network.</li>
+    <li><strong>Solar System Scope</strong> (INOVE s.r.o.) — Earth, moon, and starmap textures, CC-BY 4.0.</li>
+    <li><strong>Natural Earth</strong> — public-domain coastline TopoJSON.</li>
+    <li><strong>OpenStreetMap contributors</strong> — Nominatim reverse-geocoding for place names.</li>
+    <li><strong>Paul Schlyter</strong> — the <a href="https://www.stjarnhimlen.se/comp/ppcomp.html">simplified planetary-position algorithms</a> that drive the sub-solar and sub-lunar calculations.</li>
+    <li><strong>USNO and NOAA SPA</strong> — the underlying GMST and solar-position formulae.</li>
+    <li><strong>Jean Meeus</strong> — <em>Astronomical Algorithms</em>, the canonical reference for the lunar theory used here and the one we'll move to for general-purpose eclipse precision.</li>
+    <li><strong>Three.js</strong>, <strong>Vite</strong>, <strong>TypeScript</strong>, <strong>fflate</strong> — the underlying engineering tools, all MIT or Apache-2.0.</li>
+  </ul>
+
+  <p>
+    The data shown is in the public domain unless otherwise noted (Solar System Scope textures and the Blitzortung lightning stream are licensed under CC-BY 4.0 and a community-use grant respectively; OpenStreetMap data is ODbL). The earth-clock source code itself is MIT-licensed.
+  </p>
+
+  <p>
+    Built by <a href="https://onemonkey.org">Caspar Addyman</a> as a fork of Cameron Beccario's <code>earth</code>. Bug reports, ideas, and pull requests welcome at <a href="https://github.com/infantlab/earth-clock/issues">the issues page</a>.
+  </p>
+</section>
+
+</main>
+
+<footer>
+  <p>
+    earth-clock · <a href="/">live view</a> · <a href="/classic/">classic 2D archive</a> ·
+    <a href="https://github.com/infantlab/earth-clock">source on GitHub</a> ·
+    MIT licensed
+  </p>
+  <p>
+    Last updated for v0.1.0 — the first release-level cut of the 3D rebuild.
+  </p>
+</footer>
+
+</body>
+</html>
