@@ -19,8 +19,13 @@ const STORAGE_KEY = "orrery.clock.v1";
  * user can describe what they're seeing without having to multiply in their head. The ⏩
  * button finds the smallest preset above the current speed; ⏪ finds the largest below.
  * Console-set values that fall between presets are treated as the starting point.
+ *
+ * Symmetric around 0 so the ⏪ button at default 1× actually reverses time instead of
+ * being a silent no-op (the animate loop's `simulatedTime += dtMs * warp` handles negative
+ * warp naturally — Earth, sun, and moon all unwind). 0 is included as a pause stop on
+ * the way between forward and reverse.
  */
-const SPEED_PRESETS = [1, 60, 1440, 86400];  // 1× / 60× / 1440× / 86400×
+const SPEED_PRESETS = [-86400, -1440, -60, -1, 0, 1, 60, 1440, 86400];
 const WARP_PAUSE_DEFAULT = 60;  // value restored on play if there's no prior warp memory
 
 type Zone = "utc" | "local";
@@ -71,9 +76,9 @@ export class Clock {
         </div>
       </div>
       <div class="orrery-clock-controls hidden" id="orrery-clock-controls">
-        <button class="orrery-clock-btn" id="orrery-clock-slower" title="Slow down (previous preset: 1× / 60× / 1440× / 86400×)">⏪</button>
+        <button class="orrery-clock-btn" id="orrery-clock-slower" title="Step backward through speeds: 86400× / 1440× / 60× / 1× / 0 / -1× / -60× / -1440× / -86400× (negative speeds run time in reverse)">⏪</button>
         <button class="orrery-clock-btn" id="orrery-clock-pause"  title="Pause / play">⏸</button>
-        <button class="orrery-clock-btn" id="orrery-clock-faster" title="Speed up (next preset: 1× / 60× / 1440× / 86400×)">⏩</button>
+        <button class="orrery-clock-btn" id="orrery-clock-faster" title="Step forward through speeds: -86400× / -1440× / -60× / -1× / 0 / 1× / 60× / 1440× / 86400×">⏩</button>
         <button class="orrery-clock-btn" id="orrery-clock-reset"  title="Reset to real time — warp 1× and snap to now">↺</button>
         <span class="orrery-clock-warp" id="orrery-clock-warp">× 1</span>
       </div>
@@ -106,15 +111,21 @@ export class Clock {
     });
     this.refreshExpandState();
 
+    // ⏪ / ⏩ walk through SPEED_PRESETS in either direction. The presets are symmetric
+    // around 0, so ⏪ at 1× steps to 0 (pause), another ⏪ to -1× (real-time reverse), and
+    // so on. Stepping through 0 also updates warpBeforePause so the pause/play button's
+    // resume remembers the last live speed rather than a stale one.
     (this.root.querySelector("#orrery-clock-slower") as HTMLElement).addEventListener("click", () => {
       const cur = window.__orreryTimeWarp ?? 1;
-      if (cur === 0) return; // paused — let the user un-pause first
-      window.__orreryTimeWarp = prevPreset(cur);
+      const next = prevPreset(cur);
+      if (cur !== 0) this.warpBeforePause = cur;
+      window.__orreryTimeWarp = next;
     });
     (this.root.querySelector("#orrery-clock-faster") as HTMLElement).addEventListener("click", () => {
       const cur = window.__orreryTimeWarp ?? 1;
-      if (cur === 0) return;
-      window.__orreryTimeWarp = nextPreset(cur);
+      const next = nextPreset(cur);
+      if (cur !== 0) this.warpBeforePause = cur;
+      window.__orreryTimeWarp = next;
     });
     // ↺ resets *both* sides of the time state: warp back to 1× **and** simulatedTime back
     // to wall-clock now. Users described the older behaviour ("only resets warp; the

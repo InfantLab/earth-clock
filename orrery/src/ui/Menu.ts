@@ -85,7 +85,10 @@ const STORAGE_KEY = "orrery.menu.v1";
 const DEFAULTS: Record<LayerKey, boolean> = {
   // Weather
   wind: true, fires: true, lightning: true, hurricanes: true, tracks: true, aurora: true,
-  // Clouds — VIIRS on by default (matches the previous single "Clouds" toggle behaviour)
+  // Clouds — VIIRS on by default. (Briefly defaulted to GFS in 0.0.5-dev when VIIRS
+  // appeared broken; turned out we were fetching from a TileMatrixSet zoom level whose
+  // matrix over-covered the world by 75% in the bottom row — the empty fill triggered
+  // the no-data rejection. Fixed by switching to zoom 3 in loadClouds().)
   cloudsViirs: true, cloudsGfs: false, cloudsGoes: false,
   // Overlay
   mslp: false, temp: false, rh: false, tpw: false, tcw: false,

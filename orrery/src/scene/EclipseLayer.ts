@@ -146,4 +146,12 @@ export class EclipseLayer {
   setRotationY(angle: number) {
     this.inner.rotation.y = angle;
   }
+
+  /** Show/hide just the precomputed path polyline (independent of the layer's overall
+   *  visibility). main.ts gates this on whether the simulated time is anywhere near
+   *  the eclipse window — drawing a static "future eclipse" path over a globe on a
+   *  random Wednesday is more confusing than useful. */
+  setPathVisible(v: boolean) {
+    this.pathLine.visible = v;
+  }
 }

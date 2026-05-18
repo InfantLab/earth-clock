@@ -35,6 +35,7 @@ import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { reverseGeocode } from "./data/geocoder";
 import { computeShadow, computePathOfTotality } from "./astro/eclipse";
 import { nextEclipse } from "./data/eclipseCatalog";
+import { getCataloguedEclipsePath, interpolateUmbraPosition } from "./data/nasaEclipsePaths";
 import { LightningLoader } from "./data/lightningLoader";
 import { windGridToTexture } from "./data/windToTexture";
 import { fetchGibsTextureWithFallback } from "./data/gibsLoader";
@@ -847,26 +848,54 @@ function loadHurricanes() {
 loadHurricanes();
 setInterval(loadHurricanes, 15 * 60 * 1000);
 
-// Load the next upcoming eclipse from the catalog (if any) and precompute its path of
-// totality. The math is fast (a few hundred ray-sphere intersections), so we just do it
-// synchronously at startup. Reaches into worldToGeographic() to keep the path glued to
-// Earth's surface as it rotates beneath the inertially-fixed shadow.
+// Lat/lon → geographic-frame XYZ (the un-tilted, un-rotated Earth frame in which lat
+// is asin(y) and lon is atan2(-z, x)). Inverse of the (g.y, -g.z, g.x) decoding used
+// elsewhere in this file.
+function latLonToGeographic(latDeg: number, lonDeg: number, out = new THREE.Vector3()): THREE.Vector3 {
+  const lat = latDeg * Math.PI / 180;
+  const lon = lonDeg * Math.PI / 180;
+  const cosLat = Math.cos(lat);
+  return out.set(cosLat * Math.cos(lon), Math.sin(lat), -cosLat * Math.sin(lon));
+}
+
+// Load the next upcoming eclipse from the catalog (if any) and set up its path of totality.
+//
+// Two paths here, chosen by whether we have NASA's published data for this event:
+//
+//   - **Catalogued path** ([nasaEclipsePaths.ts](data/nasaEclipsePaths.ts)) — hand-typed
+//     centerline waypoints from NASA's predictions. Used for the 2024, 2026, 2027 eclipses.
+//     Accurate to ~1° on Earth's surface (well inside the umbra envelope) without depending
+//     on the runtime lunar model's precision.
+//   - **Astronomical fallback** ([astro/eclipse.ts](astro/eclipse.ts)) — Schlyter-based
+//     ray-sphere geometry. Used when the eclipse isn't in our catalogued-paths set
+//     (future / historical / non-headline events). Accurate to ~1° angularly, which
+//     can be 30°+ on Earth's surface near totality — flagged as the precision bottleneck
+//     to fix with a Meeus lunar-theory upgrade (see PLAN.md, Phase A polish).
 const activeEclipse = nextEclipse(new Date());
+const activeNasaPath = activeEclipse ? getCataloguedEclipsePath(activeEclipse.id) : undefined;
 if (activeEclipse) {
-  const samples = computePathOfTotality(activeEclipse.startUtc, activeEclipse.endUtc, 30);
-  const geographicPath = samples.map(s => {
-    const out = new THREE.Vector3();
-    worldToGeographic(s.worldPoint, s.time, out);
-    return out;
-  });
+  let geographicPath: THREE.Vector3[];
+  let sourceLabel: string;
+  if (activeNasaPath) {
+    geographicPath = activeNasaPath.waypoints.map(wp => latLonToGeographic(wp.lat, wp.lon));
+    sourceLabel = "NASA centerline";
+  } else {
+    const samples = computePathOfTotality(activeEclipse.startUtc, activeEclipse.endUtc, 30);
+    geographicPath = samples.map(s => {
+      const out = new THREE.Vector3();
+      worldToGeographic(s.worldPoint, s.time, out);
+      return out;
+    });
+    sourceLabel = "astronomical fallback (Schlyter)";
+  }
   eclipseLayer.setPath(geographicPath);
   const peakLocal = activeEclipse.peakUtc.toISOString().slice(0, 16) + "Z";
   console.log(
     `[earth-clock] eclipse loaded: ${activeEclipse.name} · peak ${peakLocal} · ` +
-    `${geographicPath.length} totality-path samples (${activeEclipse.region})`,
+    `${geographicPath.length} path points · source: ${sourceLabel} · (${activeEclipse.region})`,
   );
   dataRegistry.report("eclipse", {
-    source: "NASA eclipse catalog · bundled",
+    source: activeNasaPath ? "NASA centerline · bundled" : "NASA eclipse catalog · bundled",
     fetched: new Date(),
     detail: `${activeEclipse.name} · ${peakLocal}`,
     bundled: true,
@@ -984,17 +1013,22 @@ setInterval(() => {
   });
 }, 1000);
 
-// Fetch the latest fully-published global VIIRS true-color mosaic from NASA GIBS. The
-// 250m TileMatrixSet has non-doubling dimensions at each zoom (zoom=1 → 3×2 = 6 tiles,
-// not 4×2 — see MATRIX_DIMS in gibsLoader.ts) so the loader looks dims up from a table.
-// The fallback loop handles real-day partial publishing (some tiles 400 if the orbit
-// pass hasn't completed yet) by walking the date back until every tile loads.
+// Fetch the latest fully-published global VIIRS true-color mosaic from NASA GIBS.
+//
+// Zoom level choice: zoom 3 (10×5 = 50 tiles) is the lowest zoom where the matrix maps
+// exactly to 360°×180° of Earth. Lower zooms over-cover — at zoom 1 (3×2 matrix, 144°
+// per tile) the bottom row contains only ~25% real Earth and 75% structural off-planet
+// black fill, which our no-data check correctly rejected... silently breaking the
+// southern hemisphere for the entire life of the project. Zoom 3 fits 360/10 = 36° per
+// tile cleanly, and the resulting 5120×2560 mosaic also looks visibly sharper at typical
+// globe zooms. Trade-off: 50 small (~50-80 KB) tiles vs 6 larger ones = ~3 MB total
+// instead of ~250 KB, still trivial on any modern network.
 function loadClouds() {
   debug.pending("clouds", "fetching VIIRS mosaic…");
   fetchGibsTextureWithFallback({
     layer: "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
     tileMatrixSet: "250m",
-    zoom: 1,
+    zoom: 3,
     ext: "jpg",
     onAttempt: (date, err) => {
       const dateStr = date.toISOString().slice(0, 10);
@@ -1091,22 +1125,50 @@ function updateAstro() {
   lightning.setRotationY(earthY);
   overlay.setRotationY(earthY);
   eclipseLayer.setRotationY(earthY);
+  // Only draw the path-of-totality polyline when the simulated time is anywhere near
+  // the eclipse window — a static future-eclipse path floating over the globe on a
+  // random Wednesday is confusing. ±24h margin so the path is already visible when the
+  // user clicks "Jump to eclipse" (which lands at T-1m).
+  if (activeEclipse) {
+    const PATH_WINDOW_MARGIN_MS = 24 * 3600 * 1000;
+    const inWindow =
+      simulatedTime >= activeEclipse.startUtc.getTime() - PATH_WINDOW_MARGIN_MS &&
+      simulatedTime <= activeEclipse.endUtc.getTime() + PATH_WINDOW_MARGIN_MS;
+    eclipseLayer.setPathVisible(inWindow);
+  }
 
-  // Live eclipse shadow. computeShadow() returns the surface point in the inertial world
-  // frame; convert it to geographic so it follows Earth's rotation along with the
-  // precomputed path. computeShadow returns hasShadow=false at any moment outside an
-  // eclipse, so 99.99% of the time this is a quick guard + no shadow rendered.
-  const sh = computeShadow(now);
-  if (sh.hasShadow) {
-    worldToGeographic(sh.surfacePoint, now, _liveShadowGeoPt);
+  // Live eclipse shadow. Dispatch: if the active eclipse has a NASA-catalogued path,
+  // interpolate position from those waypoints (accurate, deterministic). Otherwise fall
+  // back to the runtime astronomical computation (less accurate; flagged for upgrade
+  // to a Meeus lunar model in PLAN.md).
+  let liveLat: number | null = null;
+  let liveLon: number | null = null;
+  let liveMag = 1.0;
+  if (activeNasaPath) {
+    const u = interpolateUmbraPosition(activeNasaPath, now);
+    if (u) {
+      liveLat = u.lat;
+      liveLon = u.lon;
+      liveMag = u.magnitude;
+    }
+  } else {
+    const sh = computeShadow(now);
+    if (sh.hasShadow) {
+      worldToGeographic(sh.surfacePoint, now, _liveShadowGeoPt);
+      liveLat = Math.asin(_liveShadowGeoPt.y) * 180 / Math.PI;
+      liveLon = Math.atan2(-_liveShadowGeoPt.z, _liveShadowGeoPt.x) * 180 / Math.PI;
+      liveMag = sh.magnitude;
+    }
+  }
+  if (liveLat !== null && liveLon !== null) {
+    latLonToGeographic(liveLat, liveLon, _liveShadowGeoPt);
     eclipseLayer.setLiveShadow(_liveShadowGeoPt);
     if (!_liveShadowWasOn) {
       _liveShadowWasOn = true;
-      const lat = Math.asin(_liveShadowGeoPt.y) * 180 / Math.PI;
-      const lon = Math.atan2(-_liveShadowGeoPt.z, _liveShadowGeoPt.x) * 180 / Math.PI;
       console.log(
         `[earth-clock] eclipse live shadow ON at ${now.toISOString()} · ` +
-        `magnitude ${sh.magnitude.toFixed(3)} · geographic (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+        `magnitude ${liveMag.toFixed(3)} · geographic (${liveLat.toFixed(2)}, ${liveLon.toFixed(2)}) · ` +
+        `source: ${activeNasaPath ? "NASA centerline" : "astronomical"}`,
       );
     }
   } else {

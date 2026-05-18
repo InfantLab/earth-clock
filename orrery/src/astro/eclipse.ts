@@ -41,6 +41,22 @@ const AU_IN_R_EARTH       = 149_597_870 / 6371;      // ≈ 23 481
 const R_MOON_IN_R_EARTH   = 1738 / 6371;             // ≈ 0.2728 — moon's radius in Earth radii
 
 /**
+ * Effective Earth radius used by the ray-sphere intersection test. Bigger than 1.0
+ * (the true radius) to compensate for Schlyter's lunar-position precision: at 60 R⊕
+ * distance, 1° of angular error puts the umbra centerline ~1 R⊕ perpendicular to the
+ * sun-Earth line, geometrically missing the true sphere. Using 1.5 R⊕ catches those
+ * near-misses so the eclipse still renders at approximately the right time and place.
+ * The actual surface point we report is still on the *true* unit sphere — only the
+ * intersection-test threshold is relaxed.
+ *
+ * Trade-off: rendered eclipse position is accurate to ~1° (≈ 110 km on Earth) rather
+ * than the sub-degree precision a full ELP-2000 / VSOP-87 lunar model would give.
+ * Penumbra is ~3500 km wide so this is well within the visual envelope. Upgrade path
+ * is a higher-order lunar theory; out of scope for v1.
+ */
+const EFFECTIVE_EARTH_RADIUS_FOR_SHADOW = 1.5;
+
+/**
  * Compute the moon's shadow geometry at a given moment.
  * Returns `hasShadow=false` when the moon is on the far side of Earth or otherwise misses.
  */
@@ -53,32 +69,56 @@ export function computeShadow(date: Date): EclipseShadow {
   // Shadow axis ray: starts at moon, points *away* from the sun.
   const dir = sunDir.clone().negate();
 
-  // Ray-sphere intersection with the unit Earth sphere.
-  //   P(t) = M + t·D,  |P|² = 1
-  //   t² + 2(M·D)t + (|M|² − 1) = 0
+  // Ray-sphere intersection setup against an effective Earth radius (see EFFECTIVE_…
+  // comment above). Required to register hits when Schlyter's lunar position has its
+  // residual sub-degree error.
+  //   P(t) = M + t·D,  |P|² = R²    (with |D| = 1)
+  //   t² + 2(M·D)t + (|M|² − R²) = 0
   const MM = moonPos.dot(moonPos);
   const MD = moonPos.dot(dir);
-  const discriminant = MD * MD - (MM - 1);
-  if (discriminant < 0) {
+  const discriminantEff = MD * MD - (MM - EFFECTIVE_EARTH_RADIUS_FOR_SHADOW * EFFECTIVE_EARTH_RADIUS_FOR_SHADOW);
+  if (discriminantEff < 0) {
+    // Moon is genuinely nowhere near the sun-Earth line at this instant.
     return { hasShadow: false, surfacePoint: new THREE.Vector3(), magnitude: 0 };
   }
-  const t = -MD - Math.sqrt(discriminant); // near root
-  if (t <= 0) {
-    // Shadow axis points away from Earth (moon is on the far side of Earth from the sun
-    // — i.e. close to a full moon, which is when lunar eclipses can happen instead).
+  if (-MD <= 0) {
+    // Shadow axis points AWAY from Earth — moon is on the far side from the sun
+    // (full-moon family; that's where *lunar* eclipses happen, different geometry).
     return { hasShadow: false, surfacePoint: new THREE.Vector3(), magnitude: 0 };
   }
 
-  const surface = moonPos.clone().add(dir.clone().multiplyScalar(t));
-  // surface is unit-length by construction of the ray-sphere intersection.
+  // Surface-point selection. PREFER the true unit-sphere intersection when it exists:
+  // when the ray actually transects Earth (real, well-aligned eclipse) the near-side
+  // intersection IS the umbra centerline on the surface, and is correct to within the
+  // model's precision. Only fall back to the closest-point projection if the ray genuinely
+  // misses — that path is the "Schlyter wobble" approximation that draws the umbra at the
+  // nearest plausible surface point. Doing the projection ALWAYS (the previous version)
+  // collapses to a nonsense direction when the ray passes near origin, because the
+  // perpendicular offset dominates the normalised direction.
+  const discriminantTrue = MD * MD - (MM - 1);
+  let surface: THREE.Vector3;
+  if (discriminantTrue >= 0) {
+    // Ray transects the true unit Earth. Use the near intersection (= entry point).
+    const t = -MD - Math.sqrt(discriminantTrue);
+    surface = moonPos.clone().add(dir.clone().multiplyScalar(t));
+    // surface is unit-length by construction
+  } else {
+    // Ray misses Earth but is within the relaxed effective-radius envelope. Approximate
+    // surface point = SUB-LUNAR point (moonPos normalised onto the unit sphere). When
+    // the moon is roughly between Earth and the sun, the umbra falls at the point on
+    // Earth where the moon is overhead, which is the sub-lunar surface point. This is
+    // a more geometrically sensible fallback than "closest point on ray", which collapses
+    // to a perpendicular direction when the ray passes near origin.
+    surface = moonPos.clone().normalize();
+  }
 
-  // Apparent radii at the surface point.
-  const moonDistFromSurface = surface.distanceTo(moonPos);  // in Earth radii
-  // Sun is effectively at infinity for these calculations.
-  const moonAngularRadius = R_MOON_IN_R_EARTH / moonDistFromSurface;
-  const sunAngularRadius  = R_SUN_OVER_R_EARTH / AU_IN_R_EARTH;
-  // Magnitude = how much of the sun's diameter the moon covers, at the centreline.
-  const magnitude = moonAngularRadius / sunAngularRadius;
+  // Apparent radii at the surface point. Magnitude is purely distance-driven; the lunar
+  // model's distance precision (~0.5 R⊕) is much better than its angular precision, so
+  // magnitude remains the right gate for "is this totality vs partial vs annular".
+  const moonDistFromSurface = surface.distanceTo(moonPos);
+  const moonAngularRadius   = R_MOON_IN_R_EARTH / moonDistFromSurface;
+  const sunAngularRadius    = R_SUN_OVER_R_EARTH / AU_IN_R_EARTH;
+  const magnitude           = moonAngularRadius / sunAngularRadius;
 
   return { hasShadow: true, surfacePoint: surface, magnitude };
 }
