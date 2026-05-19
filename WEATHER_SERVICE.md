@@ -6,7 +6,7 @@ The weather service is a Node.js backend service that automatically fetches curr
 
 **Consumed by**:
 - **orrery** (the 3D experience at [`/`](orrery/)) — wind particles, MSLP / Temp / RH / TPW / TCW / TCDC overlays
-- **classic** (the 2D archive at [`public/classic/`](public/classic/)) — wind, weather overlays in the original projection
+- **classic** (the archive at [`public/classic/`](public/classic/)) — wind + weather overlays through any of the eight original cartographic projections (orthographic, equirectangular, azimuthal-equidistant, conic-equidistant, stereographic, Waterman butterfly, Winkel tripel, Atlantis)
 - **wallpaper-engine** ([`wallpaper-engine/`](wallpaper-engine/)) — same overlays bundled or fetched from production
 - **screensaver** ([`screensaver/`](screensaver/)) — wraps wallpaper-engine
 

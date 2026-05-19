@@ -4,7 +4,7 @@ A real-time 3D view of planet Earth — live weather, clouds, auroras, fires, st
 
 The spiritual successor to [`cambecc/earth`](https://github.com/cambecc/earth) — the same purpose, rebuilt for 2026 in Three.js with GPU particles, modern satellite feeds, and physically-based lighting.
 
-> **Status**: orrery is now the **default experience** at `earth-clock.onemonkey.org/` (cut over in v0.1.0, 2026-05). The classic 2D site this project descends from is preserved at [`/classic/`](https://earth-clock.onemonkey.org/classic/) as an archival fallback. See [PLAN.md](PLAN.md) for the engineering tracker and the full feature list.
+> **Status**: orrery is now the **default experience** at `earth-clock.onemonkey.org/` (cut over in v0.1.0, 2026-05). The classic D3 + canvas renderer this project descends from (offering eight cartographic projections — orthographic globe plus seven flat ones) is preserved at [`/classic/`](https://earth-clock.onemonkey.org/classic/) as an archival fallback. See [PLAN.md](PLAN.md) for the engineering tracker and the full feature list.
 
 **Live site**: <https://earth-clock.onemonkey.org/>
 **Live development plan**: [PLAN.md](PLAN.md) — current status of every layer

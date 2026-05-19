@@ -13,7 +13,7 @@ The frontends that share this `public/` tree:
 | URL path | What's served | Source |
 |---|---|---|
 | `/` | The 3D orrery experience (default) | `public/index.html` + `public/assets/` (Vite production build) |
-| `/classic/` | The classic 2D earth-clock archive | `public/classic/*` (preserved verbatim from pre-cutover) |
+| `/classic/` | The classic earth-clock archive | `public/classic/*` (preserved verbatim from pre-cutover) |
 | `/about/` | The detailed about page | `public/about/index.html` |
 | `/data/*` | Shared GFS weather + OSCAR ocean-currents JSON | `public/data/*` (refreshed by weather-service) |
 | `/textures/*` | orrery 3D assets (earth, moon, starmap) | `public/textures/*` |
@@ -33,7 +33,7 @@ earth-clock/
 │   ├── assets/             # ← orrery production JS bundle + sourcemap
 │   ├── textures/           # ← orrery static assets, copied from orrery/public/textures/
 │   ├── about/              # detailed about page (static HTML)
-│   ├── classic/            # ← classic 2D earth-clock archive
+│   ├── classic/            # ← classic earth-clock archive
 │   └── data/               # ← weather + ocean data, refreshed by weather-service
 ├── server.js               # production Node static server
 ├── weather-service.js      # background GFS data refresher

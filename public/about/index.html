@@ -420,7 +420,7 @@
 
   <h3>cambecc/earth — earth.nullschool.net (2014–)</h3>
   <p>
-    The global generalisation of the Tokyo Wind Map. For more than a decade <a href="https://earth.nullschool.net/">earth.nullschool.net</a> has been the reference for what a beautiful, accurate, public-domain-data-driven Earth visualisation looks like. The 2D wind-particle layer in earth-clock's classic archive is essentially that codebase. We retain the original copyright and MIT license.
+    The global generalisation of the Tokyo Wind Map. For more than a decade <a href="https://earth.nullschool.net/">earth.nullschool.net</a> has been the reference for what a beautiful, accurate, public-domain-data-driven Earth visualisation looks like. <code>cambecc/earth</code> is a sophisticated D3.js + HTML5 canvas renderer that supports <em>eight</em> different cartographic projections — orthographic globe, equirectangular, azimuthal equidistant, conic equidistant, stereographic, Waterman butterfly, Winkel tripel, and Atlantis — and warps the wind-particle paths correctly through each. The same codebase, with a day/night terminator and a clock added, is what runs in earth-clock's classic archive at <a href="/classic/">/classic/</a>. We retain the original copyright and MIT licence.
   </p>
 
   <h3>earth-clock classic (2024–)</h3>
@@ -428,9 +428,12 @@
     A fork of cambecc/earth by <a href="https://onemonkey.org">Caspar Addyman</a>, adding a real-time day/night terminator overlay and a clock readout — making the visualisation literally a clock told by the planet's orientation, rather than only a weather map. Preserved at <a href="/classic/">/classic/</a>.
   </p>
 
-  <h3>orrery — the current 3D experience (2026)</h3>
+  <h3>orrery — the current experience (2026)</h3>
   <p>
-    A ground-up rebuild for 2026 in TypeScript and Three.js. The 2D wind particles became GPU-accelerated 3D particles drifting on a tilted sphere; the day-night overlay became real shader-based lighting from a true-position sun; the moon got placed at its real distance; the weather feeds expanded to clouds, fires, hurricanes, lightning, aurora; and a NASA-data-driven eclipse renderer was added as the headline feature targeting the August 2026 total solar eclipse over Spain.
+    A ground-up rebuild for 2026 in TypeScript and Three.js. The canvas-and-D3 wind particles became GPU-accelerated particles drifting on a real tilted sphere; the day-night overlay became shader-based lighting from a true-position sun; the moon got placed at its real distance; the weather feeds expanded to clouds, fires, hurricanes, lightning, aurora; and a NASA-data-driven eclipse renderer was added as the headline feature targeting the August 2026 total solar eclipse over Spain.
+  </p>
+  <p>
+    Currently offers two view modes: the 3D globe (default) and an equirectangular flat map. The other six classic projections (azimuthal equidistant, conic equidistant, stereographic, Waterman butterfly, Winkel tripel, Atlantis) are on the roadmap.
   </p>
   <p>
     Same project, same purpose, twelve more years of accumulated atmospheric data and a decade of WebGL maturity to draw on.
@@ -487,7 +490,7 @@
 
 <footer>
   <p>
-    earth-clock · <a href="/">live view</a> · <a href="/classic/">classic 2D archive</a> ·
+    earth-clock · <a href="/">live view</a> · <a href="/classic/">classic archive</a> ·
     <a href="https://github.com/infantlab/earth-clock">source on GitHub</a> ·
     MIT licensed
   </p>

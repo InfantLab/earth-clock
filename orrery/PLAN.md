@@ -2,7 +2,7 @@
 
 This is the **engineering tracker** — current status of every layer, what's next, what's blocked. For the project vision, lineage, architecture, data sources, and astronomical formulae, see [README.md](README.md).
 
-**One-line summary**: orrery is the 3D successor to [`cambecc/earth`](https://github.com/cambecc/earth) / earth-clock, and will replace the classic 2D site at `earth-clock.onemonkey.org/` once feature-complete. Phase A is the milestone for swap.
+**One-line summary**: orrery is the WebGL successor to [`cambecc/earth`](https://github.com/cambecc/earth) / earth-clock — a ground-up rebuild of the same purpose for Three.js. The classic D3 + canvas renderer (the original's eight cartographic projections + earth-clock's day/night and clock additions) is preserved at `/classic/` as an archive. Cutover landed in v0.1.0.
 
 > Keep this file up to date. Every session should end by updating status markers here.
 
@@ -148,9 +148,9 @@ The goal: while the user time-warps through an eclipse, the moon's umbra and pen
 9. **Hide-in-map-mode list** — Atmosphere, Moon, Sky-stars toggles should be greyed in the menu when Map mode is on, since they're inherently 3D and don't have flat-map equivalents.
 10. **Pan & zoom** — orthographic camera should support panning + zoom-in for region focus. Mouse-drag pan, wheel zoom. Clamp pan to stay within the plane bounds.
 11. **Wrap-around** — when panned past the 180° edge, the plane should wrap. Easiest: render the plane twice with -360° / +360° offsets, or do shader-side modulo.
-12. **Map projection variants** — out of scope per the project's projection policy. Equirectangular only.
+12. **Additional cartographic projections** ⬜ — *roadmap entry as of v0.1.0*. The classic earth-clock renderer (preserved at `/classic/`) supports **eight** projections: orthographic globe + equirectangular + azimuthal equidistant + conic equidistant + stereographic + Waterman butterfly + Winkel tripel + Atlantis. orrery currently offers two (3D globe + equirectangular flat map). The other six are on the roadmap — restoring parity with the original is a real feature gap, not "out of scope". Implementation note: these all fit naturally into the existing FlatMap two-pass architecture (vertex shader maps `(lon, lat)` → projection-specific `(u, v)`). Add a projection selector to the menu, persist choice in `localStorage`, route each option to the right shader. The Waterman butterfly and Atlantis are the visually striking ones and probably worth landing first. Each layer's existing `flatMesh` would need either a uniform-switched vertex shader or per-projection mesh siblings — same architecture decision as the rest of FlatMap v2.
 
-Architecture decision still open: each existing layer gets a `setMapMode(b)` hook (cleanest, fewer files, more uniforms in shaders) vs. parallel `FlatXxxLayer` classes (more files, simpler shaders, more code duplication). Lean toward the first.
+Architecture decision still open: each existing layer gets a `setMapMode(b)` hook (cleanest, fewer files, more uniforms in shaders) vs. parallel `FlatXxxLayer` classes (more files, simpler shaders, more code duplication). Lean toward the first. The decision compounds for projection variants — projection-as-uniform fits the same shape.
 
 ### ✅ Layer toggle HUD  ← landed, may grow over time
 - Bottom-left collapsible menu (`src/ui/Menu.ts`), styled to match classic earth-clock (dark translucent panel, grey/yellow/white text buttons). The "orrery" wordmark is the open/close affordance.

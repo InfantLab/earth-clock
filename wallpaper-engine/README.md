@@ -72,7 +72,7 @@ The wallpaper-engine directory contains copies of core files. To keep them in sy
    ```
 
 2. This copies updated files from `public/classic/libs/earth/` to `wallpaper-engine/libs/earth/`.
-   (Before the v0.1.0 cutover the source was `public/libs/earth/`; the classic 2D
+   (Before the v0.1.0 cutover the source was `public/libs/earth/`; the classic
    codebase the wallpaper engine wraps moved into `public/classic/` when orrery took
    over the root.)
 

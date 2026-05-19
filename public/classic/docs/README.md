@@ -1,8 +1,8 @@
 # Classic earth-clock — implementation notes
 
-This folder collects the technical notes for the **classic 2D earth-clock** experience preserved at [`/classic/`](../). All of it describes the original codebase: a fork of [`cambecc/earth`](https://github.com/cambecc/earth) extended with a real-time day/night terminator, moon-phase overlay, and clock readout.
+This folder collects the technical notes for the **classic earth-clock** experience preserved at [`/classic/`](../). All of it describes the original codebase: a fork of [`cambecc/earth`](https://github.com/cambecc/earth) extended with a real-time day/night terminator, moon-phase overlay, and clock readout. The classic renderer is a D3.js + canvas implementation offering eight different cartographic projections (orthographic globe plus equirectangular, azimuthal equidistant, conic equidistant, stereographic, Waterman butterfly, Winkel tripel, and Atlantis).
 
-The current default site at `earth-clock.onemonkey.org/` is the 3D rebuild (codename **orrery**); its own technical notes live in [`../../../orrery/README.md`](../../../orrery/README.md), [`../../../orrery/PLAN.md`](../../../orrery/PLAN.md), and [`../../../orrery/CREDITS.md`](../../../orrery/CREDITS.md). The 3D experience implements the same astronomical concepts described below via Three.js shaders rather than 2D canvas + d3 projections, but the underlying maths is the same.
+The current default site at `earth-clock.onemonkey.org/` is the WebGL rebuild (codename **orrery**); its own technical notes live in [`../../../orrery/README.md`](../../../orrery/README.md), [`../../../orrery/PLAN.md`](../../../orrery/PLAN.md), and [`../../../orrery/CREDITS.md`](../../../orrery/CREDITS.md). The new renderer implements the same astronomical concepts described below via Three.js shaders rather than D3 canvas projections, but the underlying maths is the same. orrery currently offers two render modes (3D globe + equirectangular flat map); the other six classic projections are on the roadmap (see PLAN.md).
 
 ## Files
 
