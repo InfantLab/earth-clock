@@ -25,7 +25,9 @@ import { Debug } from "./ui/Debug";
 import { DataRegistry } from "./ui/DataRegistry";
 import { DataPanel } from "./ui/DataPanel";
 import { Clock } from "./ui/Clock";
-import { LocationPanel } from "./ui/LocationPanel";
+import { LocationPanel, type PinSource } from "./ui/LocationPanel";
+import { EclipsePanel } from "./ui/EclipsePanel";
+import type { EclipseEvent } from "./data/eclipseCatalog";
 import { LiveDataSource } from "./data/DataSource";
 import { fetchAuroraGrid } from "./data/auroraLoader";
 import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoader";
@@ -34,7 +36,7 @@ import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { reverseGeocode } from "./data/geocoder";
 import { computeShadow, computePathOfTotality } from "./astro/eclipse";
-import { nextEclipse } from "./data/eclipseCatalog";
+import { nextEclipse, ECLIPSE_CATALOG } from "./data/eclipseCatalog";
 import { getCataloguedEclipsePath, interpolateUmbraPosition } from "./data/nasaEclipsePaths";
 import { LightningLoader } from "./data/lightningLoader";
 import { windGridToTexture } from "./data/windToTexture";
@@ -132,6 +134,9 @@ scene.add(eclipseLayer.mesh);
 // that rotates with Earth — keeping a local copy to avoid pulling them through Globe's
 // internals; if any of them ever change, search for AXIAL_TILT_RAD across the codebase.
 const AXIAL_TILT_RAD = 23.44 * Math.PI / 180;
+/** Reusable axis for the Z-rotation that all Earth-anchored layers apply. Defined once
+ *  so updateAstro() can `applyAxisAngle` cheaply each frame without allocating. */
+const TILT_Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 /**
  * Transform a point in the inertial world frame to Earth's geographic frame at a given time.
@@ -255,12 +260,41 @@ declare global {
       overlay: OverlayLayer;
       eclipse: EclipseLayer;
       sun: Sun;
+      /** Dev helper: swap every live loader for synthetic fixtures. */
+      useTestData: () => void;
+      /** Dev helper: re-trigger live loaders to overwrite fixtures. */
+      useLiveData: () => void;
+      /** Dev helper: reposition the camera so the moon is in view. */
+      findMoon: () => void;
+      /** Dev helper: jump simulatedTime to T-1m of a catalogued eclipse and warp to 60×.
+       *  Pass an event id (e.g. "20260812"); omit to use the next upcoming event. */
+      jumpToEclipse: (id?: string) => void;
     };
   }
 }
 
-// Expose handles for live tweaking from the JS console
-window.__orrery = { particles, globe, atmosphere, trails, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer, sun: sunBody };
+// Expose handles for live tweaking + dev helpers from the JS console.
+// The first block is direct references to scene/data layer instances; the second
+// block is the small set of dev affordances that used to live in the retired Tools
+// panel (test-data fixtures, find-moon camera repositioning, jump-to-eclipse).
+window.__orrery = {
+  particles, globe, atmosphere, trails, coastlines, clouds, aurora, fires,
+  hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer, sun: sunBody,
+  useTestData,
+  useLiveData,
+  findMoon: findMoonInCamera,
+  jumpToEclipse: (id?: string) => {
+    const event = id
+      ? ECLIPSE_CATALOG.find(e => e.id === id)
+      : (activeEclipse ?? null);
+    if (!event) {
+      console.warn(`[earth-clock] jumpToEclipse: ${id ? `id "${id}" not found` : "no upcoming eclipse"}; ` +
+                   `available ids: ${ECLIPSE_CATALOG.map(e => e.id).join(", ")}`);
+      return;
+    }
+    jumpToEclipseEvent(event);
+  },
+};
 
 // Display order matches the bottom-left Menu's group order so users can map a button to
 // its source row without scanning. Keys not listed sort alphabetically at the end. The
@@ -287,11 +321,12 @@ dataRegistry.report("day map",   { source: "Solar System Scope · 2k_earth_dayma
 dataRegistry.report("night map", { source: "Solar System Scope · 2k_earth_nightmap.jpg", bundled: true });
 dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",                 bundled: true });
 
-// Diagnostic overlay (bottom-right). Hidden by default; toggle via the Debug menu entry.
-// Each loader reports its state (✓/✗/⋯) here. The "Use test data" button replaces live
-// fetches with synthetic fixtures so we can isolate "loader broken" vs "renderer broken".
-const debug = new Debug(document.body);
-debug.onClose(() => { menu.setLayer("tools", false); });
+// Slim console logger — the visible bottom-right "tools" panel was retired alongside
+// the Tools menu entry. The diagnostic affordances it used to host (Use test data,
+// Find moon, Jump to eclipse) are now console helpers on `window.__orrery`. Loaders
+// still call debug.info/warn/pending; those write to the console and the user-facing
+// status surface is the DataPanel.
+const debug = new Debug();
 // Pre-register every loader as "pending" in the data registry so the unified Data panel
 // shows a `⋯ key  source  fetching…  —` row before the first network response. Loaders
 // overwrite each row's status on success/failure via dataRegistry.report().
@@ -332,15 +367,28 @@ const clock = new Clock(document.body, {
 // user enables Location mode and clicks the globe.
 const locationPanel = new LocationPanel(document.body);
 
+// Eclipse catalogue panel (top-left, under the Clock + Location stack). Lists every
+// bundled eclipse event with a one-click "jump to peak". Toggled by the Astro row's
+// "Eclipse" entry — same toggle drives the 3D EclipseLayer.mesh visibility.
+const eclipsePanel = new EclipsePanel(document.body, {
+  onJump:  (event) => jumpToEclipseEvent(event),
+  // Closing the panel signals "I'm done with the eclipse experience" — snap simulated
+  // time back to wall-clock now and drop warp to 1× so the rest of the app shows the
+  // current state of the world. Without this, the user is left staring at 2026-08-12
+  // T-1m frozen in time after dismissing the panel.
+  onClose: () => {
+    menu.setLayer("eclipse", false);
+    simulatedTime = Date.now();
+    window.__orreryTimeWarp = 1;
+  },
+});
+
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
-// Panel keys: `data` = bottom-right diagnostic (formerly Debug); `sources` = top-right
-// per-layer source listing (formerly Data). The rename happened to free up the more
-// natural "Data" name for the live readout panel.
 const menu = new Menu(document.body,
   { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks,
     lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap },
-  { data: dataPanel, tools: debug, clock, location: locationPanel },
+  { data: dataPanel, clock, location: locationPanel, eclipse: eclipsePanel },
 );
 
 // QA v001dev: the ✕ button now closes the Location panel entirely (toggles off in the menu)
@@ -357,18 +405,19 @@ locationPanel.onGeolocate((lat, lon) => {
   pinLocation(lat, lon, "geolocation");
 });
 
-// "Sun beam direction" / "Moon beam direction" buttons → drop the pin at the current
-// sub-solar or sub-lunar geographic point. Coords are cached by updateAstro() each
-// frame; the buttons just read the latest snapshot.
-locationPanel.onSunBeam(()  => pinLocation(latestSubSolar.lat, latestSubSolar.lon, "sun beam"));
-locationPanel.onMoonBeam(() => pinLocation(latestSubLunar.lat, latestSubLunar.lon, "moon beam"));
+// "Sub-solar" / "Sub-lunar" row clicks → drop the pin at the current sub-solar or
+// sub-lunar geographic point. Coords are cached by updateAstro() each frame; the
+// rows just read the latest snapshot.
+locationPanel.onSunBeam(()  => pinLocation(latestSubSolar.lat, latestSubSolar.lon, "sun"));
+locationPanel.onMoonBeam(() => pinLocation(latestSubLunar.lat, latestSubLunar.lon, "moon"));
 
-// Centralised pin-drop. Sets the 3D + flat pin meshes, fills the panel coords, and kicks
-// off a reverse-geocode lookup that fills in the place name asynchronously.
-function pinLocation(lat: number, lon: number, source: string) {
+// Centralised pin-drop. Sets the 3D + flat pin meshes, fills the panel coords + source
+// (which determines which row gets the "selected" highlight), and kicks off a
+// reverse-geocode lookup that fills in the place name asynchronously.
+function pinLocation(lat: number, lon: number, source: PinSource) {
   locationPin.setLocation(lat, lon);
   locationPin.setVisible(true);
-  locationPanel.setLocation(lat, lon);
+  locationPanel.setLocation(lat, lon, source);
   console.log(`[earth-clock] pinned via ${source}: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
   // Reverse geocode in the background — Nominatim rate-limits to 1 req/s so the function
   // returns null if called too quickly. Don't await; let the UI show "looking up…".
@@ -380,15 +429,30 @@ function pinLocation(lat: number, lon: number, source: string) {
     });
 }
 
-// Click-to-pin location handler. Only fires on simple clicks (not drags) — OrbitControls
-// uses mousedown+move for orbit and never fires "click" if the pointer moved past its
-// threshold. In globe mode we raycast against the Earth's day mesh and convert the world-
-// space hit point back to (lat, lon) via Globe.worldToLatLon. In map mode we convert the
-// click's NDC to the plane's (u, v) → (lat, lon).
+// Click-to-pin location handler. In globe mode we raycast against the Earth's day mesh
+// and convert the world-space hit point back to (lat, lon) via Globe.worldToLatLon. In
+// map mode we convert the click's NDC to the plane's (u, v) → (lat, lon).
+//
+// **Drag suppression**: native browser "click" suppression on drag is platform-dependent
+// and OrbitControls' damping sometimes lets a small post-rotate click slip through. We
+// record the pointerdown position and reject the click if the pointer travelled further
+// than DRAG_THRESHOLD_PX between down and up — that way orbit-rotating the globe never
+// drops a stray pin.
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
+const DRAG_THRESHOLD_PX = 5;
+let pointerDownPos: { x: number; y: number } | null = null;
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  pointerDownPos = { x: event.clientX, y: event.clientY };
+});
 renderer.domElement.addEventListener("click", (event) => {
   if (!menu.isLocationActive()) return;
+  if (pointerDownPos) {
+    const dx = event.clientX - pointerDownPos.x;
+    const dy = event.clientY - pointerDownPos.y;
+    pointerDownPos = null;
+    if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) return;
+  }
   const rect = renderer.domElement.getBoundingClientRect();
   ndc.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1;
   ndc.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
@@ -410,44 +474,65 @@ renderer.domElement.addEventListener("click", (event) => {
   pinLocation(lat, lon, "click");
 });
 
-// "Jump to eclipse" button: snap simulatedTime to T-minus-1-minute on the next upcoming
-// eclipse, set time-warp to 60× so the whole event plays out in a few minutes, and turn
-// the Eclipse layer on. Mainly a QA/demo affordance — useful for verifying the eclipse
-// path & shadow rendering without waiting weeks for the real event.
-debug.onJumpEclipse(() => {
-  if (!activeEclipse) {
-    console.warn("[earth-clock] no upcoming eclipse in the catalog");
-    return;
-  }
-  simulatedTime = activeEclipse.startUtc.getTime() - 60_000;
+/**
+ * Snap simulatedTime to T-1m of the given eclipse, dial warp to 60×, swap the eclipse
+ * layer over to that event's path of totality, turn the layer on, surface the Clock
+ * panel with its time-controls expanded, and highlight the selected row in the
+ * EclipsePanel. The whole event plays out in a few minutes. Called from the
+ * EclipsePanel's row clicks; also exposed via `window.__orrery.jumpToEclipse(id?)`.
+ */
+function jumpToEclipseEvent(event: EclipseEvent) {
+  // Hot-swap the loaded eclipse so the path-of-totality polyline and the per-frame
+  // shadow-interpolation (NASA centerline / Schlyter fallback) both target the event
+  // we're jumping into. Without this, only the startup-loaded eclipse ever had a
+  // visible path — jumping to 2024 or 2027 used to leave 2026's path on screen.
+  loadEclipse(event);
+  simulatedTime = event.startUtc.getTime() - 60_000;
   window.__orreryTimeWarp = 60;
   menu.setLayer("eclipse", true);
+  // Eclipse experience hinges on playing / pausing / scrubbing simulated time.
+  // Surface the Clock + its time-controls so the user doesn't have to discover
+  // the ⏱ icon mid-event. setLayer keeps the menu state + persisted prefs in sync.
+  // Row highlight is handled by loadEclipse() above.
+  menu.setLayer("clock", true);
+  clock.setControlsExpanded(true);
   console.log(
-    `[earth-clock] jumped to T-1m of ${activeEclipse.name} (peak ${activeEclipse.peakUtc.toISOString()}). ` +
+    `[earth-clock] jumped to T-1m of ${event.name} (peak ${event.peakUtc.toISOString()}). ` +
     `Set window.__orreryTimeWarp = 1 to stop the warp.`,
   );
-});
+}
 
-// "Find moon" button: re-position the camera along the moon's direction at 1.5x the moon's
-// distance, so both the moon (closer) and Earth (farther) sit in view. OrbitControls' target
-// stays at origin so subsequent orbiting works as usual.
-debug.onFindMoon(() => {
-  if (moonPos.lengthSq() < 0.01) return;
+/**
+ * Reposition the camera along the moon's direction at 1.5× the moon's distance so
+ * both the moon (closer) and Earth (farther) sit in view. Useful when the moon is
+ * off-screen and the user wants to see it. Exposed via `window.__orrery.findMoon()`.
+ */
+function findMoonInCamera() {
+  if (moonPos.lengthSq() < 0.01) {
+    console.warn("[orrery] findMoon: moon position not yet computed");
+    return;
+  }
   const dist = Math.min(moonPos.length() * 1.5, 199); // stay under maxDistance=200
   camera.position.copy(moonPos).normalize().multiplyScalar(dist);
   controls.target.set(0, 0, 0);
   controls.update();
   console.log(`[orrery] find moon: camera repositioned to ${dist.toFixed(1)} r along moon direction`);
-});
+}
 
 // The fixture cloud texture only renders through CloudLayer's true-color path (uMode=0),
-// so onUseTestData has to force the picker onto cloudsViirs — that mutex-collapses
-// whatever the user had selected. We stash the prior selection here so onUseLiveData can
+// so useTestData has to force the picker onto cloudsViirs — that mutex-collapses
+// whatever the user had selected. We stash the prior selection here so useLiveData can
 // put the picker back where it was instead of leaving the user on VIIRS (which may not
 // have any data loaded, in which case applyActiveCloudSource correctly hides the layer).
 let preFixtureCloudSource: ReturnType<typeof menu.activeCloudSource> = null;
 
-debug.onUseTestData(() => {
+/**
+ * Swap every live loader for synthetic fixtures (procedural cloud noise, fake aurora
+ * grid, known fire zones, demo storm grid). Lets us isolate "loader broken" from
+ * "renderer broken" without waiting on the network. Exposed via
+ * `window.__orrery.useTestData()`.
+ */
+function useTestData() {
   console.log("[orrery] debug: loading fixture data");
   preFixtureCloudSource = menu.activeCloudSource();
   const auroraGrid = debugAuroraGrid();
@@ -459,8 +544,8 @@ debug.onUseTestData(() => {
   const debugTex = debugCloudTexture();
   clouds.setTexture(debugTex);
   flatMap.setCloudTexture(debugTex);
-  // Force VIIRS active so the fixture (true-color path) is visible. Mutex collapses any
-  // prior source. onUseLiveData restores the original selection.
+  // Force VIIRS active so the fixture (true-color path) is visible. Mutex collapses
+  // any prior source. useLiveData() restores the original selection.
   menu.setLayer("cloudsViirs", true);
   menu.setLayer("aurora",      true);
   menu.setLayer("fires",       true);
@@ -469,27 +554,25 @@ debug.onUseTestData(() => {
   debug.info("aurora",     `fixture: ${auroraGrid.pointCount} pts in 6 bands ±55°…±80°`);
   debug.info("fires",      `fixture: ${fireGrid.detections.length} pts across 8 known fire zones`);
   debug.info("hurricanes", `fixture: ${stormGrid.storms.length} storms in every basin`);
-});
+}
 
-// Second click on the (now "Use live data") button: re-trigger the live loaders so the
-// fixtures get overwritten by fresh network data, restore the cloud source the user had
-// selected before fixtures were loaded, then re-apply that source to overwrite the
-// debug texture immediately.
-debug.onUseLiveData(() => {
+/**
+ * Re-trigger the live loaders so the fixtures get overwritten by fresh network
+ * data, restore the cloud source the user had selected before fixtures were loaded,
+ * then re-apply that source to overwrite the debug texture immediately. Exposed via
+ * `window.__orrery.useLiveData()`.
+ */
+function useLiveData() {
   console.log("[orrery] debug: restoring live data");
   loadClouds();
   loadAurora();
   loadFires();
   loadHurricanes();
-  // Step 1: restore prior source picker selection (mutex collapses whatever onUseTestData
-  // forced on).
   if (preFixtureCloudSource && preFixtureCloudSource !== menu.activeCloudSource()) {
     menu.setLayer(preFixtureCloudSource, true);
   }
-  // Step 2: push the right data into CloudLayer for the now-active source — or hide the
-  // layer if the active source has no data loaded (so the fixture texture doesn't linger).
   applyActiveCloudSource();
-});
+}
 
 // Fetch real GFS surface wind and hand it to the particles. Mock east-wind keeps running until
 // this resolves, so the scene is never blank. No auto-refresh yet (wind GRIB→JSON happens
@@ -861,7 +944,12 @@ function latLonToGeographic(latDeg: number, lonDeg: number, out = new THREE.Vect
   return out.set(cosLat * Math.cos(lon), Math.sin(lat), -cosLat * Math.sin(lon));
 }
 
-// Load the next upcoming eclipse from the catalog (if any) and set up its path of totality.
+// Currently-loaded eclipse + its path source. Mutable so the user can hop between
+// catalogued events from the EclipsePanel (▶ jump buttons) and / or the console helper
+// — each jump calls `loadEclipse(event)` which rebuilds the path-of-totality polyline
+// and reports the new entry into the data registry. Without this, only the eclipse
+// loaded at startup (the next upcoming one) ever showed a path on the globe, even when
+// simulatedTime was jumped onto a different event.
 //
 // Two paths here, chosen by whether we have NASA's published data for this event:
 //
@@ -874,16 +962,36 @@ function latLonToGeographic(latDeg: number, lonDeg: number, out = new THREE.Vect
 //     (future / historical / non-headline events). Accurate to ~1° angularly, which
 //     can be 30°+ on Earth's surface near totality — flagged as the precision bottleneck
 //     to fix with a Meeus lunar-theory upgrade (see PLAN.md, Phase A polish).
-const activeEclipse = nextEclipse(new Date());
-const activeNasaPath = activeEclipse ? getCataloguedEclipsePath(activeEclipse.id) : undefined;
-if (activeEclipse) {
+let activeEclipse: ReturnType<typeof nextEclipse> = null;
+let activeNasaPath: ReturnType<typeof getCataloguedEclipsePath> = undefined;
+
+function loadEclipse(event: EclipseEvent | null) {
+  activeEclipse = event;
+  activeNasaPath = event ? getCataloguedEclipsePath(event.id) : undefined;
+  // Keep the EclipsePanel's row-highlight in sync with the actually-loaded event.
+  // Covers both the startup load (next upcoming) and any later jump.
+  eclipsePanel.setSelected(event?.id ?? null);
+
+  if (!event) {
+    eclipseLayer.setPath([]);
+    dataRegistry.report("eclipse", {
+      source: "NASA eclipse catalog · bundled",
+      detail: "no upcoming eclipse in catalog",
+      bundled: true,
+    });
+    return;
+  }
+
   let geographicPath: THREE.Vector3[];
   let sourceLabel: string;
   if (activeNasaPath) {
     geographicPath = activeNasaPath.waypoints.map(wp => latLonToGeographic(wp.lat, wp.lon));
     sourceLabel = "NASA centerline";
   } else {
-    const samples = computePathOfTotality(activeEclipse.startUtc, activeEclipse.endUtc, 30);
+    // No catalogued path — fall back to Schlyter-based computation. Known to be wonky
+    // (~30° surface error at alignment), so if it returns an empty array the path just
+    // won't render and we surface a warning in the data registry.
+    const samples = computePathOfTotality(event.startUtc, event.endUtc, 30);
     geographicPath = samples.map(s => {
       const out = new THREE.Vector3();
       worldToGeographic(s.worldPoint, s.time, out);
@@ -892,24 +1000,28 @@ if (activeEclipse) {
     sourceLabel = "astronomical fallback (Schlyter)";
   }
   eclipseLayer.setPath(geographicPath);
-  const peakLocal = activeEclipse.peakUtc.toISOString().slice(0, 16) + "Z";
+  const peakLocal = event.peakUtc.toISOString().slice(0, 16) + "Z";
   console.log(
-    `[earth-clock] eclipse loaded: ${activeEclipse.name} · peak ${peakLocal} · ` +
-    `${geographicPath.length} path points · source: ${sourceLabel} · (${activeEclipse.region})`,
+    `[earth-clock] eclipse loaded: ${event.name} · peak ${peakLocal} · ` +
+    `${geographicPath.length} path points · source: ${sourceLabel} · (${event.region})`,
   );
-  dataRegistry.report("eclipse", {
-    source: activeNasaPath ? "NASA centerline · bundled" : "NASA eclipse catalog · bundled",
-    fetched: new Date(),
-    detail: `${activeEclipse.name} · ${peakLocal}`,
-    bundled: true,
-  });
-} else {
-  dataRegistry.report("eclipse", {
-    source: "NASA eclipse catalog · bundled",
-    detail: "no upcoming eclipse in catalog",
-    bundled: true,
-  });
+  const sourceLine = activeNasaPath ? "NASA centerline · bundled" : "NASA eclipse catalog · bundled";
+  if (geographicPath.length === 0) {
+    dataRegistry.report("eclipse", {
+      source: sourceLine,
+      error: `${event.name} · no path samples (runtime lunar model below threshold)`,
+    });
+  } else {
+    dataRegistry.report("eclipse", {
+      source: sourceLine,
+      fetched: new Date(),
+      detail: `${event.name} · ${peakLocal}`,
+      bundled: true,
+    });
+  }
 }
+
+loadEclipse(nextEclipse(new Date()));
 
 // Per-frame: feed the live umbra centre to the eclipse layer in the geographic frame.
 // The layer then applies the same daily-rotation we apply below, putting it back in world.
@@ -1068,6 +1180,27 @@ loadClouds();
 function updateAstro() {
   const now = new Date(simulatedTime);
   sunDirectionWorld(now, sunDir);
+  moonPositionWorld(now, moonPos);
+  // ── Axial-tilt unification ────────────────────────────────────────────────
+  // sunDirectionWorld and moonPositionWorld return vectors in the equatorial
+  // frame (+Y = Earth's spin axis). Every Earth-anchored layer in the scene
+  // (Globe, Coastlines, CloudLayer, EclipseLayer, FireLayer, HurricaneLayer,
+  // AuroraLayer, Trails, Particles, OverlayLayer, LightningLayer) Z-rotates
+  // its mesh by AXIAL_TILT, putting their world-frame content into a
+  // "tilted equatorial" frame. To stay consistent with that frame — so the
+  // 3D day/night terminator, the sun/moon beams, the eclipse path, and any
+  // pin dropped at a geographic (lat, lon) all agree on where solar noon is
+  // — we apply the same Z-rotation to sunDir and moonPos here. The visible
+  // symptom of NOT doing this was a ~16° offset between the sun beam direction
+  // and the location pin dropped at the sub-solar point (LocationPanel "sun
+  // beam direction" button), reported QA v0.1.x.
+  //
+  // The TRUE geographic sub-solar (lat = δ, lon = α − GMST) is unchanged —
+  // it's a property of Earth's rotation alone — and is still computed below
+  // for the flat map and the panel readouts.
+  sunDir.applyAxisAngle(TILT_Z_AXIS, AXIAL_TILT_RAD);
+  moonPos.applyAxisAngle(TILT_Z_AXIS, AXIAL_TILT_RAD);
+
   // Move the directional light to sit along the sun direction (50 units away keeps it well outside the scene)
   sun.position.copy(sunDir).multiplyScalar(50);
   // Visible sun body: placed at the true geometric position along sunDir × 1 AU.
@@ -1087,7 +1220,6 @@ function updateAstro() {
   const subLunLon = wrapLon(lun.ra * RAD - gmstDeg);
   flatMap.setSubSolar(subSolLat, subSolLon);
 
-  moonPositionWorld(now, moonPos);
   moon.setPosition(moonPos);
 
   // Cache the latest sub-solar / sub-lunar coords for the LocationPanel beam-direction
@@ -1105,15 +1237,18 @@ function updateAstro() {
 
   // Moon phase for the flat-map disc. Illuminated fraction = (1 − cos(elongation))/2
   // where elongation is the angle between sun and moon as seen from Earth. Sign of the
-  // Y-component of (sunDir × moonUnit) tells us waxing/waning. Empirically the cross-
-  // product's Y is +ve while waning and −ve while waxing in this scene (consequence of
-  // our world frame's −Z = east convention reversing the handedness vs. the textbook
-  // ecliptic-north derivation), so waxing is `_waxCross.y < 0`.
+  // Y-component of (sunDir × moonUnit) tells us waxing/waning:
+  //   sun  ≈ (1, 0, 0) in the world frame
+  //   moon ≈ (cos Δ, 0, −sin Δ) when east of the sun (waxing — Δ is the eastward
+  //          elongation, RA_moon > RA_sun, and east is −Z in our convention)
+  //   sun × moon = (0, sin Δ, 0)  →  Y > 0 ⇔ waxing.
+  // The pre-fix code had this inverted (waxing was `y < 0`), so the flat-map disc
+  // was showing waning when the moon was actually waxing and vice versa.
   _moonUnit.copy(moonPos).normalize();
   const cosElongation = THREE.MathUtils.clamp(sunDir.dot(_moonUnit), -1, 1);
   const illumFraction = (1 - cosElongation) * 0.5;
   _waxCross.crossVectors(sunDir, _moonUnit);
-  radiusVectors.setMoonPhase(illumFraction, _waxCross.y < 0);
+  radiusVectors.setMoonPhase(illumFraction, _waxCross.y > 0);
 
   // Particles, coastlines, clouds, fires, and hurricanes share Earth's rotation so they stay glued to the ground frame
   const earthY = earthRotationY(now);
@@ -1187,46 +1322,9 @@ function updateAstro() {
   aurora.setSunDirection(sunDir);
 }
 
-// Throttle the debug astro readout to ~4 Hz — no need to re-render the panel every frame.
-let nextAstroUpdate = 0;
-const moonNdc = new THREE.Vector3();
-function updateDebugAstro(now: Date) {
-  const ts = performance.now();
-  if (ts < nextAstroUpdate) return;
-  nextAstroUpdate = ts + 250;
-  const sol = solarPosition(now);
-  const lun = lunarPosition(now);
-  // Sub-solar / sub-lunar lat = declination. Sub-solar lon = RA − GMST (each in degrees).
-  const RAD = 180 / Math.PI;
-  const gmstDeg = gmst(now) * RAD;
-  const subSolarLat = sol.dec * RAD;
-  const subSolarLon = wrapLon(sol.ra * RAD - gmstDeg);
-  const subLunarLat = lun.dec * RAD;
-  const subLunarLon = wrapLon(lun.ra * RAD - gmstDeg);
-  const camDist = camera.position.length();
-  // Project the moon onto normalised device coordinates (−1..+1) to see whether it's in
-  // the current viewport. If off-screen, the button repositions the camera.
-  moonNdc.copy(moonPos).project(camera);
-  const onScreen =
-    Math.abs(moonNdc.x) < 1 && Math.abs(moonNdc.y) < 1 && moonNdc.z > -1 && moonNdc.z < 1;
-  const moonStatus = onScreen
-    ? `on-screen @ (${moonNdc.x.toFixed(2)}, ${moonNdc.y.toFixed(2)})`
-    : `off-screen — use Find moon`;
-  debug.setAstro(
-    `time     ${now.toISOString().slice(0, 19)}Z\n` +
-    `sub-sol  ${fmt(subSolarLat)}, ${fmt(subSolarLon)}\n` +
-    `sub-lun  ${fmt(subLunarLat)}, ${fmt(subLunarLon)}  d=${lun.distance.toFixed(1)} r\n` +
-    `moon     ${moonStatus}\n` +
-    `camera   ${camDist.toFixed(2)} r from origin`
-  );
-}
 function wrapLon(d: number): number {
   let x = ((d + 180) % 360 + 360) % 360 - 180;
   return x;
-}
-function fmt(deg: number): string {
-  const s = deg >= 0 ? "+" : "−";
-  return `${s}${Math.abs(deg).toFixed(1)}°`;
 }
 
 function animate(t: number) {
@@ -1237,7 +1335,6 @@ function animate(t: number) {
 
   const now = new Date(simulatedTime);
   updateAstro();
-  updateDebugAstro(now);
   clock.setTime(now);
   locationPanel.setNow(now);
   // Use real wall-clock dt for particles (independent of simulated-time warp;

@@ -159,6 +159,21 @@ export class Clock {
     this.root.classList.toggle("hidden", !visible);
   }
 
+  /**
+   * Force the time-control row (⏪ ⏯ ⏩ ↺ × N) open or closed from outside the panel.
+   *
+   * Used when the user picks a catalogued eclipse: the eclipse experience hinges on
+   * playing and scrubbing simulated time, so we surface the controls immediately
+   * rather than make the user discover the ⏱ icon. Persists the choice via the
+   * usual localStorage key so the controls stay open on the next visit too.
+   */
+  setControlsExpanded(expanded: boolean) {
+    if (this.expanded === expanded) return;
+    this.expanded = expanded;
+    saveExpanded(this.expanded);
+    this.refreshExpandState();
+  }
+
   private refreshExpandState() {
     this.controlsEl.classList.toggle("hidden", !this.expanded);
     this.expandBtn.classList.toggle("active",   this.expanded);

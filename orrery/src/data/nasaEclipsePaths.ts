@@ -85,6 +85,36 @@ export const NASA_ECLIPSE_PATHS: Record<string, CataloguedEclipsePath> = {
     ],
   },
 
+  // Australia & New Zealand total solar eclipse, 2028-07-22. Path enters from the
+  // southern Indian Ocean, sweeps NE to make landfall in the Kimberley (greatest
+  // 02:56 UTC near 15.7°S, 126.7°E — the deepest point of the eclipse), then
+  // curves SE across Western Australia, the Northern Territory, Queensland, and
+  // NSW, passing directly over Sydney at ~04:00 UTC. Continues across the Tasman
+  // Sea, brushes the South Island of New Zealand (Dunedin area), and exits over
+  // the South Pacific. Magnitude 1.056, totality 5 min 09 s at greatest. Sydney
+  // sees ~3 min 50 s of totality — the first total eclipse on Sydney since 1857.
+  //
+  // Waypoint quality: hand-typed from NASA SVS / Espenak centerline maps; within
+  // ~1-2° of the published path. Replace with denser data when SVS dataset is
+  // imported wholesale (see footer recipe).
+  "20280722": {
+    id: "20280722",
+    source: "NASA GSFC — Espenak/Meeus SE2028Jul22T predictions (approximate)",
+    waypoints: [
+      { utc: new Date("2028-07-22T01:14:00Z"), lat: -52,   lon:  95,   magnitude: 1.00 }, // U1 (S Indian Ocean)
+      { utc: new Date("2028-07-22T01:30:00Z"), lat: -45,   lon: 100,   magnitude: 1.02 },
+      { utc: new Date("2028-07-22T02:00:00Z"), lat: -32,   lon: 110,   magnitude: 1.04 },
+      { utc: new Date("2028-07-22T02:30:00Z"), lat: -22,   lon: 119,   magnitude: 1.05 }, // approaching WA
+      { utc: new Date("2028-07-22T02:56:40Z"), lat: -15.7, lon: 126.7, magnitude: 1.056 }, // greatest (Kimberley)
+      { utc: new Date("2028-07-22T03:00:00Z"), lat: -16,   lon: 128,   magnitude: 1.056 },
+      { utc: new Date("2028-07-22T03:30:00Z"), lat: -22,   lon: 138,   magnitude: 1.05 }, // central Australia
+      { utc: new Date("2028-07-22T04:00:00Z"), lat: -33.9, lon: 151.2, magnitude: 1.04 }, // Sydney
+      { utc: new Date("2028-07-22T04:15:00Z"), lat: -41,   lon: 162,   magnitude: 1.03 },
+      { utc: new Date("2028-07-22T04:30:00Z"), lat: -47,   lon: 174,   magnitude: 1.01 }, // brushing NZ South Island
+      { utc: new Date("2028-07-22T04:39:00Z"), lat: -49,   lon: 180,   magnitude: 1.00 }, // U4 (S Pacific)
+    ],
+  },
+
   // North American total solar eclipse, 2024-04-08. Historical — kept so QA can
   // jump to a known eclipse without time-warping to 2026. Path: Mexico → Texas →
   // Indianapolis → eastern Canada. Greatest at 18:18 UTC, magnitude 1.0566.
@@ -92,15 +122,23 @@ export const NASA_ECLIPSE_PATHS: Record<string, CataloguedEclipsePath> = {
     id: "20240408",
     source: "NASA GSFC — Espenak/Meeus SE2024Apr08T predictions",
     waypoints: [
-      { utc: new Date("2024-04-08T16:39:00Z"), lat:  8,   lon: -149,  magnitude: 1.00 }, // U1 (Pacific)
-      { utc: new Date("2024-04-08T17:30:00Z"), lat: 20,   lon: -110,  magnitude: 1.04 }, // approaching Mexico
-      { utc: new Date("2024-04-08T18:00:00Z"), lat: 26,   lon: -100,  magnitude: 1.055 }, // Mazatlán
-      { utc: new Date("2024-04-08T18:18:00Z"), lat: 25.3, lon:  -104.1, magnitude: 1.0566 }, // greatest
-      { utc: new Date("2024-04-08T18:30:00Z"), lat: 30,   lon:  -97,  magnitude: 1.055 }, // Texas (Austin/Dallas)
-      { utc: new Date("2024-04-08T19:00:00Z"), lat: 38,   lon:  -88,  magnitude: 1.05 }, // Illinois/Indiana
-      { utc: new Date("2024-04-08T19:15:00Z"), lat: 42,   lon:  -80,  magnitude: 1.045 }, // Ohio/Lake Erie
-      { utc: new Date("2024-04-08T19:30:00Z"), lat: 46,   lon:  -70,  magnitude: 1.04 }, // Maine / NB
-      { utc: new Date("2024-04-08T19:55:00Z"), lat: 52,   lon:  -50,  magnitude: 1.00 }, // U4 (Newfoundland)
+      // Path travels NE throughout; lat increases monotonically and lon becomes
+      // monotonically less negative. A prior version had Mazatlán @ 18:00 placed
+      // *past* greatest @ 18:18, folding the line back on itself near central Mexico.
+      { utc: new Date("2024-04-08T16:39:00Z"), lat:  8.0, lon: -149.0,  magnitude: 1.00  }, // U1 (Pacific)
+      { utc: new Date("2024-04-08T17:30:00Z"), lat: 15.0, lon: -129.0,  magnitude: 1.03  },
+      { utc: new Date("2024-04-08T18:00:00Z"), lat: 19.0, lon: -116.0,  magnitude: 1.05  }, // SW of Baja
+      { utc: new Date("2024-04-08T18:10:00Z"), lat: 23.2, lon: -106.4,  magnitude: 1.056 }, // Mazatlán
+      { utc: new Date("2024-04-08T18:17:18Z"), lat: 25.3, lon: -104.1,  magnitude: 1.0566 }, // greatest (Sierra Madre)
+      { utc: new Date("2024-04-08T18:30:00Z"), lat: 29.0, lon: -100.7,  magnitude: 1.056 }, // Eagle Pass / Del Rio
+      { utc: new Date("2024-04-08T18:35:00Z"), lat: 30.3, lon:  -97.7,  magnitude: 1.055 }, // Austin
+      { utc: new Date("2024-04-08T18:50:00Z"), lat: 35.0, lon:  -93.5,  magnitude: 1.054 }, // Arkansas
+      { utc: new Date("2024-04-08T19:00:00Z"), lat: 38.0, lon:  -88.5,  magnitude: 1.052 }, // S Illinois (Carbondale)
+      { utc: new Date("2024-04-08T19:05:00Z"), lat: 39.8, lon:  -86.2,  magnitude: 1.050 }, // Indianapolis
+      { utc: new Date("2024-04-08T19:15:00Z"), lat: 42.5, lon:  -80.0,  magnitude: 1.045 }, // Cleveland / Lake Erie
+      { utc: new Date("2024-04-08T19:25:00Z"), lat: 45.5, lon:  -73.0,  magnitude: 1.04  }, // Montreal
+      { utc: new Date("2024-04-08T19:35:00Z"), lat: 48.0, lon:  -66.0,  magnitude: 1.025 }, // New Brunswick / Gaspé
+      { utc: new Date("2024-04-08T19:55:00Z"), lat: 52.0, lon:  -50.0,  magnitude: 1.00  }, // U4 (Newfoundland coast)
     ],
   },
 };

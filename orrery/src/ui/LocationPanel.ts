@@ -1,29 +1,49 @@
 /**
- * Top-left floating panel showing details about a pinned location.
+ * Bottom-right floating panel for picking a location to pin on Earth.
  *
- * v1 shows: coordinates (lat / lon), and local solar time at the pinned longitude.
- * v2 plan: wind speed/direction from the GFS grid, distance to nearest fire/storm.
+ * Three rows, all live, all clickable as destinations:
  *
- * Visibility is controlled by the menu's "Location" toggle. When the user clicks the
- * canvas with Location enabled, main.ts updates the pin and calls `setLocation()` here.
+ *   🟢 Current location — where the pin is right now: place name (reverse-geocoded),
+ *      coordinates, and true solar time at the pinned longitude. Clicking the row
+ *      itself is a no-op; the row is set via globe / map clicks or "use my location".
+ *      Highlighted when the pin's source is click or geolocation.
+ *
+ *   ☀️  Sub-solar — live geographic point where the sun is currently overhead.
+ *      Click to drop the pin there. Highlighted when the pin's source is the sun.
+ *
+ *   🌙 Sub-lunar — live geographic point where the moon is currently overhead.
+ *      Click to drop the pin there. Highlighted when the pin's source is the moon.
+ *
+ * Plus a "use my location" button that pipes the browser geolocation API into the
+ * pin (same flow as a globe click).
+ *
+ * Panel visibility is controlled by the menu's "Location" toggle; main.ts wires
+ * the row callbacks. Sat in the top-left until v0.1.2; moved bottom-right then so
+ * it stops overlapping the Eclipse panel.
  */
+export type PinSource = "click" | "geolocation" | "sun" | "moon";
+
 export class LocationPanel {
   private readonly root: HTMLElement;
   private readonly placeEl: HTMLElement;
   private readonly coordsEl: HTMLElement;
   private readonly solarEl: HTMLElement;
-  private readonly hintEl: HTMLElement;
-  private readonly detailEl: HTMLElement;
-  private readonly geoButton: HTMLButtonElement;
-  private readonly geoStatus: HTMLElement;
+  private readonly currentRowEl: HTMLElement;
+  private readonly sunRowEl: HTMLElement;
+  private readonly moonRowEl: HTMLElement;
+  private readonly sunCoordsEl: HTMLElement;
+  private readonly moonCoordsEl: HTMLElement;
+  private readonly geoButton: HTMLButtonElement | null;
+  private readonly geoStatus: HTMLElement | null;
   private lat: number | null = null;
   private lon: number | null = null;
+  private source: PinSource | null = null;
   private clearHandler: (() => void) | null = null;
   private geoHandler: ((lat: number, lon: number) => void) | null = null;
   private sunBeamHandler: (() => void) | null = null;
   private moonBeamHandler: (() => void) | null = null;
-  private readonly sunBeamReadoutEl: HTMLElement;
-  private readonly moonBeamReadoutEl: HTMLElement;
+  private lastSunStr = "";
+  private lastMoonStr = "";
 
   constructor(parent: HTMLElement) {
     injectStyles();
@@ -33,90 +53,121 @@ export class LocationPanel {
     this.root = document.createElement("div");
     this.root.id = "orrery-location";
     this.root.classList.add("hidden");
-    // Panel layout: three independent blocks.
-    //   1. detail  — current pin (place/coords/solar). Visible only when a pin exists.
-    //   2. no-pin  — short hint shown only when nothing is pinned yet.
-    //   3. actions — buttons + live sub-solar / sub-lunar readouts. ALWAYS visible so
-    //                the user can switch between locations without losing the ability
-    //                to read the current beam coordinates. All click sources (globe,
-    //                map, geolocation, sun beam, moon beam) flow through pinLocation()
-    //                in main.ts → setLocation() here, so they all land identically.
     this.root.innerHTML = `
-      <div class="orrery-loc-row">
+      <div class="orrery-loc-titlerow">
         <span class="orrery-loc-title">location</span>
         <span class="orrery-loc-clear" id="orrery-loc-clear" title="Close panel">✕</span>
       </div>
-      <div class="orrery-loc-detail" id="orrery-loc-detail" style="display:none">
-        <div><span class="orrery-loc-label">place</span>  <span id="orrery-loc-place">—</span></div>
-        <div><span class="orrery-loc-label">coords</span> <span id="orrery-loc-coords">—</span></div>
-        <div><span class="orrery-loc-label">solar</span>  <span id="orrery-loc-solar">—</span></div>
+
+      <div class="orrery-loc-item current" id="orrery-loc-row-current" data-source="click">
+        <div class="orrery-loc-line1">
+          <span class="orrery-loc-icon" aria-hidden="true">📍</span>
+          <span class="orrery-loc-name" id="orrery-loc-place">click the globe to drop a pin</span>
+        </div>
+        <div class="orrery-loc-line2">
+          <span class="orrery-loc-coords" id="orrery-loc-coords">—</span>
+        </div>
+        <div class="orrery-loc-line3">
+          <span class="orrery-loc-solar-label">true solar time</span>
+          <span class="orrery-loc-solar-value" id="orrery-loc-solar">—</span>
+        </div>
       </div>
-      <div class="orrery-loc-no-pin" id="orrery-loc-hint">
-        click the globe, or pick a destination below
+
+      <div class="orrery-loc-item sun" id="orrery-loc-row-sun" role="button" tabindex="0"
+           title="Drop the pin where the sun is directly overhead right now">
+        <div class="orrery-loc-line1">
+          <span class="orrery-loc-icon" aria-hidden="true">☀️</span>
+          <span class="orrery-loc-name">sub-solar</span>
+          <span class="orrery-loc-sublabel">sun overhead</span>
+        </div>
+        <div class="orrery-loc-line2">
+          <span class="orrery-loc-coords" id="orrery-loc-sun-coords">—</span>
+        </div>
       </div>
-      <div class="orrery-loc-actions">
-        ${geoAvailable ? `
-          <button class="orrery-loc-geo" id="orrery-loc-geo">use my location</button>
-          <div class="orrery-loc-geostatus" id="orrery-loc-geostatus"></div>
-        ` : ""}
-        <button class="orrery-loc-geo" id="orrery-loc-sunbeam"  title="Pin where the sun is directly overhead right now">sun beam direction</button>
-        <div class="orrery-loc-beam-readout" id="orrery-loc-sunbeam-rd">—</div>
-        <button class="orrery-loc-geo" id="orrery-loc-moonbeam" title="Pin where the moon is directly overhead right now">moon beam direction</button>
-        <div class="orrery-loc-beam-readout" id="orrery-loc-moonbeam-rd">—</div>
+
+      <div class="orrery-loc-item moon" id="orrery-loc-row-moon" role="button" tabindex="0"
+           title="Drop the pin where the moon is directly overhead right now">
+        <div class="orrery-loc-line1">
+          <span class="orrery-loc-icon" aria-hidden="true">🌙</span>
+          <span class="orrery-loc-name">sub-lunar</span>
+          <span class="orrery-loc-sublabel">moon overhead</span>
+        </div>
+        <div class="orrery-loc-line2">
+          <span class="orrery-loc-coords" id="orrery-loc-moon-coords">—</span>
+        </div>
       </div>
+
+      ${geoAvailable ? `
+        <button class="orrery-loc-geo" id="orrery-loc-geo">use my location</button>
+        <div class="orrery-loc-geostatus" id="orrery-loc-geostatus"></div>
+      ` : ""}
     `;
     parent.appendChild(this.root);
 
-    this.placeEl  = this.root.querySelector("#orrery-loc-place")  as HTMLElement;
-    this.coordsEl = this.root.querySelector("#orrery-loc-coords") as HTMLElement;
-    this.solarEl  = this.root.querySelector("#orrery-loc-solar")  as HTMLElement;
-    this.hintEl   = this.root.querySelector("#orrery-loc-hint")   as HTMLElement;
-    this.detailEl = this.root.querySelector("#orrery-loc-detail") as HTMLElement;
-    this.geoButton = this.root.querySelector("#orrery-loc-geo")       as HTMLButtonElement;
-    this.geoStatus = this.root.querySelector("#orrery-loc-geostatus") as HTMLElement;
-    this.sunBeamReadoutEl  = this.root.querySelector("#orrery-loc-sunbeam-rd")  as HTMLElement;
-    this.moonBeamReadoutEl = this.root.querySelector("#orrery-loc-moonbeam-rd") as HTMLElement;
-    const clearEl = this.root.querySelector("#orrery-loc-clear")  as HTMLElement;
+    this.placeEl     = this.root.querySelector("#orrery-loc-place")  as HTMLElement;
+    this.coordsEl    = this.root.querySelector("#orrery-loc-coords") as HTMLElement;
+    this.solarEl     = this.root.querySelector("#orrery-loc-solar")  as HTMLElement;
+    this.currentRowEl = this.root.querySelector("#orrery-loc-row-current") as HTMLElement;
+    this.sunRowEl    = this.root.querySelector("#orrery-loc-row-sun")  as HTMLElement;
+    this.moonRowEl   = this.root.querySelector("#orrery-loc-row-moon") as HTMLElement;
+    this.sunCoordsEl  = this.root.querySelector("#orrery-loc-sun-coords")  as HTMLElement;
+    this.moonCoordsEl = this.root.querySelector("#orrery-loc-moon-coords") as HTMLElement;
+    this.geoButton = this.root.querySelector("#orrery-loc-geo")       as HTMLButtonElement | null;
+    this.geoStatus = this.root.querySelector("#orrery-loc-geostatus") as HTMLElement       | null;
+
+    const clearEl = this.root.querySelector("#orrery-loc-clear") as HTMLElement;
     clearEl.addEventListener("click", () => this.clearHandler?.());
 
-    if (this.geoButton) {
-      this.geoButton.addEventListener("click", () => this.requestGeolocation());
-    }
+    this.geoButton?.addEventListener("click", () => this.requestGeolocation());
 
-    const sunBeamBtn  = this.root.querySelector("#orrery-loc-sunbeam")  as HTMLButtonElement;
-    const moonBeamBtn = this.root.querySelector("#orrery-loc-moonbeam") as HTMLButtonElement;
-    sunBeamBtn.addEventListener("click",  () => this.sunBeamHandler?.());
-    moonBeamBtn.addEventListener("click", () => this.moonBeamHandler?.());
+    // Sun + moon rows are full-row click targets. Enter/Space activates them via
+    // the role="button" + tabindex attributes set on the markup.
+    const activate = (fn: () => void) => (ev: KeyboardEvent) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(); }
+    };
+    this.sunRowEl.addEventListener("click",   () => this.sunBeamHandler?.());
+    this.sunRowEl.addEventListener("keydown", activate(() => this.sunBeamHandler?.()));
+    this.moonRowEl.addEventListener("click",  () => this.moonBeamHandler?.());
+    this.moonRowEl.addEventListener("keydown", activate(() => this.moonBeamHandler?.()));
   }
 
-  /** Wire the "sun beam direction" button — fires when clicked. main.ts hooks this to
-   *  drop the location pin at the current sub-solar (lat, lon). */
+  /** Hook for the sub-solar row click. main.ts pins at the current sub-solar (lat, lon). */
   onSunBeam(fn: () => void)  { this.sunBeamHandler  = fn; }
-  /** Wire the "moon beam direction" button — fires when clicked. main.ts hooks this to
-   *  drop the location pin at the current sub-lunar (lat, lon). */
+  /** Hook for the sub-lunar row click. main.ts pins at the current sub-lunar (lat, lon). */
   onMoonBeam(fn: () => void) { this.moonBeamHandler = fn; }
+  /** Hook for the ✕ button — main.ts wires this to close the panel via the menu toggle. */
+  onClear(fn: () => void)    { this.clearHandler    = fn; }
+  /** Hook for the "use my location" button — fired with (lat, lon) from the browser API. */
+  onGeolocate(fn: (lat: number, lon: number) => void) { this.geoHandler = fn; }
 
-  /** Update the live sub-solar / sub-lunar coords shown under the two beam-direction
-   *  buttons. Called every frame from main.ts; cheap string comparison avoids DOM thrash. */
+  /**
+   * Update the live sub-solar / sub-lunar coords. Called every frame from main.ts;
+   * cached string comparison avoids DOM thrash.
+   */
   setBeamCoords(subSolar: { lat: number; lon: number }, subLunar: { lat: number; lon: number }) {
-    const sunStr = `${fmtLat(subSolar.lat)}, ${fmtLon(subSolar.lon)}`;
+    const sunStr  = `${fmtLat(subSolar.lat)}, ${fmtLon(subSolar.lon)}`;
     const moonStr = `${fmtLat(subLunar.lat)}, ${fmtLon(subLunar.lon)}`;
-    if (this.sunBeamReadoutEl.textContent  !== sunStr)  this.sunBeamReadoutEl.textContent  = sunStr;
-    if (this.moonBeamReadoutEl.textContent !== moonStr) this.moonBeamReadoutEl.textContent = moonStr;
+    if (sunStr  !== this.lastSunStr)  { this.sunCoordsEl.textContent  = sunStr;  this.lastSunStr  = sunStr; }
+    if (moonStr !== this.lastMoonStr) { this.moonCoordsEl.textContent = moonStr; this.lastMoonStr = moonStr; }
   }
 
   setVisible(visible: boolean) {
     this.root.classList.toggle("hidden", !visible);
   }
 
-  /** Called by main.ts when the user clicks a location. */
-  setLocation(latDeg: number, lonDeg: number) {
+  /**
+   * Called by main.ts after a pin is set. `source` determines which row gets the
+   * "selected" highlight: a globe/map click or geolocation lights up the current-
+   * location row; a sub-solar pin lights up the sun row; sub-lunar pin lights up
+   * the moon row.
+   */
+  setLocation(latDeg: number, lonDeg: number, source: PinSource) {
     this.lat = latDeg;
     this.lon = lonDeg;
-    this.hintEl.style.display   = "none";
-    this.detailEl.style.display = "block";
+    this.source = source;
     this.coordsEl.textContent = `${fmtLat(latDeg)}, ${fmtLon(lonDeg)}`;
     this.placeEl.textContent  = "looking up…";
+    this.refreshSelection();
   }
 
   /** Update the place-name line. Pass null to show "—" (geocoder threw or rate-limited). */
@@ -125,8 +176,10 @@ export class LocationPanel {
   }
 
   /**
-   * Update the "solar time at pin" string. Called from the animate loop; throttled internally
-   * via cached string comparison. Solar time = UTC + longitude / 15 (degrees per hour).
+   * Update the "true solar time at pin" string. Called from the animate loop;
+   * throttled internally via cached string comparison. True solar time = UTC +
+   * longitude / 15 — wall-clock time at the local meridian, independent of
+   * political timezone boundaries.
    */
   setNow(now: Date) {
     if (this.lat === null || this.lon === null) return;
@@ -138,41 +191,40 @@ export class LocationPanel {
     const h = Math.floor(solarHours);
     const m = Math.floor((solarHours - h) * 60);
     const s = Math.floor((((solarHours - h) * 60) - m) * 60);
-    const next = `${pad(h)}:${pad(m)}:${pad(s)} solar`;
+    const next = `${pad(h)}:${pad(m)}:${pad(s)}`;
     if (this.solarEl.textContent !== next) this.solarEl.textContent = next;
   }
 
-  /** Hook for the ✕ button. main.ts wires this to hide the pin + reset the panel state. */
-  onClear(fn: () => void) {
-    this.clearHandler = fn;
-  }
-
-  /** Hook for the "use my location" button. Called with (lat, lon) from the browser API. */
-  onGeolocate(fn: (lat: number, lon: number) => void) {
-    this.geoHandler = fn;
-  }
-
-  /** Reset to the "click the globe" hint state — used by main.ts after onClear. */
+  /** Reset to the "click the globe" state — used by main.ts after onClear. */
   reset() {
     this.lat = this.lon = null;
-    this.hintEl.style.display   = "block";
-    this.detailEl.style.display = "none";
+    this.source = null;
+    this.placeEl.textContent  = "click the globe to drop a pin";
+    this.coordsEl.textContent = "—";
+    this.solarEl.textContent  = "—";
     if (this.geoStatus) this.geoStatus.textContent = "";
+    this.refreshSelection();
+  }
+
+  private refreshSelection() {
+    this.currentRowEl.classList.toggle("selected", this.source === "click" || this.source === "geolocation");
+    this.sunRowEl    .classList.toggle("selected", this.source === "sun");
+    this.moonRowEl   .classList.toggle("selected", this.source === "moon");
   }
 
   private requestGeolocation() {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation || !this.geoButton || !this.geoStatus) return;
     this.geoButton.disabled = true;
     this.geoStatus.textContent = "asking browser…";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        this.geoButton.disabled = false;
-        this.geoStatus.textContent = "";
+        this.geoButton!.disabled = false;
+        this.geoStatus!.textContent = "";
         this.geoHandler?.(pos.coords.latitude, pos.coords.longitude);
       },
       (err) => {
-        this.geoButton.disabled = false;
-        this.geoStatus.textContent = err.code === err.PERMISSION_DENIED
+        this.geoButton!.disabled = false;
+        this.geoStatus!.textContent = err.code === err.PERMISSION_DENIED
           ? "permission denied"
           : err.code === err.POSITION_UNAVAILABLE
           ? "position unavailable"
@@ -200,59 +252,102 @@ let stylesInjected = false;
 function injectStyles() {
   if (stylesInjected) return;
   stylesInjected = true;
+  // Each row has a left-border accent in a row-specific colour (green pin / amber sun
+  // / silver moon). When `.selected`, the background and border darken in that hue so
+  // the user can tell at a glance which destination the pin currently came from.
   const css = `
-    /* Sits below the top-left Clock (32 px time + 12 px meta + padding ≈ 80 px tall) so
-       both can occupy the top-left column without overlap. If the user disables Clock
-       there's a small gap above this panel — acceptable for a v1; a future layout pass
-       can put both into a shared flex column. */
     #orrery-location {
-      position: fixed; top: 96px; left: 16px;
+      position: fixed; right: 16px; bottom: 16px;
       background: rgba(5, 10, 30, 0.82);
       color: #cfd6e4;
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 12px; line-height: 1.6;
+      font-size: 12px; line-height: 1.45;
       padding: 10px 14px; border-radius: 6px;
-      min-width: 220px;
+      min-width: 240px;
+      max-width: 300px;
       z-index: 10;
       pointer-events: all;
       user-select: text;
     }
     #orrery-location.hidden { display: none; }
-    .orrery-loc-row {
+    .orrery-loc-titlerow {
       display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 6px;
     }
     .orrery-loc-title {
-      color: #6e7a90; letter-spacing: 0.1em;
-      text-transform: uppercase;
+      color: #6e7a90; letter-spacing: 0.1em; text-transform: uppercase;
       font-size: 11px;
-      margin-bottom: 4px;
     }
     .orrery-loc-clear {
-      color: #6e7a90;
-      cursor: pointer;
+      color: #6e7a90; cursor: pointer; margin-left: 1em;
       transition: color 125ms ease;
-      margin-left: 1em;
     }
     .orrery-loc-clear:hover { color: #ff7a7a; }
-    .orrery-loc-hint   { color: #8a93a7; font-size: 12px; }
-    /* Short single-line hint shown only when nothing is pinned yet. Subtler than
-       the action buttons so it doesn't distract once the user has pinned anything. */
-    .orrery-loc-no-pin {
-      color: #6e7a90; font-size: 11px; font-style: italic;
-      margin: 4px 0 6px 0; text-align: center;
+
+    .orrery-loc-item {
+      padding: 6px 8px;
+      border-radius: 4px;
+      border-left: 3px solid transparent;
+      background: rgba(255,255,255,0.02);
+      margin-bottom: 4px;
+      transition: background 125ms ease, border-color 125ms ease;
     }
-    /* Container for the buttons + live readouts. Always visible regardless of pin state. */
-    .orrery-loc-actions {
-      margin-top: 8px;
-      border-top: 1px solid rgba(255,255,255,0.06);
-      padding-top: 6px;
+    .orrery-loc-item.current { border-left-color: rgba(110, 200, 120, 0.45); }
+    .orrery-loc-item.sun     { border-left-color: rgba(255, 200, 60, 0.45); cursor: pointer; }
+    .orrery-loc-item.moon    { border-left-color: rgba(200, 215, 235, 0.45); cursor: pointer; }
+    .orrery-loc-item.sun:hover,
+    .orrery-loc-item.moon:hover { background: rgba(255,255,255,0.07); }
+    .orrery-loc-item.sun:focus-visible,
+    .orrery-loc-item.moon:focus-visible {
+      outline: 1px solid rgba(226, 180, 46, 0.5); outline-offset: 1px;
     }
-    .orrery-loc-or     {
-      color: #555c6b; text-align: center; font-size: 11px;
-      margin: 6px 0 4px 0; letter-spacing: 0.06em;
+    /* Selected highlights — strong tint in the row-specific colour. */
+    .orrery-loc-item.current.selected {
+      background: rgba(110, 200, 120, 0.16);
+      border-left-color: #6dd58c;
     }
+    .orrery-loc-item.current.selected .orrery-loc-name { color: #c8f5d2; }
+    .orrery-loc-item.sun.selected {
+      background: rgba(255, 200, 60, 0.18);
+      border-left-color: #ffcc44;
+    }
+    .orrery-loc-item.sun.selected .orrery-loc-name { color: #ffeab2; }
+    .orrery-loc-item.moon.selected {
+      background: rgba(200, 215, 235, 0.18);
+      border-left-color: #c8d8f0;
+    }
+    .orrery-loc-item.moon.selected .orrery-loc-name { color: #e8eef8; }
+
+    .orrery-loc-line1 {
+      display: flex; align-items: baseline; gap: 6px;
+    }
+    .orrery-loc-icon {
+      font-size: 14px; line-height: 1;
+      /* Emoji rendering sizing — keep the icon vertically centred against the text */
+      flex: 0 0 auto;
+    }
+    .orrery-loc-name {
+      color: #cfd6e4; font-size: 12px;
+    }
+    .orrery-loc-sublabel {
+      color: #6e7a90; font-size: 11px; letter-spacing: 0.04em;
+      margin-left: auto;
+    }
+    .orrery-loc-line2 {
+      margin-top: 2px;
+      padding-left: 22px;
+    }
+    .orrery-loc-coords { color: #a4b0c6; font-size: 11px; }
+    .orrery-loc-line3 {
+      margin-top: 2px; padding-left: 22px;
+      display: flex; gap: 8px; align-items: baseline;
+    }
+    .orrery-loc-solar-label { color: #6e7a90; font-size: 10px; letter-spacing: 0.04em; }
+    .orrery-loc-solar-value { color: #cfd6e4; font-size: 11px; }
+
     .orrery-loc-geo {
       display: block; width: 100%;
+      margin-top: 6px;
       background: rgba(255,255,255,0.06);
       color: #cfd6e4;
       border: 1px solid rgba(255,255,255,0.14);
@@ -266,14 +361,6 @@ function injectStyles() {
     .orrery-loc-geostatus {
       color: #8a93a7; font-size: 11px; margin-top: 4px; min-height: 1em;
     }
-    /* Live sub-solar / sub-lunar coords sit just below each beam button so the user
-       can see the destination before clicking. Subtler than the main coords readout. */
-    .orrery-loc-beam-readout {
-      color: #8a93a7; font-size: 11px; margin-top: 3px; margin-bottom: 2px;
-      text-align: center; letter-spacing: 0.02em;
-    }
-    .orrery-loc-label  { color: #6e7a90; display: inline-block; width: 4em; }
-    .orrery-loc-detail { color: #cfd6e4; }
   `;
   const el = document.createElement("style");
   el.textContent = css;

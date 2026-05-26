@@ -110,6 +110,16 @@ export class RadiusVectors {
     this.mesh.visible = v;
     this.flatMesh.visible = v;
   }
+
+  /** Sun beam (3D) visibility — gated by the Beams toggle only. */
+  setSunBeamVisible(v: boolean)  { this.sunBeam.visible  = v; }
+  /** Moon beam (3D) visibility — gated by BOTH Moon (target exists) and Beams. */
+  setMoonBeamVisible(v: boolean) { this.moonBeam.visible = v; }
+  /** Sun dot (flat-map) visibility — gated by the Beams toggle only. */
+  setSunDotVisible(v: boolean)   { this.sunDot.visible   = v; }
+  /** Moon dot (flat-map) visibility — gated by the Moon toggle (the moon dot is the
+   *  moon's equivalent rendering in 2D, so it belongs with Moon, not with Beams). */
+  setMoonDotVisible(v: boolean)  { this.moonDot.visible  = v; }
 }
 
 // ---- helpers ----

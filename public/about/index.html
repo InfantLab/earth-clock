@@ -292,7 +292,7 @@
     <li>
       <div class="feed-title">
         <span class="feed-name">Kp index</span>
-        <span class="feed-cadence">refreshed every 15 min</span>
+        <span class="feed-cadence">refreshed every 5 min</span>
       </div>
       <p class="feed-desc">Planetary K-index, the standard 0–9 scale of geomagnetic disturbance. Drives a plain-language "quiet / unsettled / active / minor storm / …" label on the in-app Data panel.</p>
       <p class="feed-src">Source: NOAA SWPC · <a href="https://www.swpc.noaa.gov/products/planetary-k-index">swpc.noaa.gov</a></p>
@@ -324,9 +324,9 @@
     <li>
       <div class="feed-title">
         <span class="feed-name">Eclipses</span>
-        <span class="feed-cadence">bundled (3 catalogued events)</span>
+        <span class="feed-cadence">bundled (4 catalogued events)</span>
       </div>
-      <p class="feed-desc">Path of totality + live umbra disc for the next upcoming total solar eclipse, derived directly from NASA Goddard's Espenak/Meeus predictions. Currently bundled: 2024-04-08 (North America, historical), 2026-08-12 (Spain — the headline event), 2027-08-02 (Egypt — the long one).</p>
+      <p class="feed-desc">Path of totality + live umbra disc for catalogued solar eclipses, derived directly from NASA Goddard's Espenak/Meeus predictions. Currently bundled: 2024-04-08 (North America, historical), 2026-08-12 (Spain — the headline event), 2027-08-02 (Egypt — the long one), and 2028-07-22 (Australia &amp; New Zealand, including totality directly over Sydney). Open the in-app Eclipse panel to jump to any event.</p>
       <p class="feed-src">Source: NASA GSFC · <a href="https://eclipse.gsfc.nasa.gov/SEcat5/SE2021-2030.html">eclipse.gsfc.nasa.gov</a></p>
     </li>
     <li>
@@ -369,7 +369,7 @@
   <h2>The solar-eclipse renderer</h2>
 
   <p>
-    When you toggle "Eclipse" in the menu and your simulated time is within 24 h of the next eclipse window, three things appear on the globe: a smooth orange <strong>path of totality</strong>, a dark <strong>umbra disc</strong> sliding along it, and a thin <strong>diamond-ring</strong> outlining the boundary between full totality and partial eclipse.
+    Toggle "Eclipse" in the menu's Astro row to open the in-app Eclipse panel — it lists every catalogued event in chronological order. Click any row to jump simulated time to T-minus-one-minute of that event, dial time-warp to 60×, and select that eclipse's path. While simulated time sits within 24 h of the loaded event's window, three things appear on the globe: a smooth orange <strong>path of totality</strong>, a dark <strong>umbra disc</strong> sliding along it, and a thin <strong>diamond-ring</strong> outlining the boundary between full totality and partial eclipse.
   </p>
 
   <h3>Why we use NASA's data, not runtime computation</h3>
@@ -377,7 +377,7 @@
     Eclipse geometry is brutally sensitive. The moon's umbra is ~290 km wide on Earth's surface — a thin pencil dragged across the planet over four hours. A 0.5° angular error in the moon's position translates to a ~30° displacement of the shadow on Earth's surface. So even our 0.3°-accurate lunar model puts the 2026 Spain eclipse at the wrong continent.
   </p>
   <p>
-    For the three catalogued headline eclipses (2024-04-08 North America, 2026-08-12 Spain, 2027-08-02 Egypt) we use NASA Goddard's published centerline coordinates directly. Each is a small array of (time, lat, lon, magnitude) waypoints from Fred Espenak and Jean Meeus's predictions. The runtime renderer interpolates these via slerp (spherical linear interpolation) into a smooth great-circle path along Earth's surface, and snaps the live umbra disc to the interpolated position at the current simulated time.
+    For each catalogued eclipse (2024-04-08 North America, 2026-08-12 Spain, 2027-08-02 Egypt, 2028-07-22 Australia &amp; New Zealand) we use NASA Goddard's published centerline coordinates directly. Each is a small array of (time, lat, lon, magnitude) waypoints from Fred Espenak and Jean Meeus's predictions. The runtime renderer interpolates these via slerp (spherical linear interpolation) into a smooth great-circle path along Earth's surface, and snaps the live umbra disc to the interpolated position at the current simulated time.
   </p>
 
   <h3>The umbra, the penumbra, and the diamond ring</h3>
@@ -390,7 +390,7 @@
 
   <h3>How to drive it</h3>
   <p>
-    Click <code>Tools → Jump to eclipse</code> to snap the simulated clock to T-minus-one-minute and start a 60× time-warp. The whole four-hour event plays out in about four minutes. Pause / step backward through speeds with the time-control row (revealed by the <code>⏱</code> icon next to the clock).
+    Toggle <code>Astro → Eclipse</code> in the menu to open the Eclipse panel (top-left, under the clock). Click any event row to snap the simulated clock to T-minus-one-minute and start a 60× time-warp. The whole four-hour event plays out in about four minutes. Pause, slow, or reverse via the time-control row that appears next to the clock; closing the Eclipse panel snaps simulated time back to wall-clock now.
   </p>
 </section>
 
@@ -452,7 +452,7 @@
     Atmosphere, clouds, eclipse shadow, and beams are all custom GLSL fragment shaders on transparent concentric spherical shells around Earth, with explicit <code>renderOrder</code> to keep the alpha-sort deterministic.
   </p>
   <p>
-    Source: <a href="https://github.com/infantlab/earth-clock">github.com/infantlab/earth-clock</a> (MIT). The full development plan and per-layer status tracker is in <a href="https://github.com/infantlab/earth-clock/blob/master/orrery/PLAN.md">orrery/PLAN.md</a>.
+    Source: <a href="https://github.com/infantlab/earth-clock">github.com/infantlab/earth-clock</a> (MIT). The live development plan is at <a href="https://github.com/infantlab/earth-clock/blob/master/PLAN.md">PLAN.md</a>; the full per-layer history is archived at <a href="https://github.com/infantlab/earth-clock/blob/master/orrery/docs/PLAN-archive.md">orrery/docs/PLAN-archive.md</a>.
   </p>
 </section>
 
@@ -495,7 +495,7 @@
     MIT licensed
   </p>
   <p>
-    Last updated for v0.1.0 — the first release-level cut of the 3D rebuild.
+    Last updated for v0.1.2 — Eclipse-panel catalogue browser, Location-panel redesign, pin/beam alignment fix.
   </p>
 </footer>
 

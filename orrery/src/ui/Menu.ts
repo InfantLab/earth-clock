@@ -29,10 +29,10 @@ import type { OverlayLayer } from "../scene/OverlayLayer";
 import type { RadiusVectors } from "../scene/RadiusVectors";
 import type { EclipseLayer } from "../scene/EclipseLayer";
 import type { FlatMap } from "../scene/FlatMap";
-import type { Debug } from "./Debug";
 import type { DataPanel } from "./DataPanel";
 import type { Clock } from "./Clock";
 import type { LocationPanel } from "./LocationPanel";
+import type { EclipsePanel } from "./EclipsePanel";
 
 export interface MenuLayers {
   globe: Globe;
@@ -55,11 +55,12 @@ export interface MenuPanels {
   /** Unified per-layer panel: status icon + source link + detail + age. Top-right.
    *  Shown by the View row's "Data" button. */
   data?: DataPanel;
-  /** Diagnostic tools — astro readout + Use test data / Find moon / Jump to eclipse.
-   *  Bottom-right. Shown by the View row's "Tools" button. */
-  tools?: Debug;
   clock?: Clock;
   location?: LocationPanel;
+  /** Eclipse catalogue browser. Tied to the Astro row's "Eclipse" entry; same toggle
+   *  also drives EclipseLayer.mesh.visible so the panel and the 3D path/disc stay
+   *  in sync. */
+  eclipse?: EclipsePanel;
 }
 
 type LayerKey =
@@ -71,12 +72,13 @@ type LayerKey =
   | "mslp" | "temp" | "rh" | "tpw" | "tcw"
   // Geography row
   | "coastlines" | "nightLights"
-  // Astro row
+  // Astro row. `eclipse` toggles both the 3D EclipseLayer mesh AND the top-left
+  // Eclipse panel (catalogue browser + jump-to). Earlier versions had a separate
+  // "Tools" entry for the diagnostic panel; retired in favour of console helpers on
+  // window.__orrery (useTestData / useLiveData / findMoon / jumpToEclipse).
   | "terminator" | "atmosphere" | "moon" | "hands" | "eclipse"
-  // View row. `data` toggles the unified panel (status + source + detail + age); `tools`
-  // toggles the diagnostic panel (astro readout + Use test data / Find moon / Jump to
-  // eclipse). Older sessions had a separate "Sources" entry — that role merged into `data`.
-  | "map" | "orbit" | "clock" | "data" | "location" | "tools";
+  // View row.
+  | "map" | "orbit" | "clock" | "data" | "location";
 
 /** Subset of LayerKey representing cloud-source picker entries (mutex). */
 export type CloudSourceKey = "cloudsViirs" | "cloudsGfs" | "cloudsGoes";
@@ -97,7 +99,7 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   // Astro
   terminator: true, atmosphere: true, moon: true, hands: true, eclipse: false,
   // View
-  map: false, orbit: false, clock: true, data: false, location: false, tools: false,
+  map: false, orbit: false, clock: true, data: false, location: false,
 };
 
 const LABELS: Record<LayerKey, string> = {
@@ -112,7 +114,7 @@ const LABELS: Record<LayerKey, string> = {
   coastlines: "Coastlines", nightLights: "Night lights",
   terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", hands: "Beams", eclipse: "Eclipse",
   map: "Flat map", orbit: "Auto-spin",
-  clock: "Clock", data: "Data", location: "Location", tools: "Tools",
+  clock: "Clock", data: "Data", location: "Location",
 };
 
 /**
@@ -145,15 +147,14 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
   moon:        "The moon at its true position and distance (~60 Earth radii)",
-  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon. Under time-warp the sun beam sweeps one rotation per simulated day. On the flat map the moon dot shows the current phase.",
-  eclipse:     "Live umbra + penumbra discs and path-of-totality for the next solar eclipse",
+  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon. Under time-warp the sun beam sweeps one rotation per simulated day. Turning Beams on also turns Moon on.",
+  eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
   // View
   map:         "Switch to equirectangular flat-map projection",
   orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
   clock:       "Time display. Click the zone to flip UTC ⇄ local.",
   data:        "Unified data panel — per-layer status, source (linked), detail, last-fetched age",
   location:    "Click the globe / map to pin a location and look it up",
-  tools:       "Diagnostic readout — sub-solar / sub-lunar position, Use test data, Find moon, Jump to eclipse",
 };
 
 /**
@@ -188,7 +189,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "View",
-    keys: ["map", "orbit", "clock", "data", "location", "tools"],
+    keys: ["map", "orbit", "clock", "data", "location"],
   },
 ];
 
@@ -217,7 +218,7 @@ export class Menu {
     // the badge stays in lock-step with whatever was actually built.
     root.innerHTML = `
       <div class="orrery-brand-row">
-        <span class="orrery-brand" id="orrery-brand" title="menu">earth-clock</span>
+        <span class="orrery-brand" id="orrery-brand" title="Click for options · weather layers · clock · location · eclipses">earth-clock</span>
         <span class="orrery-version" title="package.json version">v${APP_VERSION}</span>
       </div>
       <div class="orrery-menu${this.open ? "" : " collapsed"}" id="orrery-menu">
@@ -386,6 +387,13 @@ export class Menu {
     (Object.keys(LABELS) as LayerKey[]).forEach(k => this.apply(k));
   }
 
+  /** 3D moon-beam visibility is gated by BOTH the Moon toggle and the Beams toggle —
+   *  the beam needs a destination (moon mesh visible) AND the user has to want beams.
+   *  Either toggle can hide it. Called from both `moon` and `hands` apply() branches. */
+  private setBeamVisibility() {
+    this.layers.radiusVectors.setMoonBeamVisible(this.state.moon && this.state.hands);
+  }
+
   private apply(key: LayerKey) {
     const on = this.state[key];
     const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap } = this.layers;
@@ -417,7 +425,14 @@ export class Menu {
         hurricaneTracks.mesh.visible     = on;
         hurricaneTracks.flatMesh.visible = on;
         break;
-      case "eclipse":     eclipse.mesh.visible = on; break;
+      case "eclipse":
+        // Eclipse toggle drives BOTH the 3D EclipseLayer mesh and the top-left Eclipse
+        // panel (catalogue browser + jump-to). The panel is the place users browse
+        // events; the layer is the visual on the globe. Same toggle for both keeps
+        // the two from drifting apart.
+        eclipse.mesh.visible = on;
+        this.panels.eclipse?.setVisible(on);
+        break;
       case "lightning":
         lightning.mesh.visible     = on;
         lightning.flatMesh.visible = on;
@@ -435,9 +450,32 @@ export class Menu {
         coastlines.mesh.visible     = on;
         coastlines.flatMesh.visible = on;
         break;
-      case "moon":        moon.mesh.visible = on; break;
+      case "moon":
+        // Moon toggle: 3D moon mesh AND flat-map moon dot. The flat-map dot is the
+        // moon's equivalent in 2D — without it, "Moon off" only removes the sphere
+        // and the user sees no change on the flat map. The associated 3D moon-beam
+        // is gated by both Moon and Beams (see setBeamVisibility).
+        moon.mesh.visible = on;
+        radiusVectors.setMoonDotVisible(on);
+        this.setBeamVisibility();
+        break;
       case "atmosphere":  atmosphere.mesh.visible = on; break;
-      case "hands":       radiusVectors.setVisible(on); break;
+      case "hands":
+        // Beams toggle: sun beam (3D) + sun dot (flat) always; moon beam (3D) only
+        // when Moon is also on. We auto-enable Moon when Beams is turned on as a
+        // convenience — the moon beam needs a target to point at, so the two are
+        // naturally coupled in that direction. The reverse is NOT true: switching
+        // Moon off leaves the sun beam alone, and switching Beams off doesn't touch
+        // Moon.
+        if (on && !this.state.moon) {
+          this.state.moon = true;
+          this.apply("moon");
+          saveState(this.state);
+        }
+        radiusVectors.setSunBeamVisible(on);
+        radiusVectors.setSunDotVisible(on);
+        this.setBeamVisibility();
+        break;
       case "terminator":
         // Day/night rendering switch — applies to globe AND flat map. With it off, both
         // modes show a uniformly-lit Earth and clouds render uniformly bright (no night dim).
@@ -456,7 +494,6 @@ export class Menu {
       case "clock":       this.panels.clock?.setVisible(on); break;
       case "data":        this.panels.data?.setVisible(on); break;
       case "location":    this.panels.location?.setVisible(on); break;
-      case "tools":       this.panels.tools?.setVisible(on); break;
     }
     const btn = this.buttons[key];
     if (btn) btn.classList.toggle("highlighted", on);
