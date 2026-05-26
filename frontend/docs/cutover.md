@@ -1,6 +1,8 @@
 # Production cutover
 
-How to swap `earth-clock.onemonkey.org/` from serving classic earth-clock to serving the orrery 3D rebuild. The classic site moves to `/classic/` as a permanent archive.
+> **Historical document.** The cutover happened in v0.1.0 (2026-05) and the procedure below describes how it ran. The folder shown throughout as `orrery/` is what is now called `frontend/` (renamed post-cutover). Keep this for reference / rollback planning; new operational instructions live in [DEPLOYMENT.md](../../DEPLOYMENT.md).
+
+How `earth-clock.onemonkey.org/` swapped from serving classic earth-clock to serving the WebGL 3D rebuild. The classic site moved to `/classic/` as a permanent archive.
 
 This is a one-time, mostly-reversible operation. The whole thing is ~10 minutes of file moves + a `git push`, plus an NGINX config paste in the CapRover dashboard.
 

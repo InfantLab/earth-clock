@@ -2,7 +2,7 @@
 
 ## Credits hygiene
 
-`CREDITS.md` at this directory's root is the canonical record of every external source orrery uses — textures, formulae, libraries, data feeds, ideas. **Whenever you add a new external source, you MUST add a corresponding entry to `CREDITS.md` in the same change.** No exceptions: textures, font files, code snippets borrowed from a tutorial, mathematical formulae from a paper — all of it.
+`CREDITS.md` at this directory's root is the canonical record of every external source the frontend uses — textures, formulae, libraries, data feeds, ideas. **Whenever you add a new external source, you MUST add a corresponding entry to `CREDITS.md` in the same change.** No exceptions: textures, font files, code snippets borrowed from a tutorial, mathematical formulae from a paper — all of it.
 
 If unsure which section it belongs in, prefer creating a new section over hiding it under a vague heading.
 
@@ -11,7 +11,7 @@ If unsure which section it belongs in, prefer creating a new section over hiding
 - `src/` — TypeScript source. Subfolders by concern (`scene/`, `astro/`, `data/`).
 - `public/` — static assets served verbatim. Textures live in `public/textures/`.
 - `dist/` — Vite build output (gitignored).
-- Production build target: `../public/orrery/` so `/orrery/` serves alongside the classic site. To make orrery the default site later, change `vite.config.ts > build.outDir` and move classic to `../public/classic/`.
+- Default build target: `../public/frontend/` (sub-path build, used for testing). Production runs `BUILD_AS_ROOT=1 npm run build` which writes directly to `../public/` so the frontend serves at `/`; classic is preserved at `../public/classic/`. Cutover happened in v0.1.0.
 
 ## Scope decisions (already made)
 

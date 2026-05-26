@@ -11,14 +11,14 @@ const APP_VERSION = pkg.version;
 // GFS weather files the legacy earth.js uses, without copying them or running the legacy server.
 const classicDataDir = resolve(__dirname, "../public/data");
 
-// Build output goes into ../public/orrery/ so it's served at /orrery/ alongside the classic app.
-// When orrery is ready to become the default, set BUILD_AS_ROOT=1 to target ../public
-// directly — the classic site should already be relocated to ../public/classic/ at that
-// point. See docs/cutover.md for the full deploy procedure.
+// Build output goes into ../public/frontend/ by default — useful for testing the sub-path
+// build without overwriting the live site. The cutover already happened in v0.1.0 so
+// BUILD_AS_ROOT=1 is what production uses; that targets ../public directly. See
+// docs/cutover.md for the historical procedure.
 const BUILD_AS_ROOT = process.env.BUILD_AS_ROOT === "1";
 const outDir = BUILD_AS_ROOT
   ? resolve(__dirname, "../public")
-  : resolve(__dirname, "../public/orrery");
+  : resolve(__dirname, "../public/frontend");
 
 export default defineConfig({
   base: "./",
@@ -28,7 +28,7 @@ export default defineConfig({
   build: {
     outDir,
     // emptyOutDir is dangerous when building to ../public (would wipe everything including
-    // the classic site we just relocated). Only safe in the /orrery subdirectory mode.
+    // the classic site we just relocated). Only safe in the /frontend subdirectory mode.
     emptyOutDir: !BUILD_AS_ROOT,
     target: "es2022",
     sourcemap: true,

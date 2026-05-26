@@ -1,10 +1,12 @@
-# orrery
+# earth-clock — frontend (WebGL)
 
 A real-time 3D view of planet Earth — live weather, clouds, auroras, fires, storms, and atmospheric data rendered on a physically-lit globe, with the moon in its true position, the day/night terminator where it really is, and (eventually) the rest of the solar system and a real star sky around it.
 
 The spiritual successor to [`cambecc/earth`](https://github.com/cambecc/earth) — the same purpose, rebuilt for 2026 in Three.js with GPU particles, modern satellite feeds, and physically-based lighting.
 
-> **Status**: orrery is now the **default experience** at `earth-clock.onemonkey.org/` (cut over in v0.1.0, 2026-05). The classic D3 + canvas renderer this project descends from (offering eight cartographic projections — orthographic globe plus seven flat ones) is preserved at [`/classic/`](https://earth-clock.onemonkey.org/classic/) as an archival fallback. See [PLAN.md](PLAN.md) for the engineering tracker and the full feature list.
+> **Status**: this WebGL frontend is the **default experience** at `earth-clock.onemonkey.org/` (cut over in v0.1.0, 2026-05). The classic D3 + canvas renderer this project descends from (offering eight cartographic projections — orthographic globe plus seven flat ones) is preserved at [`/classic/`](https://earth-clock.onemonkey.org/classic/) as an archival fallback. See [PLAN.md](../PLAN.md) (live, top level) and [docs/PLAN-archive.md](docs/PLAN-archive.md) (full per-layer history) for the engineering tracker.
+>
+> The directory used to be called `orrery/` — that was the codename during the rebuild. The runtime global `window.__orrery` and the localStorage key `orrery.menu.v1` are stable API surfaces and intentionally keep the codename.
 
 **Live site**: <https://earth-clock.onemonkey.org/>
 **Live development plan**: [PLAN.md](PLAN.md) — current status of every layer
@@ -23,7 +25,7 @@ Twelve years on, the constraints that shaped it have changed:
 - We can ship a **physically-lit, axially-tilted globe with a real moon** in the browser at 60 fps.
 - Real-time, GPU-driven AI weather (GraphCast, ECMWF AIFS) is becoming directly fetchable.
 
-**orrery** asks: what would `earth.nullschool.net` look like if you started today?
+**earth-clock** asks: what would `earth.nullschool.net` look like if you started today?
 
 What you should see at any moment is exactly what is happening to Earth right now:
 
@@ -41,7 +43,7 @@ That's the target. The repo's [PLAN.md](PLAN.md) is the live tracker of how far 
 
 ## Design philosophy
 
-The deeper "why" behind earth-clock is laid out in [*Eclipses, equinoxes, and everyday awe: telling the time on Spaceship Earth*](https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/) (Caspar Addyman, onemonkey.org). orrery inherits that thesis verbatim — every principle below maps to a concrete implementation rule.
+The deeper "why" behind earth-clock is laid out in [*Eclipses, equinoxes, and everyday awe: telling the time on Spaceship Earth*](https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/) (Caspar Addyman, onemonkey.org). This frontend inherits that thesis verbatim — every principle below maps to a concrete implementation rule.
 
 ### Awe as daily practice, not rare astonishment
 
@@ -49,7 +51,7 @@ The deeper "why" behind earth-clock is laid out in [*Eclipses, equinoxes, and ev
 
 The eclipse moment — *"the sky dims … I was on a small sphere moving through the vastness of space"* — is the target sensation. The job of the clock is to make that perspective sustainable: a 30-second glance in the morning and evening, 10 seconds at midday, repeated until *"planetary motion stops being an idea you understand and becomes something you notice."*
 
-→ **Implementation rule**: orrery is a thing you *leave running*. It must look right at a glance, every glance. No chrome, no startup animation, no popups, no chartjunk. The globe is always the protagonist.
+→ **Implementation rule**: earth-clock is a thing you *leave running*. It must look right at a glance, every glance. No chrome, no startup animation, no popups, no chartjunk. The globe is always the protagonist.
 
 ### Spaceship Earth — a shared vessel, a small crew ritual
 
@@ -121,14 +123,15 @@ That sentence is the spec.
 ```
 cambecc/earth          (2013, Cameron Beccario — 2D wind globe, Canvas)
         ↓
-infantlab/earth-clock  (2024, Caspar Addyman — adds clock + day/night overlay)   ← currently deployed
+infantlab/earth-clock  (2024, Caspar Addyman — adds clock + day/night overlay)
         ↓
-orrery                 (2026, this repo — 3D rebuild, WebGL, GPU particles, full Earth system)
-                         ↓
-                       will replace classic earth-clock as the default site
+infantlab/earth-clock  (2026, this repo's `frontend/` — 3D rebuild, WebGL, GPU
+                        particles, full Earth system. Codenamed "orrery" during
+                        the rebuild; now the default site since v0.1.0 cutover.
+                        Classic moved to /classic/.)
 ```
 
-orrery began life as a side-project to fix the jittery rotating-globe screensaver mode in the classic project, then grew into the rebuild it is now. The classic `earth-clock` still lives at the repo root and is currently the deployed site; when orrery is feature-complete the two swap places and classic moves to `/classic/`.
+The rebuild began life as a side-project to fix the jittery rotating-globe screensaver mode in the classic project, then grew into what it is now. The classic `earth-clock` is preserved at `/classic/`; the rebuild ships at `/` since v0.1.0.
 
 The visual identity (orthographic globe, blue/aurora palette, wind particles) is intentionally faithful to the original earth project. The astronomical formulae (Schlyter / NOAA SPA) are the same family used in `cambecc/earth`, ported to TypeScript. See [CREDITS.md](CREDITS.md) for the full lineage and licences.
 
@@ -203,7 +206,7 @@ Once the worker exists, everything downstream is just colour-mapped textures.
 ## Architecture
 
 ```
-orrery/
+frontend/
 ├── src/
 │   ├── main.ts                   ← scene assembly, animation loop, console handle
 │   ├── astro/
@@ -373,7 +376,8 @@ Memory: ~25 MB of textures (Earth maps + Moon + GIBS cloud canvas + wind grid + 
 ```
 npm install
 npm run dev       # http://localhost:5173
-npm run build     # → ../public/orrery
+npm run build     # → ../public/frontend (sub-path build)
+# BUILD_AS_ROOT=1 npm run build → ../public (replaces the live site at /)
 npm run preview   # serve the production build
 ```
 
@@ -389,13 +393,13 @@ Vite exposes any `VITE_*` variable on `import.meta.env`. **`.env.local` is gitig
 
 One data source (NHC tropical cyclones) doesn't ship CORS headers, so it can't be fetched directly from the browser. Dev routes through Vite's built-in proxy at `/proxy/nhc/*` (configured in [vite.config.ts](vite.config.ts)); production routes the same path through an NGINX rule on the CapRover host. Application code uses the same URL in both cases. Full write-up + deploy steps: [docs/proxy.md](docs/proxy.md).
 
-When orrery is ready to become the default site, point `vite.config.ts > build.outDir` at `../public` and move classic earth-clock to `../public/classic/`.
+**Already done as of v0.1.0**: production runs the `BUILD_AS_ROOT=1` build target, which writes directly to `../public` — the WebGL frontend serves at `/`, classic moved to `../public/classic/`. See [docs/cutover.md](docs/cutover.md) for the historical procedure.
 
 ---
 
 ## Projections
 
-orrery only supports two projections: **orthographic globe** (the default, 3D camera looking at a sphere) and **equirectangular** (planar lon/lat map). Other projections used by classic earth — Waterman butterfly, Winkel tripel, Mollweide, etc. — are explicitly **out of scope**. The whole point of the 3D rebuild is that the orthographic globe with a movable camera supersedes them.
+The frontend currently supports two projections: **orthographic globe** (the default, 3D camera looking at a sphere) and **equirectangular** (planar lon/lat map). The other six classic projections (azimuthal equidistant, conic equidistant, stereographic, Waterman butterfly, Winkel tripel, Atlantis) are on the roadmap — see the top-level [PLAN.md](../PLAN.md). The orthographic globe with a movable camera supersedes most of them in practice, but the historical classic set is worth restoring for parity.
 
 ---
 

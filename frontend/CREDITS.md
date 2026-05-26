@@ -1,6 +1,6 @@
 # Credits
 
-Canonical list of every external asset, library, and idea used in **orrery**. When the app gains a visible About / credits panel, every entry below with `attribution_required: true` MUST appear there. Public-domain entries are courtesy credits — legally optional, ethically right.
+Canonical list of every external asset, library, and idea used in **earth-clock**'s WebGL frontend. When the app gains a visible About / credits panel, every entry below with `attribution_required: true` MUST appear there. Public-domain entries are courtesy credits — legally optional, ethically right.
 
 Update this file every time a new external source is introduced. The whole project is downstream of other people's work; we name them all.
 
@@ -48,7 +48,7 @@ Update this file every time a new external source is introduced. The whole proje
 - `attribution_required`: no, but credited
 
 ### Moon texture ([`moon_1024.jpg`](public/textures/moon_1024.jpg))
-- **Source**: [Three.js examples](https://github.com/mrdoob/three.js/blob/dev/examples/textures/planets/moon_1024.jpg) (originally fetched for the classic earth-clock moon-phase overlay; copied into orrery)
+- **Source**: [Three.js examples](https://github.com/mrdoob/three.js/blob/dev/examples/textures/planets/moon_1024.jpg) (originally fetched for the classic earth-clock moon-phase overlay; copied into the WebGL frontend)
 - **Origin**: NASA / USGS lunar imagery (1024×512 equirectangular)
 - **License**: Public domain
 - `attribution_required`: no, but credited
@@ -69,7 +69,7 @@ Update this file every time a new external source is introduced. The whole proje
 
 ## Live data feeds
 
-Every layer below is fetched at runtime from a public-domain scientific data feed. Refresh cadences are tuned to each provider's publishing schedule. No registration is needed for any of them except FIRMS, which uses a free `MAP_KEY` query parameter (kept in `orrery/.env.local`, not committed).
+Every layer below is fetched at runtime from a public-domain scientific data feed. Refresh cadences are tuned to each provider's publishing schedule. No registration is needed for any of them except FIRMS, which uses a free `MAP_KEY` query parameter (kept in `frontend/.env.local`, not committed).
 
 ### NOAA GFS — wind, pressure, temperature, humidity, water columns
 - **Source**: NOAA NOMADS — <https://nomads.ncep.noaa.gov/>
@@ -98,7 +98,7 @@ Every layer below is fetched at runtime from a public-domain scientific data fee
 ### NASA FIRMS — active fire detections
 - **Source**: NASA Fire Information for Resource Management System — <https://firms.modaps.eosdis.nasa.gov/>
 - **Endpoint**: VIIRS S-NPP NRT global CSV for the last 24 h, via the FIRMS Area API.
-- **Auth**: free FIRMS `MAP_KEY` (request from FIRMS site, store in `orrery/.env.local` as `VITE_FIRMS_MAP_KEY`).
+- **Auth**: free FIRMS `MAP_KEY` (request from FIRMS site, store in `frontend/.env.local` as `VITE_FIRMS_MAP_KEY`).
 - **Refresh**: hourly.
 - **License**: NASA / FIRMS data are in the public domain.
 
@@ -107,7 +107,7 @@ Every layer below is fetched at runtime from a public-domain scientific data fee
 - **Endpoints**:
   - Active storms summary: `https://www.nhc.noaa.gov/CurrentStorms.json`
   - Per-storm best track / forecast track / forecast cone: NHC KMZ feeds
-- **CORS**: NHC does not ship CORS headers, so dev (Vite proxy) and prod (NGINX reverse proxy at `/proxy/nhc/`) both route through a same-origin proxy. See `orrery/docs/proxy.md`.
+- **CORS**: NHC does not ship CORS headers, so dev (Vite proxy) and prod (NGINX reverse proxy at `/proxy/nhc/`) both route through a same-origin proxy. See `frontend/docs/proxy.md`.
 - **Refresh**: every 15 minutes during active storms (Atlantic Jun–Nov, East Pacific May 15–Nov 30).
 - **License**: Public domain (NOAA).
 
@@ -159,7 +159,7 @@ Every layer below is fetched at runtime from a public-domain scientific data fee
 | [fflate](https://github.com/101arrowz/fflate) | ^0.8 | MIT | KMZ (= ZIP-of-KML) inflation for NHC storm-track downloads, in browser |
 | [vite](https://vitejs.dev/) | ^7.3 | MIT | Dev server, hot reload, production bundler |
 | [typescript](https://www.typescriptlang.org/) | ^5.6 | Apache-2.0 | Language |
-| [grib-js](https://github.com/...) (root, not orrery) | ^1 | MIT | Pure-JS GRIB2 decoder used by `weather-service.js` to convert NOAA NOMADS binary into JSON |
+| [grib-js](https://github.com/...) (root, not frontend) | ^1 | MIT | Pure-JS GRIB2 decoder used by `weather-service.js` to convert NOAA NOMADS binary into JSON |
 
 License texts ship via `node_modules` and `npm`. A future polish step (Phase A) will bundle a concatenated `THIRD_PARTY_LICENSES.txt` from these.
 

@@ -15,8 +15,8 @@ import * as THREE from "three";
  *    fly via `EquirectangularReflectionMapping`. This is the format **NASA's "Deep Star
  *    Maps 2020"** publishes — https://svs.gsfc.nasa.gov/4851/ — at 4K / 8K / 16K /
  *    64K resolutions, free and public-domain. The 4K JPEG is ~5 MB; 8K is ~20 MB. Either
- *    looks great on the orrery's typical viewing distances. Download "TYCHO_8 (deep star
- *    map) without constellation figures" (without overlays).
+ *    looks great at the frontend's typical viewing distances. Download "TYCHO_8 (deep
+ *    star map) without constellation figures" (without overlays).
  *
  * Both files live in `public/textures/` so Vite serves them statically. No code change
  * needed when you switch between formats — drop the files in and reload.
@@ -58,7 +58,7 @@ export async function tryLoadSkybox(): Promise<THREE.Texture | null> {
   console.warn(
     "[earth-clock] no skybox texture found in textures/; using procedural Points " +
     "starfield. To upgrade: download NASA's 'Deep Star Map 2020' (8K equirectangular) " +
-    "from https://svs.gsfc.nasa.gov/4851/ and save it as orrery/public/textures/starmap.jpg.",
+    "from https://svs.gsfc.nasa.gov/4851/ and save it as frontend/public/textures/starmap.jpg.",
   );
   return null;
 }

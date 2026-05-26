@@ -1,6 +1,6 @@
 # CORS proxy
 
-How orrery handles upstream data feeds that don't ship CORS headers, in both development and production.
+How the frontend handles upstream data feeds that don't ship CORS headers, in both development and production.
 
 ---
 
@@ -8,7 +8,7 @@ How orrery handles upstream data feeds that don't ship CORS headers, in both dev
 
 A browser will happily *send* a fetch request to any URL, but it will refuse to give the *response* to the JavaScript that asked for it unless the response includes an `Access-Control-Allow-Origin` header naming the page's origin (or `*`). This is the **same-origin policy** — without it, any random site you visit could silently read your logged-in bank balance using cookies the browser already has.
 
-Most of orrery's data sources do ship that header, so we can fetch them directly from the browser:
+Most of the frontend's data sources do ship that header, so we can fetch them directly from the browser:
 
 | Source | CORS? | Notes |
 |---|---|---|
@@ -35,7 +35,7 @@ The fix is a **proxy**: a small server we control, on the *same origin* as the p
 
 **Decision**: CapRover NGINX rule. earth-clock.onemonkey.org already runs CapRover with NGINX out front; adding the proxy is an NGINX-config-override paste in the CapRover UI. Zero additional infra, no monthly cost, same-origin URLs which avoids future cookie/auth edge cases.
 
-Migration path if requirements grow: drop a Cloudflare Worker in front later. The code in orrery doesn't need to change — only the path-routing rule moves.
+Migration path if requirements grow: drop a Cloudflare Worker in front later. The code in the frontend doesn't need to change — only the path-routing rule moves.
 
 ---
 
@@ -94,7 +94,7 @@ To verify it's working:
 
 ```bash
 # Start the dev server in one terminal
-cd orrery
+cd frontend
 npm run dev
 
 # In another terminal:
@@ -107,11 +107,11 @@ You should see `200 OK` and a JSON payload like `{"activeStorms": []}`.
 
 ## Production setup (CapRover)
 
-CapRover sits behind NGINX. Each app has a **"NGINX Config Override"** panel in the CapRover dashboard where you can paste custom `location` blocks. The orrery app gets one location block per proxied upstream.
+CapRover sits behind NGINX. Each app has a **"NGINX Config Override"** panel in the CapRover dashboard where you can paste custom `location` blocks. The the frontend app gets one location block per proxied upstream.
 
 ### 1. Find the right CapRover app
 
-In the CapRover dashboard, open the app that serves orrery (likely the same app that serves classic earth-clock today, until the cutover). Scroll down to **HTTP Settings** → **Edit Default NGINX Configurations**.
+In the CapRover dashboard, open the app that serves the frontend (likely the same app that serves classic earth-clock today, until the cutover). Scroll down to **HTTP Settings** → **Edit Default NGINX Configurations**.
 
 ### 2. Paste the location block
 
@@ -124,7 +124,7 @@ location /proxy/nhc/ {
     proxy_pass         https://www.nhc.noaa.gov/;
     proxy_ssl_server_name on;
     proxy_set_header   Host www.nhc.noaa.gov;
-    proxy_set_header   User-Agent "orrery (earth-clock.onemonkey.org)";
+    proxy_set_header   User-Agent "earth-clock (earth-clock.onemonkey.org)";
     proxy_hide_header  Set-Cookie;
 
     # Browser sees a same-origin response, so technically CORS isn't required,
@@ -165,7 +165,7 @@ Content-Type: application/json
 {"activeStorms": []}
 ```
 
-The orrery app, once it's deployed at `earth-clock.onemonkey.org`, will start receiving live NHC data automatically — no code changes needed.
+The the frontend app, once it's deployed at `earth-clock.onemonkey.org`, will start receiving live NHC data automatically — no code changes needed.
 
 ---
 
@@ -186,8 +186,8 @@ The application code never knows or cares which machine answered the request —
 
 - **Monthly cost**: $0. The proxy uses the existing CapRover instance.
 - **Bandwidth**: NHC's CurrentStorms.json is < 50 KB even during peak hurricane season. With 60-second NGINX caching, a single popular hour might issue 60 upstream requests. Trivial.
-- **Reliability**: tied to the same host as the rest of the site. If `earth-clock.onemonkey.org` is down, the proxy is too — but then nobody's loading orrery anyway.
-- **Migration**: if we ever want global edge caching, multi-upstream routing, or to decouple proxy uptime from the main site, we can drop a Cloudflare Worker in front. It implements the same URL contract (`/proxy/<source>/`), so the orrery code wouldn't change — only the routing layer would.
+- **Reliability**: tied to the same host as the rest of the site. If `earth-clock.onemonkey.org` is down, the proxy is too — but then nobody's loading the frontend anyway.
+- **Migration**: if we ever want global edge caching, multi-upstream routing, or to decouple proxy uptime from the main site, we can drop a Cloudflare Worker in front. It implements the same URL contract (`/proxy/<source>/`), so the frontend code wouldn't change — only the routing layer would.
 
 ---
 

@@ -33,7 +33,7 @@ Notes from the previous QA round that the user flagged with "> " have been class
 
 Run this before declaring earth-clock ready for the public cutover. Each item is a yes/no — write "OK" or note what's wrong. Try to test at three different times of day (UTC noon, UTC midnight, somewhere in between) because day/night-dependent effects vary.
 
-**Test setup**: `npm install` in both `orrery/` and the earth-clock root. Run `npm run weather-service` to populate GFS data. Then `npm run dev` in `orrery/` and open `http://localhost:5173`.
+**Test setup**: `npm install` in both `frontend/` and the earth-clock root. Run `npm run weather-service` to populate GFS data. Then `npm run dev` in `frontend/` and open `http://localhost:5173`.
 
 ---
 ## Responses 
