@@ -1,15 +1,20 @@
 # earth-clock — Live Plan
 
 The current engineering tracker for the project as a whole. Slim by design — the
-exhaustive per-layer history lives in [orrery/docs/PLAN-archive.md](orrery/docs/PLAN-archive.md).
+exhaustive per-layer history lives in [frontend/docs/PLAN-archive.md](frontend/docs/PLAN-archive.md).
 This doc is for **what's next**: current focus, near-term work, blockers, roadmap pointers.
 
-> **Project shape:** the WebGL successor (orrery) ships at `/`; the classic D3 + canvas
-> renderer is preserved at `/classic/`. Cutover landed in v0.1.0. The live site is
-> [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org). Local dev: `npm run dev`
-> from this directory serves `public/` at `:8080`; in-orrery dev uses
-> `cd orrery && npm run dev` (Vite on `:5173`). Production build:
-> `cd orrery && BUILD_AS_ROOT=1 npm run build` (writes to `../public/`).
+> **Project shape:** the WebGL frontend (`frontend/`) ships at `/`; the classic D3 +
+> canvas renderer is preserved at `/classic/`. Cutover landed in v0.1.0. The live site
+> is [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org). Local dev:
+> `npm run dev` from this directory serves `public/` at `:8080`; for in-frontend dev,
+> `cd frontend && npm run dev` (Vite on `:5173`). Production build:
+> `cd frontend && BUILD_AS_ROOT=1 npm run build` (writes to `../public/`).
+>
+> *Codename note:* the `frontend/` directory used to be called `orrery/` — the
+> codename for the WebGL rebuild during its parallel-development phase. The runtime
+> global `window.__orrery` and the localStorage key `orrery.menu.v1` are stable API
+> surfaces and intentionally keep the codename.
 
 ## Status key
 
@@ -46,7 +51,7 @@ suppression, eclipse-close → snap-to-live, wordmark tooltip; 2026-05-26).
 The wordmark tooltip is the first onboarding nudge. Two more layers to add:
 
 1. **Tooltip pass over every menu button.** `TOOLTIPS` in
-   [orrery/src/ui/Menu.ts](orrery/src/ui/Menu.ts) already exists for most; sweep through
+   [frontend/src/ui/Menu.ts](frontend/src/ui/Menu.ts) already exists for most; sweep through
    and confirm every entry has a one-sentence "what does this do" tip. New entries to
    add: Map · Auto-spin · Clock · Data · Location. Also verify wording is plain
    English (no jargon: "MSLP" → "atmospheric pressure" etc.).
@@ -61,7 +66,7 @@ The wordmark tooltip is the first onboarding nudge. Two more layers to add:
 
 ### ⬜ Meeus lunar model upgrade
 Replace the Schlyter lunar position with Meeus simplified ELP-2000-82B (~30 main
-perturbation terms) in [orrery/src/astro/lunar.ts](orrery/src/astro/lunar.ts). Brings
+perturbation terms) in [frontend/src/astro/lunar.ts](frontend/src/astro/lunar.ts). Brings
 runtime lunar precision from ~0.5° to ~0.1°. Removes the catch — non-catalogued
 eclipses still render correctly even though we now have NASA paths for every event in
 the catalogue. Half-day effort. Reference: Meeus, *Astronomical Algorithms* 2nd ed.,
@@ -69,7 +74,7 @@ ch. 47.
 
 ### ⬜ FlatMap v2 — remaining layer ports
 8 items remaining (in priority order), tracked in detail in
-[orrery/docs/PLAN-archive.md](orrery/docs/PLAN-archive.md#-equirectangular-flat-map-mode-):
+[frontend/docs/PLAN-archive.md](frontend/docs/PLAN-archive.md#-equirectangular-flat-map-mode-):
 1. Sub-solar marker (small disc at the live (lat, lon))
 2. Sub-lunar marker (with phase-aware shading)
 3. Terminator line (drawn arc, not a straight line)
@@ -87,9 +92,32 @@ companion JSON alongside the existing wind file. Restores classic earth-clock's
 overlay set. **Before going live** — these are user-visible parity items.
 ~1-2 days. Server-side GRIB2 decode proxy (Path B, eccodes-wasm) deferred behind this.
 
+### ⬜ Visible scale key for overlays
+Every overlay row (MSLP / Temp / RH / TPW / TCW) renders to a coloured shell at radius
+1.006 — but right now there's no on-screen legend telling the user what the colour
+means. Without a key, the overlay is striking but illegible. A small panel in the
+corner (or a slot on the menu / DataPanel) showing the active palette's gradient
++ labelled min/mid/max with units would close the loop. Cheap: each `OverlayCfg` in
+[frontend/src/main.ts](frontend/src/main.ts) already carries `vmin / vmax / palette` —
+just render those into an SVG/canvas gradient strip.
+
+### ⬜ Pressure map looks unexpectedly uniform — investigate
+MSLP overlay renders almost-uniformly across the globe even though `vmin=96_000` /
+`vmax=104_000` Pa should map the typical 990–1020 hPa range (most of Earth) across
+~30% of the palette and leave plenty of headroom for highs/lows. Variations should be
+clearly visible. They aren't. Hypotheses to check:
+- Grid values are in the wrong units (e.g. hPa instead of Pa, off by ×100).
+- Palette function for `pressure` is poorly tuned (low contrast across mid-range).
+- Server-side decode in `weather-service.js` is producing a constant or aliased field.
+- Shader normalisation accidentally clamping `(value − vmin) / (vmax − vmin)` to a
+  narrow band.
+Compare against the classic earth-clock MSLP rendering (which works) for a known-good
+reference. Quick check: `console.log(window.__orrery.overlay.lastGrid?.values?.slice(0,
+10))` from DevTools once MSLP is active.
+
 ### ⬜ Skybox quality toggle (2K ⇄ 8K)
 Both assets are already bundled
-([orrery/src/scene/Skybox.ts](orrery/src/scene/Skybox.ts) HEAD-probes 2K → 8K). 2K
+([frontend/src/scene/Skybox.ts](frontend/src/scene/Skybox.ts) HEAD-probes 2K → 8K). 2K
 (~250 KB) loads first; 8K (~1.9 MB) is sharper Milky Way detail when zoomed out.
 Add a small UI control (Astro row or a new dedicated "View / quality" entry), persist
 choice in `localStorage` alongside `orrery.menu.v1`. Default 2K for the first paint;
@@ -105,21 +133,21 @@ Earth-clock historically ships three surfaces: the website, a Windows screensave
 the **classic** D3 + canvas renderer and run against the legacy server's data feeds.
 
 ### ⬜ Screensaver + Wallpaper Engine — new-version investigation
-Goal: figure out the right way to ship orrery (WebGL) as a screensaver and as a
+Goal: figure out the right way to ship the WebGL frontend as a screensaver and as a
 Wallpaper Engine input, given that they're currently bound to the classic renderer.
 
 Open questions to answer in a short design doc before implementing:
 
 - **Screensaver host**: classic uses a small Windows wrapper around a packaged
   build. For WebGL we likely need either (a) Electron / Tauri wrapping a local-only
-  build of orrery, or (b) a `.scr` shim that spawns a fullscreen Chromium window.
+  build of the frontend, or (b) a `.scr` shim that spawns a fullscreen Chromium window.
   Battery / GPU impact matters for screensaver use; investigate idle CPU/GPU with
   the WebGL renderer at 30 fps cap, no time-warp, no aurora wsockets.
 - **Wallpaper Engine input**: Wallpaper Engine ingests browser-based wallpapers via
-  its built-in Chromium. Should "just work" with an orrery build pinned at `/` and
+  its built-in Chromium. Should "just work" with a frontend build pinned at `/` and
   the menu collapsed by default — but: how do we feed live weather data when the
   user has Wallpaper Engine running offline (right now the `BundledDataSource` stub
-  in [orrery/src/data/DataSource.ts](orrery/src/data/DataSource.ts) is empty)? Two
+  in [frontend/src/data/DataSource.ts](frontend/src/data/DataSource.ts) is empty)? Two
   paths: (i) a "bundled snapshot" mode where the build includes a recent wind/cloud
   capture, (ii) live fetches via the host's network if available.
 - **Renderer modes**: the existing menu state is over-rich for an ambient wallpaper.
@@ -127,7 +155,7 @@ Open questions to answer in a short design doc before implementing:
   gentle orbit, time-warp 1×, and a curated default layer set (wind + clouds +
   night lights, nothing else).
 - **Asset budget**: screensaver / wallpaper need to start fast and run cool. Audit
-  what the orrery currently downloads at first paint (~700 KB JS + textures); see
+  what the frontend currently downloads at first paint (~700 KB JS + textures); see
   what can be deferred behind the "ambient" mode.
 
 Effort: ~half-day for the design doc, then a few days to build whichever surface(s)
@@ -138,7 +166,7 @@ we commit to. Reference: existing `wallpaper-engine/` + `screensaver/` directori
 
 ## Communications & launch
 
-### ⬜ "Upgrade to earth-clock orrery" blog post
+### ⬜ "Upgrading earth-clock to WebGL" blog post
 The cutover from classic → WebGL is the biggest project change since launch. Worth
 a public write-up:
 
@@ -188,13 +216,13 @@ Full detail in the archive. Headline items:
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `orrery/.env.local` (`VITE_FIRMS_MAP_KEY`) | ✅ | Excluded from git. |
-| Dev server | ✅ | `npm run dev` (`:8080` legacy server) or `cd orrery && npm run dev` (`:5173` Vite). |
+| `frontend/.env.local` (`VITE_FIRMS_MAP_KEY`) | ✅ | Excluded from git. |
+| Dev server | ✅ | `npm run dev` (`:8080` legacy server) or `cd frontend && npm run dev` (`:5173` Vite). |
 | Live site | ✅ | `earth-clock.onemonkey.org` (CapRover; see [DEPLOYMENT.md](DEPLOYMENT.md)). |
-| Production CORS proxy (NHC) | ✅ | NGINX `location /proxy/nhc/` in CapRover override. See [orrery/docs/proxy.md](orrery/docs/proxy.md). |
+| Production CORS proxy (NHC) | ✅ | NGINX `location /proxy/nhc/` in CapRover override. See [frontend/docs/proxy.md](frontend/docs/proxy.md). |
 | Wind JSON | ✅ | `public/data/weather/current/current-wind-surface-level-gfs-1.0.json`, refreshed 6 h. |
 | Coastlines | ✅ | `public/data/earth-topo.json`, Natural Earth 50 m. |
-| Cutover | ✅ | v0.1.0 — orrery serves at `/`, classic moved to `/classic/`. |
+| Cutover | ✅ | v0.1.0 — the WebGL frontend serves at `/`, classic moved to `/classic/`. |
 | Docs polish (web + about page) | 🔄 | `/about/` in-app About panel landed; broader web docs surface still TODO. |
 | Browser-matrix QA | ⬜ | Have only tested Chrome / Edge. Verify Safari, Firefox, mobile. |
 

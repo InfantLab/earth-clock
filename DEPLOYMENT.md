@@ -1,8 +1,8 @@
 # Deployment guide — CapRover at earth-clock.onemonkey.org
 
-This guide describes the current production deployment of earth-clock to CapRover, as of v0.1.0 (the cutover release where the 3D `orrery` rebuild became the default at the site root).
+This guide describes the current production deployment of earth-clock to CapRover, as of v0.1.0 (the cutover release where the 3D WebGL rebuild — `frontend/` in the source tree, previously codenamed *orrery* — became the default at the site root).
 
-For day-to-day development workflow, see [orrery/README.md](orrery/README.md). For the original v0.1.0 cutover procedure (a one-time file-move plus build), see [orrery/docs/cutover.md](orrery/docs/cutover.md). For the NGINX CORS-proxy rule that needs to be in place for the NHC tropical-cyclone feed, see [orrery/docs/proxy.md](orrery/docs/proxy.md).
+For day-to-day development workflow, see [frontend/README.md](frontend/README.md). For the original v0.1.0 cutover procedure (a one-time file-move plus build), see [frontend/docs/cutover.md](frontend/docs/cutover.md). For the NGINX CORS-proxy rule that needs to be in place for the NHC tropical-cyclone feed, see [frontend/docs/proxy.md](frontend/docs/proxy.md).
 
 ## What runs in production
 
@@ -12,26 +12,26 @@ The frontends that share this `public/` tree:
 
 | URL path | What's served | Source |
 |---|---|---|
-| `/` | The 3D orrery experience (default) | `public/index.html` + `public/assets/` (Vite production build) |
+| `/` | The 3D WebGL experience (default) | `public/index.html` + `public/assets/` (Vite production build) |
 | `/classic/` | The classic earth-clock archive | `public/classic/*` (preserved verbatim from pre-cutover) |
 | `/about/` | The detailed about page | `public/about/index.html` |
 | `/data/*` | Shared GFS weather + OSCAR ocean-currents JSON | `public/data/*` (refreshed by weather-service) |
-| `/textures/*` | orrery 3D assets (earth, moon, starmap) | `public/textures/*` |
+| `/textures/*` | frontend 3D assets (earth, moon, starmap) | `public/textures/*` |
 | `/proxy/nhc/*` | Reverse-proxy to NHC for CORS-unfriendly tropical-cyclone feeds | NGINX override on the CapRover app, see below |
 
 ## Repository layout
 
 ```
 earth-clock/
-├── orrery/                 # 3D rebuild — TypeScript + Three.js + Vite
+├── frontend/                 # 3D rebuild — TypeScript + Three.js + Vite
 │   ├── src/                # source code
-│   ├── public/             # orrery's bundled static assets (textures/, etc.)
+│   ├── public/             # frontend's bundled static assets (textures/, etc.)
 │   ├── package.json        # version (currently 0.1.0)
 │   └── docs/               # cutover.md, proxy.md, qa-checklist.md
 ├── public/                 # served at the site root
-│   ├── index.html          # ← orrery production build (output of BUILD_AS_ROOT=1 npm run build)
-│   ├── assets/             # ← orrery production JS bundle + sourcemap
-│   ├── textures/           # ← orrery static assets, copied from orrery/public/textures/
+│   ├── index.html          # ← frontend production build (output of BUILD_AS_ROOT=1 npm run build)
+│   ├── assets/             # ← frontend production JS bundle + sourcemap
+│   ├── textures/           # ← frontend static assets, copied from frontend/public/textures/
 │   ├── about/              # detailed about page (static HTML)
 │   ├── classic/            # ← classic earth-clock archive
 │   └── data/               # ← weather + ocean data, refreshed by weather-service
@@ -66,7 +66,7 @@ CapRover injects `PORT` automatically. `server.js` reads it.
 - Custom domain: `earth-clock.onemonkey.org`
 - HTTPS: enabled (auto-managed by CapRover via Let's Encrypt)
 - Force HTTPS: on
-- WebSocket: not required for orrery itself, but the Blitzortung lightning feed connects directly from the browser to `wss://ws*.blitzortung.org/`; ensure CapRover's NGINX doesn't strip `Upgrade`/`Connection` headers if you ever proxy that too.
+- WebSocket: not required for the frontend itself, but the Blitzortung lightning feed connects directly from the browser to `wss://ws*.blitzortung.org/`; ensure CapRover's NGINX doesn't strip `Upgrade`/`Connection` headers if you ever proxy that too.
 
 ### 5. NGINX override — the `/proxy/nhc/` rule
 
@@ -90,7 +90,7 @@ location /proxy/nhc/ {
 }
 ```
 
-**Important gotcha**: this block MUST go in the port-443 server (the one that actually serves the site to browsers), not the port-80 `forceSsl` redirect stub. Putting it in the wrong server block is silently invisible because browsers always reach the site over HTTPS. Background and the full investigation of options vs. Cloudflare Workers: [orrery/docs/proxy.md](orrery/docs/proxy.md).
+**Important gotcha**: this block MUST go in the port-443 server (the one that actually serves the site to browsers), not the port-80 `forceSsl` redirect stub. Putting it in the wrong server block is silently invisible because browsers always reach the site over HTTPS. Background and the full investigation of options vs. Cloudflare Workers: [frontend/docs/proxy.md](frontend/docs/proxy.md).
 
 After saving, verify with:
 ```bash
@@ -100,16 +100,16 @@ Expected: `200 OK` + `Access-Control-Allow-Origin: *` + a JSON body (e.g. `{"act
 
 ### 6. Updating
 
-Push to `master`; CapRover redeploys automatically. To rebuild the orrery production bundle in `public/`, run locally:
+Push to `master`; CapRover redeploys automatically. To rebuild the frontend production bundle in `public/`, run locally:
 ```bash
-cd orrery
+cd frontend
 BUILD_AS_ROOT=1 npm run build
 git add ../public
-git commit -m "orrery: rebuild for prod"
+git commit -m "frontend: rebuild for prod"
 git push
 ```
 
-Do not commit the `public/orrery/` dev-build directory (it's gitignored). Production lives at `public/index.html` + `public/assets/` directly.
+Production lives at `public/index.html` + `public/assets/` directly. The non-root build target (`cd frontend && npm run build` without `BUILD_AS_ROOT=1`) writes to `public/frontend/` — useful for testing the sub-path build but not what production serves.
 
 ## Troubleshooting
 

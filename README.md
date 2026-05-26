@@ -11,20 +11,20 @@ The current experience is the spiritual successor to Cameron Beccario's [`earth`
 |---|---|
 | earth-clock (default)    | [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/) |
 | Classic archive          | [earth-clock.onemonkey.org/classic/](https://earth-clock.onemonkey.org/classic/) |
-| Project plan             | [orrery/PLAN.md](orrery/PLAN.md) |
-| Credits & licences       | [orrery/CREDITS.md](orrery/CREDITS.md) |
+| Project plan             | [frontend/PLAN.md](frontend/PLAN.md) |
+| Credits & licences       | [frontend/CREDITS.md](frontend/CREDITS.md) |
 
 The current version is built on [Three.js](https://threejs.org/) with GPU wind particles, modern satellite feeds (NASA GIBS, NOAA SWPC, NASA FIRMS, NOAA NHC, NOAA SPC, Blitzortung), and physically-based lighting from a true-position sun. It includes a NASA-derived solar-eclipse renderer (path of totality + live umbra disc, targeting the 2026-08-12 Spain eclipse as a headline event), plus an equirectangular flat-map mode. The other classic projections are on the roadmap.
 
 ## What's in this repo
 
-- [`orrery/`](orrery/) — the rebuild (TypeScript + Three.js + Vite). This is what serves at `/`.
+- [`frontend/`](frontend/) — the rebuild (TypeScript + Three.js + Vite). This is what serves at `/`.
 - [`public/classic/`](public/classic/) — the classic earth-clock, preserved verbatim at `/classic/`. Fork of [`cambecc/earth`](https://github.com/cambecc/earth) with a real-time day/night terminator overlay and a clock display added on top of the original eight-projection renderer.
 - [`weather-service.js`](weather-service.js), [`lib/`](lib/) — the GFS weather backend that downloads GRIB2 from NOAA NOMADS and produces the JSON feeds in [`public/data/weather/current/`](public/data/weather/current/). Shared by every frontend.
 - [`screensaver/`](screensaver/) — a Windows .scr wrapper hosting the classic experience inside a WebView2 control. See [`DEPLOYMENT.md`](DEPLOYMENT.md).
 - [`wallpaper-engine/`](wallpaper-engine/) — a Wallpaper Engine output mode wrapping the classic codebase, with all eight projections available as a property.
 
-For day-to-day development of the current experience, work in the `orrery/` subdirectory — its own README has dev-server instructions, architecture notes, and the live development plan.
+For day-to-day development of the current experience, work in the `frontend/` subdirectory — its own README has dev-server instructions, architecture notes, and the live development plan.
 
 ## Original lineage
 
@@ -39,15 +39,15 @@ cd earth-clock
 
 What you do next depends on which part you want to work on.
 
-### Develop the 3D experience (orrery — the current default)
+### Develop the 3D experience (the current default)
 
 ```bash
-cd orrery
+cd frontend
 npm install
 npm run dev
 ```
 
-Vite dev server at <http://localhost:5173>. Hot module reload, source maps, full TypeScript checking. The dev server also reverse-proxies `/proxy/nhc/*` to NHC's CORS-blocked feeds so hurricanes work in development. See [`orrery/README.md`](orrery/README.md) and [`orrery/PLAN.md`](orrery/PLAN.md) for architecture notes and the current development plan.
+Vite dev server at <http://localhost:5173>. Hot module reload, source maps, full TypeScript checking. The dev server also reverse-proxies `/proxy/nhc/*` to NHC's CORS-blocked feeds so hurricanes work in development. See [`frontend/README.md`](frontend/README.md) and [`frontend/PLAN.md`](frontend/PLAN.md) for architecture notes and the current development plan.
 
 ### Run the classic archive locally
 
@@ -67,14 +67,14 @@ npm run weather-service
 
 This downloads current GFS data from NOAA NOMADS, decodes it from GRIB2 to JSON using pure JavaScript (no Java dependency), writes the JSONs to `public/data/weather/current/`, then sleeps for 6 hours and repeats. Both the 3D and classic frontends read those JSONs. Full architecture in [`WEATHER_SERVICE.md`](WEATHER_SERVICE.md).
 
-### Build orrery for production
+### Build the frontend for production
 
 ```bash
-cd orrery
+cd frontend
 BUILD_AS_ROOT=1 npm run build
 ```
 
-Writes `public/index.html` + `public/assets/*` at the repo root (alongside the existing `public/classic/`, `public/data/`, `public/textures/`, `public/about/`). The `BUILD_AS_ROOT` env var flips Vite's `outDir` and disables `emptyOutDir` so the archived classic site and the shared data tree survive the rebuild. See [`orrery/docs/cutover.md`](orrery/docs/cutover.md) for the original cutover procedure and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the CapRover deployment.
+Writes `public/index.html` + `public/assets/*` at the repo root (alongside the existing `public/classic/`, `public/data/`, `public/textures/`, `public/about/`). The `BUILD_AS_ROOT` env var flips Vite's `outDir` and disables `emptyOutDir` so the archived classic site and the shared data tree survive the rebuild. See [`frontend/docs/cutover.md`](frontend/docs/cutover.md) for the original cutover procedure and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the CapRover deployment.
 
 ## Other components
 
@@ -93,4 +93,4 @@ Writes `public/index.html` + `public/assets/*` at the repo root (alongside the e
 
 ## Licence
 
-MIT, inherited from `cambecc/earth`. See [`LICENSE.md`](LICENSE.md). Per-asset and per-feed licences (CC-BY for Solar System Scope and OpenStreetMap derivatives, public-domain for NOAA/NASA imagery, MIT/Apache for libraries) are catalogued in [`orrery/CREDITS.md`](orrery/CREDITS.md).
+MIT, inherited from `cambecc/earth`. See [`LICENSE.md`](LICENSE.md). Per-asset and per-feed licences (CC-BY for Solar System Scope and OpenStreetMap derivatives, public-domain for NOAA/NASA imagery, MIT/Apache for libraries) are catalogued in [`frontend/CREDITS.md`](frontend/CREDITS.md).

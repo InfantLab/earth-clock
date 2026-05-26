@@ -5,7 +5,7 @@
 The weather service is a Node.js backend service that automatically fetches current Global Forecast System (GFS) weather data from NOAA NOMADS, converts it from GRIB2 format to JSON, and makes it available to the frontend applications.
 
 **Consumed by**:
-- **orrery** (the 3D experience at [`/`](orrery/)) — wind particles, MSLP / Temp / RH / TPW / TCW / TCDC overlays
+- **frontend** (the 3D experience at [`/`](frontend/)) — wind particles, MSLP / Temp / RH / TPW / TCW / TCDC overlays
 - **classic** (the archive at [`public/classic/`](public/classic/)) — wind + weather overlays through any of the eight original cartographic projections (orthographic, equirectangular, azimuthal-equidistant, conic-equidistant, stereographic, Waterman butterfly, Winkel tripel, Atlantis)
 - **wallpaper-engine** ([`wallpaper-engine/`](wallpaper-engine/)) — same overlays bundled or fetched from production
 - **screensaver** ([`screensaver/`](screensaver/)) — wraps wallpaper-engine
