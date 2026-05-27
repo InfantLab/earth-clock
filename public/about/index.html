@@ -414,11 +414,11 @@
 
   <h3>Moon</h3>
   <p>
-    The moon's position uses Paul Schlyter's simplified orbital elements with main perturbation terms (evection, variation, yearly equation, parallactic equation, and a handful of smaller corrections from the sun's gravitational pull). Accuracy is ~0.3° angular, ~0.5 R⊕ in distance.
+    The moon's position uses Meeus's truncated ELP-2000-82B series (60+ perturbation terms across longitude, latitude and distance), giving ~10 arcsec angular accuracy and ~10 km in distance. That's about 100× better than the simpler Schlyter formulae we used through v0.1.5, and crucially smaller than the sun's apparent disc — so observer-relative eclipse geometry now lands correctly anywhere on the planet at any moment. (Earlier versions had to rely on bundled NASA centerline waypoints for the headline eclipses because the runtime calculation wasn't accurate enough at totality. From v0.1.6 onward the runtime calculation is good enough on its own; the catalogued waypoints stay around as a deterministic fallback for the four headline events.)
   </p>
-  <div class="note">
-    <p><strong>A bug worth naming.</strong> Schlyter's published epoch is <code>1999-12-31 00:00 UT</code>, not the more famous J2000 (<code>2000-01-01 12:00 UTC</code>). Using J2000 by accident — easy to do, since every other astronomy formula on Earth uses it — introduces a 1.5-day epoch offset, which the moon's 13.065°/day mean-anomaly rate amplifies into a 19.6° lunar-position error. This was a real bug here, fixed in v0.0.5. If you build something similar from Schlyter, watch for it.</p>
-  </div>
+  <p>
+    Reference: Jean Meeus, <em>Astronomical Algorithms</em> (2nd ed., 1998), chapter 47.
+  </p>
 </section>
 
 <section id="eclipse">
@@ -438,12 +438,12 @@
     <figcaption>The Eclipse panel — four catalogued events (one historical, three upcoming). Click any row to jump simulated time to T-1 m of that event at 60× warp.</figcaption>
   </figure>
 
-  <h3>Why we use NASA's data, not runtime computation</h3>
+  <h3>Why the headline events use NASA's data</h3>
   <p>
-    Eclipse geometry is brutally sensitive. The moon's umbra is ~290 km wide on Earth's surface — a thin pencil dragged across the planet over four hours. A 0.5° angular error in the moon's position translates to a ~30° displacement of the shadow on Earth's surface. So even our 0.3°-accurate lunar model puts the 2026 Spain eclipse at the wrong continent.
+    Eclipse geometry is brutally sensitive. The moon's umbra is ~290 km wide where it falls on Earth — a thin pencil dragged across the planet over four hours. Even a few arc-minutes of lunar-position error displaces the shadow tens of kilometres on the surface, and earlier versions of this site (using a simpler lunar model) couldn't render the 2026 Spain eclipse on the right continent.
   </p>
   <p>
-    For each catalogued eclipse (2024-04-08 North America, 2026-08-12 Spain, 2027-08-02 Egypt, 2028-07-22 Australia &amp; New Zealand) we use NASA Goddard's published centerline coordinates directly. Each is a small array of (time, lat, lon, magnitude) waypoints from Fred Espenak and Jean Meeus's predictions. The runtime renderer interpolates these via slerp (spherical linear interpolation) into a smooth great-circle path along Earth's surface, and snaps the live umbra disc to the interpolated position at the current simulated time.
+    The current Meeus-based lunar model is accurate to about ten arc-seconds, which keeps the runtime-computed shadow well inside the real umbra envelope, so any eclipse — historical or future — now renders correctly at runtime from first principles. For the four catalogued headline events (2024-04-08 North America, 2026-08-12 Spain, 2027-08-02 Egypt, 2028-07-22 Australia &amp; New Zealand) we additionally use NASA Goddard's published centerline coordinates directly. These are arrays of (time, lat, lon, magnitude) waypoints from Fred Espenak and Jean Meeus's predictions, interpolated at runtime — accurate to the last published decimal place and deterministic across future code changes.
   </p>
 
   <h3>The umbra, the penumbra, and the diamond ring</h3>
@@ -543,9 +543,9 @@
     <li><strong>Solar System Scope</strong> (INOVE s.r.o.) — Earth, moon, and starmap textures, CC-BY 4.0.</li>
     <li><strong>Natural Earth</strong> — public-domain coastline TopoJSON.</li>
     <li><strong>OpenStreetMap contributors</strong> — Nominatim reverse-geocoding for place names.</li>
-    <li><strong>Paul Schlyter</strong> — the <a href="https://www.stjarnhimlen.se/comp/ppcomp.html">simplified planetary-position algorithms</a> that drive the sub-solar and sub-lunar calculations.</li>
+    <li><strong>Jean Meeus</strong> — <em>Astronomical Algorithms</em> (2nd ed., 1998). Chapter 47's truncated ELP-2000-82B series drives the moon's geocentric position — accurate to about ten arcseconds, comfortably smaller than the sun's apparent disc so eclipse geometry works correctly anywhere on Earth.</li>
     <li><strong>USNO and NOAA SPA</strong> — the underlying GMST and solar-position formulae.</li>
-    <li><strong>Jean Meeus</strong> — <em>Astronomical Algorithms</em>, the canonical reference for the lunar theory used here and the one we'll move to for general-purpose eclipse precision.</li>
+    <li><strong>Paul Schlyter</strong> — the <a href="https://www.stjarnhimlen.se/comp/ppcomp.html">simplified planetary-position algorithms</a> that drove the lunar calculation through v0.1.5; retained credit because that work carried the project for over a year of development and the page is still one of the best plain-text astronomy resources on the web.</li>
     <li><strong>Three.js</strong>, <strong>Vite</strong>, <strong>TypeScript</strong>, <strong>fflate</strong> — the underlying engineering tools, all MIT or Apache-2.0.</li>
   </ul>
 

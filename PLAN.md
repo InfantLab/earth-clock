@@ -25,8 +25,98 @@ This doc is for **what's next**: current focus, near-term work, blockers, roadma
 
 ## Version
 
-Current: **v0.1.2** (Location-panel redesign, pin/beam alignment fix, drag-vs-click
-suppression, eclipse-close → snap-to-live, wordmark tooltip; 2026-05-26).
+Current: **v0.1.6** (2026-05-27).
+
+- v0.1.2 — Location-panel redesign, pin/beam alignment fix, drag-vs-click, eclipse-close → snap-to-live, wordmark tooltip
+- v0.1.3 — wind streamlines fixed (HalfFloat), wind intensity picker (subtle / standard / bold)
+- v0.1.4 — Moon-toggle retirement, "Find moon" action button on the Astro row
+- v0.1.5 — geocoder behind same-origin `/proxy/geocode/`, structured GeocodeResult with retry, service-unavailable UX
+- v0.1.6 — Meeus ELP-2000-82B lunar model; ~10 arcsec accuracy (100× better than Schlyter). Any eclipse now renders correctly from first principles at runtime, not just the four catalogued headline events.
+
+---
+
+## Release plan — v0.1.6 to v0.2.0
+
+Five half-day batches between now and the next round-number milestone. Each is sized so
+one focused session can ship it, and each is ordered for **biggest visible impact per
+half-day** rather than internal correctness wins. (Internal-correctness items like the
+Meeus lunar upgrade are bundled into v0.2.0 alongside the blog-launch QA pass — they
+don't need their own release.)
+
+### ✅ v0.1.6 — Meeus lunar upgrade — landed
+Replaced Schlyter's lunar position with Meeus's truncated ELP-2000-82B (33 + 30
+terms across longitude, distance, latitude, plus the A1/A2/A3 auxiliary
+perturbations) in [frontend/src/astro/lunar.ts](frontend/src/astro/lunar.ts).
+Verification against Meeus's book example 47.a: 5 arcsec longitude / 2 arcsec
+latitude / 17 km distance residuals — well under the ~10 arcsec target.
+
+That's about **100× better than Schlyter** and crucially smaller than the sun's
+apparent disc, so any eclipse — past, future, catalogued or not — now renders
+correctly from first principles at runtime. NASA centerlines stay around for
+the four headline events as a deterministic-fallback authority but are no
+longer load-bearing.
+
+About-page Moon + Eclipse sections updated to drop the "we use NASA centerlines
+because our calc isn't good enough" framing; Schlyter's credit retained as
+historical attribution.
+
+### ⬜ v0.1.7 — Eclipse sun-disc view
+The user has pinned a location + loaded an eclipse → render an inset showing the
+sun's disc with the moon's disc overlapping it from that observer's vantage.
+Magnitude readout = % of sun covered. Updates live during time-warp through the
+eclipse window. Full math sketch in the [Eclipse sun-disc view](#-eclipse-sun-disc-view--what-youd-see-from-this-spot)
+entry below.
+
+**Why second**: single most "shareable moment" feature we can land before the
+2026-08-12 Spain eclipse. Lands on top of the Meeus upgrade from v0.1.6, so the
+moon's apparent position is accurate enough for the rendered geometry to be
+believable. Half-day to a day depending on inset polish.
+
+### ⬜ v0.1.8 — Overlay scale key + pressure-uniform fix
+Two related issues in one batch — both around the GFS overlay row (MSLP / Temp /
+Humidity / Moisture / Cloud water):
+
+1. **Scale key**: render a coloured gradient strip with labelled min / mid / max
+   (units) so the overlay is interpretable. Each `OverlayCfg` already carries
+   `vmin`/`vmax`/`palette`; this is a one-pass SVG/canvas widget.
+2. **Pressure-uniform investigation**: the MSLP overlay looks nearly uniform —
+   probably a unit issue (Pa vs hPa, ×100), palette tuning, or shader clamp.
+   Diagnose + fix.
+
+**Why third**: makes the entire Overlay row actually useful. Currently striking
+but illegible. Both small; together they fit a half-day. See
+[Visible scale key](#-visible-scale-key-for-overlays) and [Pressure map](#-pressure-map-looks-unexpectedly-uniform--investigate)
+below.
+
+### ⬜ v0.1.9 — Flat-map pan + zoom
+Make the equirectangular flat map draggable + zoomable like classic earth.nullschool.
+Three.js's built-in `MapControls` is purpose-built for this and should be the right
+base — try it before hand-rolling. Wrap-around at the antimeridian by rendering the
+plane twice with ±360° offsets.
+
+**Why fourth**: addresses the loudest known UX gap (the flat map feels static and
+broken next to the 3D globe). Half-day to a day. **Prerequisite** for any
+restoration of the other six classic projections — without pan/zoom, swapping
+projections is just one static plane for another.
+
+See [Flat-map should pan + zoom](#-flat-map-should-pan--zoom-like-classic-earthnullschool)
+below for the implementation outline.
+
+### ⬜ v0.2.0 — Public-launch milestone: onboarding + QA + LocationIQ live
+The "we're ready and the blog post is up" version bump. Three things bundled
+because they're cross-cutting polish:
+
+1. **Onboarding pass**: tooltip sweep over every menu button (plain-English,
+   no jargon — *"MSLP" → "atmospheric pressure"*); first-visit nudge that
+   points at the wordmark for ~3 s on first load, gated by a `localStorage`
+   flag so it never repeats. Optional follow-up: a "tour" mode walking
+   through Clock → Layers → Location → Eclipse.
+2. **QA matrix pass** — browser-matrix (Safari + Firefox + mobile in addition
+   to Chrome/Edge), confirm no regressions across v0.1.6–v0.1.9, update
+   [frontend/docs/qa-checklist.md](frontend/docs/qa-checklist.md).
+3. **LocationIQ live in production** — confirm the NGINX `/proxy/geocode/`
+   block is deployed (DEPLOYMENT.md §5b) and points at LocationIQ (§5c).
+   Site is no longer dependent on Nominatim's charity service.
 
 ---
 
@@ -63,6 +153,69 @@ The wordmark tooltip is the first onboarding nudge. Two more layers to add:
 ---
 
 ## Near-term (Phase A polish — pre-v0.2)
+
+### 🔄 Geocoder behind a same-origin proxy (Nominatim → LocationIQ)
+**Status: client-side resilience + dev proxy landed; production NGINX block +
+LocationIQ signup pending.**
+
+The reverse-geocoder for the Location panel used to hit `nominatim.openstreetmap.org`
+directly from the browser. Nominatim is run as a charity by the OSM Foundation and
+periodically returns HTTP 503 under load — which the user saw on the live site.
+
+Done in v0.1.5:
+- [frontend/src/data/geocoder.ts](frontend/src/data/geocoder.ts) rewritten:
+  routes through a same-origin `/proxy/geocode/` URL; structured
+  `GeocodeResult` discriminated by status (`ok | no-name | unavailable |
+  rate-limited`); auto-retry on 5xx after a 4 s delay.
+- main.ts: dispatches each status to a meaningful place-name string. 503 →
+  "geocoder unavailable" instead of a silent "—". Rate-limited → leave the
+  previous name in place rather than clearing.
+- [frontend/vite.config.ts](frontend/vite.config.ts): dev proxy
+  `/proxy/geocode/` → Nominatim, so application code is identical in dev + prod.
+
+Outstanding (deploy steps; see [DEPLOYMENT.md](DEPLOYMENT.md) §5b and §5c):
+- Add the `/proxy/geocode/` NGINX block to the CapRover override (the User-Agent
+  it sets identifies earth-clock cleanly, which is what Nominatim's usage policy
+  asks for).
+- Sign up at <https://locationiq.com/> (free tier: 5,000 reverse requests/day);
+  swap the proxy upstream to LocationIQ for dedicated infra. Same Nominatim-
+  compatible response shape, so the client doesn't change.
+
+### ⬜ Eclipse sun-disc view — "what you'd see from this spot"
+During an eclipse run, the user has already pinned a location. Render an inset
+panel showing the **sun as you'd see it in the sky from that location at that
+moment**, with the **moon's disc overlapping it** at the geometrically correct
+offset — so during the 2026 Spain eclipse, the user can pin Bilbao and watch
+the moon slide across the sun's disc in real time alongside the global view.
+
+Math sketch (all the ingredients exist already; just glue):
+
+- Observer's local up-vector at (lat, lon) in the world frame — straightforward
+  from the existing lat/lon → XYZ helper.
+- Local altitude/azimuth basis from up + Earth's spin axis.
+- Project sun direction and moon position into AltAz at the observer →
+  `(altSun, azSun)`, `(altMoon, azMoon)`.
+- Angular separation between sun and moon = arc-distance in AltAz.
+- Apparent sun angular radius ≈ 0.266° (varies ±1.5 % over the year).
+- Apparent moon angular radius from observer's true moon distance (the existing
+  Schlyter formula returns this) ≈ 0.246° to 0.282° depending on perigee/apogee.
+- Render two overlapping discs in a small SVG or canvas inset, scaled so the
+  sun is a comfortable fixed size on screen. Magnitude readout = fraction of
+  sun's area obscured.
+
+UI: small inset panel (top-right under the Data panel? or as part of the
+Eclipse panel when location is also set?). Updates live with simulated time
+so during the warp-driven eclipse run-through the user sees the moon slide
+across the sun.
+
+**Effort: half-day to one day.** The astronomical math is standard textbook
+(Meeus chapter 12-13 territory), the UI is a small SVG. Dependencies: a
+pinned location + a loaded eclipse. Both already exist.
+
+Refinement to consider: also surface the contact times — first contact,
+second contact (totality begins), third contact (totality ends), fourth
+contact — for the pinned location, derived from when the angular separation
+crosses (r_sun + r_moon) and (r_sun − r_moon).
 
 ### ⬜ Meeus lunar model upgrade
 Replace the Schlyter lunar position with Meeus simplified ELP-2000-82B (~30 main

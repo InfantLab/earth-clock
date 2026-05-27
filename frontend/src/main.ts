@@ -423,14 +423,33 @@ function pinLocation(lat: number, lon: number, source: PinSource) {
   locationPin.setVisible(true);
   locationPanel.setLocation(lat, lon, source);
   console.log(`[earth-clock] pinned via ${source}: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
-  // Reverse geocode in the background — Nominatim rate-limits to 1 req/s so the function
-  // returns null if called too quickly. Don't await; let the UI show "looking up…".
-  reverseGeocode(lat, lon)
-    .then(place => locationPanel.setPlaceName(place?.short ?? null))
-    .catch(err => {
-      console.warn(`[earth-clock] reverse geocode failed: ${err.message ?? err}`);
-      locationPanel.setPlaceName(null);
-    });
+  // Reverse-geocode in the background. The geocoder routes through `/proxy/geocode/`
+  // (NGINX in prod, Vite dev-proxy in dev) and returns a structured result; we
+  // translate each status into a user-facing place-name string. Don't await — the UI
+  // displays "looking up…" until this resolves.
+  reverseGeocode(lat, lon).then(result => {
+    switch (result.status) {
+      case "ok":
+        locationPanel.setPlaceName(result.place.short);
+        break;
+      case "no-name":
+        // Upstream returned a valid response but no feature at this location
+        // (open ocean, Antarctic interior, etc.). The coords stay accurate; we
+        // just have nothing to call the place.
+        locationPanel.setPlaceName(null);
+        break;
+      case "unavailable":
+        // 5xx after retry (Nominatim degraded, or network blip). Tell the user;
+        // their next pin click will try again and may succeed.
+        locationPanel.setPlaceName("geocoder unavailable");
+        break;
+      case "rate-limited":
+        // Too soon since the last click; the throttle dropped this request.
+        // Leave the previous place-name in place — clearing it would be the
+        // wrong feedback (the user just clicked, they expect SOMETHING).
+        break;
+    }
+  });
 }
 
 // Click-to-pin location handler. In globe mode we raycast against the Earth's day mesh

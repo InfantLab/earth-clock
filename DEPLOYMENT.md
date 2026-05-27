@@ -98,6 +98,94 @@ curl -i https://earth-clock.onemonkey.org/proxy/nhc/CurrentStorms.json
 ```
 Expected: `200 OK` + `Access-Control-Allow-Origin: *` + a JSON body (e.g. `{"activeStorms": []}` off-season).
 
+### 5b. NGINX override — the `/proxy/geocode/` rule
+
+Reverse geocoding for the click-to-pin Location panel. The browser hits
+`/proxy/geocode/reverse?lat=…&lon=…` (a same-origin URL), NGINX forwards to the
+upstream geocoder. Same shape as the NHC block above. Two reasons it goes through
+the proxy instead of hitting the upstream directly:
+
+1. The server can set a proper `User-Agent` identifying earth-clock, which the
+   upstream geocoder asks for in its usage policy. Browsers don't let JS override UA.
+2. We can swap upstreams (Nominatim → LocationIQ → self-host) by changing one
+   line here, no client rebuild needed. Nominatim's public service is run as a
+   charity and periodically returns 503 under load; LocationIQ is a paid mirror
+   of the same API surface with a free tier (5,000 requests / day) and dedicated
+   infra. See **5c** below for the swap.
+
+Default block — proxies to Nominatim:
+
+```nginx
+# Reverse-proxy for the geocoder (Nominatim default; swap to LocationIQ when ready).
+location /proxy/geocode/ {
+    proxy_pass         https://nominatim.openstreetmap.org/;
+    proxy_ssl_server_name on;
+    proxy_set_header   Host nominatim.openstreetmap.org;
+    proxy_set_header   User-Agent "earth-clock (earth-clock.onemonkey.org)";
+    proxy_hide_header  Set-Cookie;
+    add_header Access-Control-Allow-Origin *  always;
+    add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
+    proxy_intercept_errors on;
+    # Cache successful responses for 12 hours — anyone re-pinning a place they
+    # (or another visitor) clicked recently gets an instant response without
+    # touching the upstream. Requires a `proxy_cache_path` directive at the
+    # http {} level; CapRover's default config has one named `default` you can
+    # use, or add `proxy_cache_path /tmp/nginx_cache levels=1:2 keys_zone=geocode:10m max_size=100m;`.
+    proxy_cache geocode;
+    proxy_cache_valid 200 12h;
+    proxy_cache_valid 404 1h;
+}
+```
+
+Same port-443 gotcha as the NHC block.
+
+Verify:
+```bash
+curl -i "https://earth-clock.onemonkey.org/proxy/geocode/reverse?format=jsonv2&lat=43.26&lon=-2.93"
+```
+Expected: `200 OK` + JSON containing `"display_name"` field starting with "Bilbao".
+
+### 5c. (Optional) Swap to LocationIQ
+
+When the public Nominatim instance is degraded — or to avoid being a freeloader
+on a charity service — swap the upstream to **[LocationIQ](https://locationiq.com/)**.
+Same Nominatim-compatible API, dedicated infrastructure, 5,000 requests / day on
+the free tier, paid tiers for more.
+
+1. Sign up at <https://locationiq.com/register>. Verify email; you get an API key.
+2. In CapRover → app settings → **App Configs → Environmental Variables**, add:
+   ```
+   LOCATIONIQ_KEY=pk.your_key_here
+   ```
+   CapRover injects this into the container's environment.
+3. Update the NGINX block (replace **5b**'s contents):
+   ```nginx
+   location /proxy/geocode/ {
+       # Strip /proxy/geocode and inject the API key into the query string,
+       # then pass to LocationIQ's reverse endpoint. The `set` + `if` dance is
+       # needed because NGINX doesn't substitute env vars in directive values
+       # directly — CapRover renders the literal value at config-write time
+       # (sub in the key here when you paste, or use `lua-resty-env` for true
+       # runtime substitution if you have it installed).
+       set $loc_key "pk.your_key_here";   # ← paste your LocationIQ key here
+       proxy_pass https://us1.locationiq.com/v1/reverse.php$is_args$args&key=$loc_key;
+       proxy_ssl_server_name on;
+       proxy_set_header Host us1.locationiq.com;
+       proxy_hide_header Set-Cookie;
+       add_header Access-Control-Allow-Origin *  always;
+       add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
+       proxy_intercept_errors on;
+       proxy_cache geocode;
+       proxy_cache_valid 200 12h;
+       proxy_cache_valid 404 1h;
+   }
+   ```
+4. Save the override. The client doesn't change — same URL contract.
+
+LocationIQ's response shape is Nominatim-compatible (they fork Nominatim and add
+their own infra), so the client parser in [geocoder.ts](frontend/src/data/geocoder.ts)
+works unchanged.
+
 ### 6. Updating
 
 Push to `master`; CapRover redeploys automatically. To rebuild the frontend production bundle in `public/`, run locally:

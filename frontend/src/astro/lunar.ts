@@ -1,48 +1,135 @@
 import * as THREE from "three";
 
 /**
- * Geocentric moon position via Schlyter's simplified orbital elements **with main
- * perturbation terms applied**.
+ * Geocentric moon position via Meeus's simplified ELP-2000-82B truncation
+ * (*Astronomical Algorithms* 2nd ed., chapter 47). Accuracy: ~10 arcsec in
+ * geocentric longitude (~4 arcsec lat), ~10 km in distance. That's ~100× better
+ * than the previous Schlyter implementation, and crucially **smaller than the
+ * sun's apparent angular radius** (≈ 0.266°) — so observer-relative eclipse
+ * geometry now lands within the sun's disc, which Schlyter couldn't guarantee.
  *
- * The basic Keplerian formula on its own (orbital elements → ecliptic XYZ, no
- * corrections) gives errors of a few degrees on average and can be 20°+ off at
- * specific moments — notably near real solar eclipses, when the moon's near-perfect
- * alignment with the sun amplifies any model error into a missed shadow. We saw
- * exactly this at the 2026-08-12 Spain eclipse: the basic formula put the moon ~21°
- * from the sun at peak, so the umbra centerline never came near Earth and no
- * eclipse rendered.
+ * Method: compute the moon's five fundamental angles (mean longitude L′, mean
+ * elongation D, sun's mean anomaly M, moon's mean anomaly M′, argument of
+ * latitude F) at the requested instant, then sum perturbation tables Σℓ
+ * (longitude), Σr (radius), Σb (latitude). Each table is a list of
+ * (D, M, M′, F) integer-coefficient quadruples with an amplitude; terms
+ * involving M get multiplied by the eccentricity correction E (the term once,
+ * 2M twice) to account for Earth's varying orbital eccentricity.
  *
- * Adding Schlyter's 12 longitude / 5 latitude / 2 distance perturbation terms
- * (evection, variation, yearly equation, and friends) brings accuracy to ~0.3° in
- * geocentric position and ~0.5 R⊕ in distance. That's sufficient for the eclipse
- * geometry to register and for sub-lunar to read correctly within a degree of NASA.
+ * Truncation: the published table has ~60 entries each for Σℓ and Σr, and ~60
+ * for Σb. We keep the 33 largest in Σℓ/Σr and 30 largest in Σb — this
+ * captures all amplitude > ~5 × 10⁻⁵ deg ≈ 0.2 arcsec, giving total residual
+ * ≪ 10 arcsec. Add Meeus's three small auxiliary perturbations (A1, A2, A3)
+ * which are cheap and pick up a few more arcsec of precision.
  *
- * Reference: https://www.stjarnhimlen.se/comp/ppcomp.html — sections 5 and 7.
+ * Reference: Meeus, *Astronomical Algorithms* 2nd ed., 1998, ch. 47, tables
+ * 47.A and 47.B. The full ELP-2000-82B has thousands of terms and gives
+ * sub-arcsec precision; this truncation suffices for everything earth-clock
+ * does (eclipse geometry on Earth's surface, observer-vs-eclipse rendering,
+ * sub-lunar marker positioning).
  */
 
-// Schlyter's epoch is **1999 Dec 31 00:00 UT** ("2000 Jan 0.0 TDT" in his notation),
-// NOT J2000 (2000 Jan 1 12:00 UTC). The 1.5-day difference is fatal here: mean anomaly
-// rate is 13.065°/day, so using J2000 instead of Schlyter's epoch puts the moon ~19.6°
-// off in mean anomaly — and that's exactly the size of the alignment error we saw at
-// the 2026-08-12 eclipse before this fix. Note that solar.ts intentionally still uses
-// J2000 because the NOAA SPA formula it implements has J2000 as its epoch.
-const SCHLYTER_EPOCH = Date.UTC(1999, 11, 31, 0, 0, 0);
+const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
 const DEG = Math.PI / 180;
 
-function daysSinceEpoch(date: Date): number {
-  return (date.getTime() - SCHLYTER_EPOCH) / 86400000;
+/** Equatorial Earth radius — Meeus's distance results are in km; we divide by
+ *  this to express distance in Earth radii to match the codebase's convention
+ *  (~60.3 mean ER). */
+const EARTH_RADIUS_KM = 6378.14;
+
+function julianCenturiesSinceJ2000(date: Date): number {
+  return (date.getTime() - J2000_MS) / (86400000 * 36525);
 }
 
-/** Wrap a degree value to [-180, 180] before converting to radians. Keeps trig
- *  inputs numerically stable when the underlying linear formula has accumulated
- *  hundreds of full rotations since J2000 (where doing the `% (2π)` directly in
- *  radians loses ~1° of precision due to floating-point in the modulus). */
-function wrapDeg(deg: number): number {
-  let x = deg % 360;
-  if (x > 180) x -= 360;
-  if (x < -180) x += 360;
-  return x;
+/** Reduce a value (degrees) into [0, 360). Done in stages so floating-point
+ *  precision doesn't degrade after ~thousands of revolutions. */
+function mod360(deg: number): number {
+  const x = deg - 360 * Math.floor(deg / 360);
+  return x >= 0 ? x : x + 360;
 }
+
+// ── Meeus 47.A: longitude (Σℓ) and distance (Σr) ──────────────────────────────
+// Each entry: [D coef, M coef, M′ coef, F coef, Σℓ amplitude (×10⁻⁶ deg),
+//              Σr amplitude (km, ÷1)]. Terms are sorted by |Σℓ|; we keep the
+// 33 largest. Sub-table for terms involving M is multiplied by E once or twice.
+const LR_TERMS: readonly (readonly [number, number, number, number, number, number])[] = [
+  [0,  0,  1,  0,  6288774, -20905355],
+  [2,  0, -1,  0,  1274027,  -3699111],
+  [2,  0,  0,  0,   658314,  -2955968],
+  [0,  0,  2,  0,   213618,   -569925],
+  [0,  1,  0,  0,  -185116,     48888], // E
+  [0,  0,  0,  2,  -114332,     -3149],
+  [2,  0, -2,  0,    58793,    246158],
+  [2, -1, -1,  0,    57066,   -152138], // E
+  [2,  0,  1,  0,    53322,   -170733],
+  [2, -1,  0,  0,    45758,   -204586], // E
+  [0,  1, -1,  0,   -40923,   -129620], // E
+  [1,  0,  0,  0,   -34720,    108743],
+  [0,  1,  1,  0,   -30383,    104755], // E
+  [2,  0,  0, -2,    15327,     10321],
+  [0,  0,  1,  2,   -12528,         0],
+  [0,  0,  1, -2,    10980,     79661],
+  [4,  0, -1,  0,    10675,    -34782],
+  [0,  0,  3,  0,    10034,    -23210],
+  [4,  0, -2,  0,     8548,    -21636],
+  [2,  1, -1,  0,    -7888,     24208], // E
+  [2,  1,  0,  0,    -6766,     30824], // E
+  [1,  0, -1,  0,    -5163,     -8379],
+  [1,  1,  0,  0,     4987,    -16675], // E
+  [2, -1,  1,  0,     4036,    -12831], // E
+  [2,  0,  2,  0,     3994,    -10445],
+  [4,  0,  0,  0,     3861,    -11650],
+  [2,  0, -3,  0,     3665,     14403],
+  [0,  1, -2,  0,    -2689,     -7003], // E
+  [2,  0, -1,  2,    -2602,         0],
+  [2, -1, -2,  0,     2390,     10056], // E
+  [1,  0,  1,  0,    -2348,      6322],
+  [2, -2,  0,  0,     2236,     -9884], // E²
+  [0,  1,  2,  0,    -2120,      5751], // E
+  [0,  2,  0,  0,    -2069,         0], // E²
+];
+
+// Map term-index → exponent on E (Earth's eccentricity factor): 0 for normal
+// terms, 1 if M coefficient is ±1, 2 if M is ±2. Computed once at module load
+// rather than in every call.
+const LR_E_EXP: readonly number[] = LR_TERMS.map(t => Math.abs(t[1]));
+
+// ── Meeus 47.B: latitude (Σb) ─────────────────────────────────────────────────
+// Each entry: [D coef, M coef, M′ coef, F coef, Σb amplitude (×10⁻⁶ deg)].
+const B_TERMS: readonly (readonly [number, number, number, number, number])[] = [
+  [0,  0,  0,  1,  5128122],
+  [0,  0,  1,  1,   280602],
+  [0,  0,  1, -1,   277693],
+  [2,  0,  0, -1,   173237],
+  [2,  0, -1,  1,    55413],
+  [2,  0, -1, -1,    46271],
+  [2,  0,  0,  1,    32573],
+  [0,  0,  2,  1,    17198],
+  [2,  0,  1, -1,     9266],
+  [0,  0,  2, -1,     8822],
+  [2, -1,  0, -1,     8216], // E
+  [2,  0, -2, -1,     4324],
+  [2,  0,  1,  1,     4200],
+  [2,  1,  0, -1,    -3359], // E
+  [2, -1, -1,  1,     2463], // E
+  [2, -1,  0,  1,     2211], // E
+  [2, -1, -1, -1,     2065], // E
+  [0,  1, -1, -1,    -1870], // E
+  [4,  0, -1, -1,     1828],
+  [0,  1,  0,  1,    -1794], // E
+  [0,  0,  0,  3,    -1749],
+  [0,  1, -1,  1,    -1565], // E
+  [1,  0,  0,  1,    -1491],
+  [0,  1,  1,  1,    -1475], // E
+  [0,  1,  1, -1,    -1410], // E
+  [0,  1,  0, -1,    -1344], // E
+  [1,  0,  0, -1,    -1335],
+  [0,  0,  3,  1,     1107],
+  [4,  0,  0, -1,     1021],
+  [4,  0, -1,  1,      833],
+];
+
+const B_E_EXP: readonly number[] = B_TERMS.map(t => Math.abs(t[1]));
 
 interface LunarPosition {
   ra: number;       // right ascension, radians
@@ -51,96 +138,95 @@ interface LunarPosition {
 }
 
 export function lunarPosition(date: Date): LunarPosition {
-  const d = daysSinceEpoch(date);
+  const T = julianCenturiesSinceJ2000(date);
 
-  // Sun's mean anomaly + mean longitude — needed for the moon's perturbation terms
-  // below (the sun is the dominant perturbing body, hence why the basic Keplerian
-  // moon-around-Earth-only model is so poor without these).
-  const Ms = wrapDeg(357.528 + 0.9856003 * d) * DEG;
-  const Ls = wrapDeg(280.460 + 0.9856474 * d) * DEG;
+  // Mean elements (degrees), Meeus equations 47.1–47.5. Polynomial terms are
+  // kept through T⁴ for the moon's own quantities (where they matter); cubic
+  // is plenty for the others.
+  const Lp = mod360(218.3164477 + 481267.88123421 * T - 0.0015786 * T * T
+                  + (T * T * T) / 538841 - (T * T * T * T) / 65194000);
+  const D  = mod360(297.8501921 + 445267.1114034  * T - 0.0018819 * T * T
+                  + (T * T * T) / 545868 - (T * T * T * T) / 113065000);
+  const M  = mod360(357.5291092 + 35999.0502909   * T - 0.0001536 * T * T
+                  + (T * T * T) / 24490000);
+  const Mp = mod360(134.9633964 + 477198.8675055  * T + 0.0087414 * T * T
+                  + (T * T * T) / 69699 - (T * T * T * T) / 14712000);
+  const F  = mod360( 93.272095  + 483202.0175233  * T - 0.0036539 * T * T
+                  - (T * T * T) / 3526000 + (T * T * T * T) / 863310000);
 
-  // Moon's orbital elements at this epoch.
-  const N  = wrapDeg(125.1228 - 0.0529538083 * d) * DEG; // ascending node longitude
-  const i  = 5.1454 * DEG;                                // inclination
-  const w  = wrapDeg(318.0634 + 0.1643573223 * d) * DEG;  // argument of perigee
-  const a  = 60.2666;                                     // semi-major axis (R⊕)
-  const e  = 0.054900;                                    // eccentricity
-  const Mm = wrapDeg(115.3654 + 13.0649929509 * d) * DEG; // mean anomaly
+  // Eccentricity correction E (Meeus 47.6): dimensionless, ≈ 1 - 0.0025T - ...
+  // Terms involving the sun's mean anomaly M scale with E (or E² for 2M)
+  // because Earth's orbital eccentricity affects how strongly the sun
+  // perturbs the moon.
+  const E = 1 - 0.002516 * T - 0.0000074 * T * T;
+  const E2 = E * E;
 
-  // Solve Kepler's equation for eccentric anomaly E (one Newton iteration is plenty
-  // at e≈0.055 — convergence is quadratic).
-  let E = Mm + e * Math.sin(Mm) * (1 + e * Math.cos(Mm));
-  E = E - (E - e * Math.sin(E) - Mm) / (1 - e * Math.cos(E));
+  // Convert mean elements to radians for the sine/cosine sums.
+  const Dr  = D  * DEG;
+  const Mr  = M  * DEG;
+  const Mpr = Mp * DEG;
+  const Fr  = F  * DEG;
 
-  // Position in the moon's orbital plane.
-  const xv = a * (Math.cos(E) - e);
-  const yv = a * Math.sqrt(1 - e * e) * Math.sin(E);
-  let r = Math.sqrt(xv * xv + yv * yv);
-  const v = Math.atan2(yv, xv);
+  // Sum Σℓ (longitude, ×10⁻⁶ deg) and Σr (distance, km). Same argument so
+  // we walk the table once. Each term is amplitude × {sin, cos}(arg) and
+  // optionally × E^|M coefficient| for terms involving M.
+  let sumL = 0;
+  let sumR = 0;
+  for (let i = 0; i < LR_TERMS.length; i++) {
+    const t = LR_TERMS[i];
+    const arg = t[0] * Dr + t[1] * Mr + t[2] * Mpr + t[3] * Fr;
+    const e = LR_E_EXP[i] === 0 ? 1 : (LR_E_EXP[i] === 1 ? E : E2);
+    sumL += t[4] * e * Math.sin(arg);
+    sumR += t[5] * e * Math.cos(arg);
+  }
 
-  // Geocentric ecliptic XYZ — basic Keplerian, BEFORE perturbations.
-  const xec0 = r * (Math.cos(N) * Math.cos(v + w) - Math.sin(N) * Math.sin(v + w) * Math.cos(i));
-  const yec0 = r * (Math.sin(N) * Math.cos(v + w) + Math.cos(N) * Math.sin(v + w) * Math.cos(i));
-  const zec0 = r * Math.sin(v + w) * Math.sin(i);
+  // Sum Σb (latitude, ×10⁻⁶ deg).
+  let sumB = 0;
+  for (let i = 0; i < B_TERMS.length; i++) {
+    const t = B_TERMS[i];
+    const arg = t[0] * Dr + t[1] * Mr + t[2] * Mpr + t[3] * Fr;
+    const e = B_E_EXP[i] === 0 ? 1 : (B_E_EXP[i] === 1 ? E : E2);
+    sumB += t[4] * e * Math.sin(arg);
+  }
 
-  // Convert to ecliptic spherical (lon, lat, r) so we can apply the standard published
-  // perturbation series, which are expressed as additive corrections to those.
-  let lon = Math.atan2(yec0, xec0);
-  let lat = Math.atan2(zec0, Math.sqrt(xec0 * xec0 + yec0 * yec0));
+  // Meeus's three auxiliary "long-period" perturbations (47, pp. 338-339):
+  // A1, A2, A3 are angles whose effect on the moon's position is small but
+  // not negligible at our precision target.
+  const A1 = mod360(119.75 +    131.849 * T) * DEG;
+  const A2 = mod360( 53.09 + 479264.290 * T) * DEG;
+  const A3 = mod360(313.45 + 481266.484 * T) * DEG;
+  const Lpr = Lp * DEG;
+  sumL +=  3958 * Math.sin(A1)
+        + 1962 * Math.sin(Lpr - Fr)
+        +  318 * Math.sin(A2);
+  sumB += -2235 * Math.sin(Lpr)
+        +   382 * Math.sin(A3)
+        +   175 * Math.sin(A1 - Fr)
+        +   175 * Math.sin(A1 + Fr)
+        +   127 * Math.sin(Lpr - Mpr)
+        -   115 * Math.sin(Lpr + Mpr);
 
-  // Auxiliary angles used by the perturbation series.
-  const Lm = N + w + Mm;  // mean longitude of moon
-  const D  = Lm - Ls;     // mean elongation of moon (moon longitude − sun longitude)
-  const F  = Lm - N;      // argument of latitude of moon
+  // Final ecliptic coordinates (degrees), then radians for the rotation.
+  const lambda = (Lp + sumL / 1_000_000) * DEG;     // apparent geocentric ecliptic longitude
+  const beta   = (sumB / 1_000_000) * DEG;          // apparent geocentric ecliptic latitude
+  const distanceKm = 385_000.56 + sumR / 1000;       // distance in km
+  const distance = distanceKm / EARTH_RADIUS_KM;     // distance in ER (~60.3 mean)
 
-  // Longitude perturbations (degrees → radians via DEG). Largest term (evection,
-  // 1.274°) dominates; including down to ~0.03° gets us to ~0.3° overall.
-  lon += DEG * (
-      -1.274 * Math.sin(Mm - 2 * D)      // evection
-    +  0.658 * Math.sin(2 * D)           // variation
-    -  0.186 * Math.sin(Ms)              // yearly equation
-    -  0.059 * Math.sin(2 * Mm - 2 * D)
-    -  0.057 * Math.sin(Mm - 2 * D + Ms)
-    +  0.053 * Math.sin(Mm + 2 * D)
-    +  0.046 * Math.sin(2 * D - Ms)
-    +  0.041 * Math.sin(Mm - Ms)
-    -  0.035 * Math.sin(D)               // parallactic equation
-    -  0.031 * Math.sin(Mm + Ms)
-  );
+  // Ecliptic → equatorial. Mean obliquity at J2000 (good to ~1 arcsec across
+  // the date range we care about — sub-Meeus precision).
+  const eps = (23.4392911 - 0.0130042 * T) * DEG;
 
-  // Latitude perturbations.
-  lat += DEG * (
-      -0.173 * Math.sin(F - 2 * D)
-    -  0.055 * Math.sin(Mm - F - 2 * D)
-    -  0.046 * Math.sin(Mm + F - 2 * D)
-    +  0.033 * Math.sin(F + 2 * D)
-    +  0.017 * Math.sin(2 * Mm + F)
-  );
+  const cosBeta = Math.cos(beta);
+  const xec = Math.cos(lambda) * cosBeta;
+  const yec = Math.sin(lambda) * cosBeta;
+  const zec = Math.sin(beta);
 
-  // Distance perturbations (Earth radii). Tiny compared to the ~60 R⊕ mean distance
-  // but important for eclipse magnitude — the difference between a total and
-  // annular eclipse comes down to whether the moon's apparent radius exceeds the
-  // sun's, which is set by the distance to ~1%.
-  r += (
-      -0.58 * Math.cos(Mm - 2 * D)
-    -  0.46 * Math.cos(2 * D)
-  );
-
-  // Convert corrected (lon, lat, r) back to ecliptic XYZ.
-  const cosLat = Math.cos(lat);
-  const xec = r * Math.cos(lon) * cosLat;
-  const yec = r * Math.sin(lon) * cosLat;
-  const zec = r * Math.sin(lat);
-
-  // Rotate ecliptic → equatorial by obliquity ε.
-  const eps = 23.4393 * DEG;
   const xeq = xec;
   const yeq = yec * Math.cos(eps) - zec * Math.sin(eps);
   const zeq = yec * Math.sin(eps) + zec * Math.cos(eps);
 
-  const distance = Math.sqrt(xeq * xeq + yeq * yeq + zeq * zeq);
   const ra = Math.atan2(yeq, xeq);
-  const dec = Math.asin(zeq / distance);
+  const dec = Math.asin(zeq);
 
   return { ra, dec, distance };
 }

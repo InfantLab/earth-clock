@@ -47,6 +47,16 @@ export default defineConfig({
         secure: true,
         rewrite: (path) => path.replace(/^\/proxy\/nhc/, ""),
       },
+      // Reverse-geocoder proxy. Same URL contract in dev + prod (the production
+      // NGINX block at /proxy/geocode/ has the matching rule — see DEPLOYMENT.md).
+      // Upstream is Nominatim by default; swap to LocationIQ by changing the
+      // target + the rewrite (LocationIQ wants an API key in the query string).
+      "/proxy/geocode": {
+        target: "https://nominatim.openstreetmap.org",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/proxy\/geocode/, ""),
+      },
     },
   },
   plugins: [
