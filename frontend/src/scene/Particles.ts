@@ -243,17 +243,23 @@ export class Particles {
     this.flatMesh = new THREE.Points(geometry, this.flatRenderMaterial);
   }
 
-  /** Mock fallback used until real GFS data loads. Uniform 10 m/s east everywhere. */
+  /** Mock fallback used until real GFS data loads. Uniform 10 m/s east everywhere.
+   *  HalfFloatType to match windGridToTexture — keeps the sampler type consistent
+   *  with the real wind texture, so the GPU never has to switch between FloatType
+   *  and HalfFloatType sampling and silently downgrade filter behaviour. */
   private createMockWindTexture(): THREE.DataTexture {
     const size = 4;
-    const data = new Float32Array(size * size * 4);
+    const data = new Uint16Array(size * size * 4);
+    const toHalf = THREE.DataUtils.toHalfFloat;
+    const TEN = toHalf(10);
+    const ONE = toHalf(1);
     for (let i = 0; i < size * size; i++) {
-      data[i * 4]     = 10; // u: 10 m/s east
-      data[i * 4 + 1] = 0;  // v: 0
+      data[i * 4]     = TEN;  // u: 10 m/s east
+      data[i * 4 + 1] = 0;    // v: 0 (half-float zero is bit pattern 0)
       data[i * 4 + 2] = 0;
-      data[i * 4 + 3] = 1;
+      data[i * 4 + 3] = ONE;
     }
-    const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType);
+    const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.HalfFloatType);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.magFilter = THREE.LinearFilter;

@@ -387,9 +387,13 @@ const eclipsePanel = new EclipsePanel(document.body, {
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
   { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks,
-    lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap },
+    lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap, trails },
   { data: dataPanel, clock, location: locationPanel, eclipse: eclipsePanel },
 );
+
+// Wire the "Find moon" action button at the end of the Astro row. Reuses the same
+// camera-repositioning helper that powers `window.__orrery.findMoon()`.
+menu.onFindMoon(() => findMoonInCamera());
 
 // QA v001dev: the ✕ button now closes the Location panel entirely (toggles off in the menu)
 // rather than just clearing the pin. Clearing-but-keeping-panel-open turned out to be

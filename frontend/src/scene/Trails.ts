@@ -251,6 +251,36 @@ export class Trails {
     this.compositeMaterial.uniforms.uOpacity.value = o;
   }
 
+  /**
+   * Apply a preset intensity for the wind composite — combines fade rate (streak
+   * length) and opacity (overall brightness). The Wind menu mutex picker drives
+   * this; live-tunable from the console via `__orrery.trails.setIntensity("bold")`.
+   *
+   *   - "subtle"   — short streaks, dim composite. Wind is present but doesn't
+   *                   compete with continents, clouds, or weather layers.
+   *                   Default for v0.1.3+.
+   *   - "standard" — moderate streaks, mid brightness. Wind is visible but the
+   *                   rest of the globe stays legible.
+   *   - "bold"     — long, bright streaks. The signature earth.nullschool look;
+   *                   the wind dominates. Was the only level in v0.1.0–v0.1.2.
+   */
+  setIntensity(level: "subtle" | "standard" | "bold") {
+    switch (level) {
+      case "subtle":
+        this.fadeMaterial.uniforms.uFade.value = 0.98;
+        this.compositeMaterial.uniforms.uOpacity.value = 0.35;
+        break;
+      case "standard":
+        this.fadeMaterial.uniforms.uFade.value = 0.99;
+        this.compositeMaterial.uniforms.uOpacity.value = 0.65;
+        break;
+      case "bold":
+        this.fadeMaterial.uniforms.uFade.value = 0.992;
+        this.compositeMaterial.uniforms.uOpacity.value = 1.0;
+        break;
+    }
+  }
+
   /** Resize is a no-op now (trail buffer is fixed-resolution); kept for call-site compatibility. */
   resize(_w: number, _h: number) {}
 

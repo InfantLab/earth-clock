@@ -29,6 +29,7 @@ import type { OverlayLayer } from "../scene/OverlayLayer";
 import type { RadiusVectors } from "../scene/RadiusVectors";
 import type { EclipseLayer } from "../scene/EclipseLayer";
 import type { FlatMap } from "../scene/FlatMap";
+import type { Trails } from "../scene/Trails";
 import type { DataPanel } from "./DataPanel";
 import type { Clock } from "./Clock";
 import type { LocationPanel } from "./LocationPanel";
@@ -49,6 +50,9 @@ export interface MenuLayers {
   radiusVectors: RadiusVectors;
   eclipse: EclipseLayer;
   flatMap: FlatMap;
+  /** Wind-trail accumulator. The Wind row's mutex picker calls
+   *  `trails.setIntensity(level)` directly via Menu.apply(). */
+  trails: Trails;
 }
 
 export interface MenuPanels {
@@ -65,7 +69,12 @@ export interface MenuPanels {
 
 type LayerKey =
   // Weather row
-  | "wind" | "fires" | "lightning" | "hurricanes" | "tracks" | "aurora"
+  | "fires" | "lightning" | "hurricanes" | "tracks" | "aurora"
+  // Wind row — mutex intensity picker (one selected at a time, or all off = wind hidden).
+  // Replaces the v0.1.0–v0.1.2 binary `wind` toggle, which only had the "bold" preset and
+  // visually smothered the rest of the globe. Old `wind: true` localStorage entries are
+  // silently ignored (not in LayerKey any more).
+  | "windSubtle" | "windStandard" | "windBold"
   // Clouds row — mutex source picker (one selected at a time)
   | "cloudsViirs" | "cloudsGfs" | "cloudsGoes"
   // Overlay row — mutex (unchanged)
@@ -73,20 +82,35 @@ type LayerKey =
   // Geography row
   | "coastlines" | "nightLights"
   // Astro row. `eclipse` toggles both the 3D EclipseLayer mesh AND the top-left
-  // Eclipse panel (catalogue browser + jump-to). Earlier versions had a separate
-  // "Tools" entry for the diagnostic panel; retired in favour of console helpers on
-  // window.__orrery (useTestData / useLiveData / findMoon / jumpToEclipse).
-  | "terminator" | "atmosphere" | "moon" | "hands" | "eclipse"
+  // Eclipse panel (catalogue browser + jump-to). The Moon toggle was removed in
+  // v0.1.4 — the 3D moon mesh is always visible now, and the flat-map sun + moon
+  // dots are paired and controlled by the Beams toggle. "Find moon" sits at the
+  // end of the row as a non-toggling action button (reposition the camera).
+  | "terminator" | "atmosphere" | "hands" | "eclipse"
   // View row.
   | "map" | "orbit" | "clock" | "data" | "location";
 
 /** Subset of LayerKey representing cloud-source picker entries (mutex). */
 export type CloudSourceKey = "cloudsViirs" | "cloudsGfs" | "cloudsGoes";
 
+/** Subset of LayerKey representing wind-intensity picker entries (mutex). */
+export type WindIntensityKey = "windSubtle" | "windStandard" | "windBold";
+
+/** Map from a wind-intensity LayerKey to the value Trails.setIntensity() expects. */
+const WIND_INTENSITY_LEVEL: Record<WindIntensityKey, "subtle" | "standard" | "bold"> = {
+  windSubtle:   "subtle",
+  windStandard: "standard",
+  windBold:     "bold",
+};
+
 const STORAGE_KEY = "orrery.menu.v1";
 const DEFAULTS: Record<LayerKey, boolean> = {
-  // Weather
-  wind: true, fires: true, lightning: true, hurricanes: true, tracks: true, aurora: true,
+  // Weather (binary toggles)
+  fires: true, lightning: true, hurricanes: true, tracks: true, aurora: true,
+  // Wind — default "subtle". Was bold-only by default until v0.1.3, which overwhelmed
+  // continents, clouds, and weather layers. The user can dial up to standard or bold
+  // for the classic earth.nullschool look.
+  windSubtle: true, windStandard: false, windBold: false,
   // Clouds — VIIRS on by default. (Briefly defaulted to GFS in 0.0.5-dev when VIIRS
   // appeared broken; turned out we were fetching from a TileMatrixSet zoom level whose
   // matrix over-covered the world by 75% in the bottom row — the empty fill triggered
@@ -97,14 +121,16 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   // Geography
   coastlines: true, nightLights: true,
   // Astro
-  terminator: true, atmosphere: true, moon: true, hands: true, eclipse: false,
+  terminator: true, atmosphere: true, hands: true, eclipse: false,
   // View
   map: false, orbit: false, clock: true, data: false, location: false,
 };
 
 const LABELS: Record<LayerKey, string> = {
-  wind: "Wind", fires: "Fires", lightning: "Lightning",
+  fires: "Fires", lightning: "Lightning",
   hurricanes: "Hurricanes", tracks: "Storm tracks", aurora: "Aurora",
+  // Wind row — intensity picker (mutex). Off is implicit (click active to turn off).
+  windSubtle: "Subtle", windStandard: "Standard", windBold: "Bold",
   // Clouds row — source picker (mutex). Off is implicit (click active to turn off).
   cloudsViirs: "VIIRS", cloudsGfs: "GFS", cloudsGoes: "GOES",
   // Overlay row: human-readable names rather than meteorological abbreviations. The
@@ -112,7 +138,7 @@ const LABELS: Record<LayerKey, string> = {
   mslp: "Pressure", temp: "Temperature", rh: "Humidity",
   tpw: "Moisture", tcw: "Cloud water",
   coastlines: "Coastlines", nightLights: "Night lights",
-  terminator: "Day/night", atmosphere: "Atmosphere", moon: "Moon", hands: "Beams", eclipse: "Eclipse",
+  terminator: "Day/night", atmosphere: "Atmosphere", hands: "Beams", eclipse: "Eclipse",
   map: "Flat map", orbit: "Auto-spin",
   clock: "Clock", data: "Data", location: "Location",
 };
@@ -129,7 +155,13 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   hurricanes:  "Active tropical cyclones (NOAA NHC, refreshed 15 min)",
   tracks:      "Past track + 5-day forecast track + uncertainty cone for each active storm",
   lightning:   "Real-time lightning strikes from the Blitzortung community network",
-  wind:        "Surface wind particle simulation (NOAA GFS, refreshed 6 h)",
+  // Wind intensity picker — mutually exclusive. Click the active level to turn wind off.
+  // Underlying simulation is the same NOAA GFS surface-wind particle system; the levels
+  // just dial fade rate + composite opacity. Subtle = present but unobtrusive; bold = the
+  // classic earth.nullschool look (dominates the visual).
+  windSubtle:   "Wind — subtle: short streaks, dim composite. Doesn't compete with other layers.",
+  windStandard: "Wind — standard: moderate streaks, mid brightness.",
+  windBold:     "Wind — bold: long, bright streaks. The signature earth.nullschool look.",
   // Clouds source picker — mutually exclusive. Click the active source to turn clouds off.
   cloudsViirs: "VIIRS true-colour daily mosaic (NASA GIBS) — photographic, can have swath gaps on partial days",
   cloudsGfs:   "GFS cloud cover (NOAA, 6 h refresh) — model forecast, no coverage gaps, animates with time-warp. Prefers TCDC; falls back to TCW until weather-service is re-run.",
@@ -146,8 +178,7 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   // Astro
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
-  moon:        "The moon at its true position and distance (~60 Earth radii)",
-  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon. Under time-warp the sun beam sweeps one rotation per simulated day. Turning Beams on also turns Moon on.",
+  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
   // View
   map:         "Switch to equirectangular flat-map projection",
@@ -165,11 +196,16 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
  */
 const OVERLAY_KEYS: LayerKey[] = ["mslp", "temp", "rh", "tpw", "tcw"];
 const CLOUD_KEYS:   LayerKey[] = ["cloudsViirs", "cloudsGfs", "cloudsGoes"];
+const WIND_KEYS:    LayerKey[] = ["windSubtle", "windStandard", "windBold"];
 
 const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   {
     label: "Weather",
-    keys: ["wind", "fires", "lightning", "hurricanes", "tracks", "aurora"],
+    keys: ["fires", "lightning", "hurricanes", "tracks", "aurora"],
+  },
+  {
+    label: "Wind",
+    keys: WIND_KEYS,
   },
   {
     label: "Clouds",
@@ -185,7 +221,9 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "Astro",
-    keys: ["terminator", "atmosphere", "moon", "hands", "eclipse"],
+    keys: ["terminator", "atmosphere", "hands", "eclipse"],
+    // "Find moon" appears at the end of this row as an action button (not a toggle).
+    // See the actions block in the constructor.
   },
   {
     label: "View",
@@ -202,6 +240,7 @@ export class Menu {
   private open: boolean;
   private overlayChangeHandler: ((active: LayerKey | null) => void) | null = null;
   private cloudsChangeHandler: ((active: CloudSourceKey | null) => void) | null = null;
+  private findMoonHandler: (() => void) | null = null;
 
   constructor(parent: HTMLElement, layers: MenuLayers, panels: MenuPanels = {}) {
     this.layers = layers;
@@ -251,15 +290,37 @@ export class Menu {
         buttonsHost.appendChild(btn);
         this.buttons[key] = btn;
       });
+
+      // Astro row gets a "Find moon" action button at the end — non-toggling: clicking
+      // fires the registered findMoon handler (camera reposition) and doesn't change any
+      // persistent state. Lives in the menu, not the panel system, because it's a small
+      // one-off and doesn't justify its own UI surface.
+      if (cat.label === "Astro") {
+        buttonsHost.appendChild(document.createTextNode(" · "));
+        const btn = document.createElement("span");
+        btn.className = "orrery-tb orrery-action";
+        btn.textContent = "Find moon";
+        btn.title = "Reposition the camera along the moon's direction so both Earth and moon sit in frame";
+        btn.addEventListener("click", () => this.findMoonHandler?.());
+        buttonsHost.appendChild(btn);
+      }
+
       categoriesHost.appendChild(row);
     }
 
     this.applyAll();
   }
 
-  /** Read by the animation loop to decide whether to render wind. */
+  /** Read by the animation loop to decide whether to render wind. True if any of the
+   *  Wind row's mutex picker entries is active. */
   isWindVisible(): boolean {
-    return this.state.wind;
+    return this.activeWindIntensity() !== null;
+  }
+
+  /** Currently active wind intensity, or null if wind is hidden. */
+  activeWindIntensity(): WindIntensityKey | null {
+    for (const k of WIND_KEYS) if (this.state[k]) return k as WindIntensityKey;
+    return null;
   }
 
   /** Read by the animation loop to switch between 3D globe and equirectangular map render. */
@@ -310,6 +371,15 @@ export class Menu {
   }
 
   /**
+   * Hook for the "Find moon" action button at the end of the Astro row. main.ts wires
+   * this to the camera-reposition helper. Non-toggling — clicking just fires the
+   * handler; nothing persists.
+   */
+  onFindMoon(fn: () => void) {
+    this.findMoonHandler = fn;
+  }
+
+  /**
    * Set a layer's on/off state programmatically (e.g. from the Debug "Use test data" button
    * which wants to force-show layers that the user may have turned off). The menu's button
    * highlight, internal state, and persisted localStorage entry all stay in sync.
@@ -333,6 +403,7 @@ export class Menu {
     if (on) {
       const mutexRow = OVERLAY_KEYS.includes(key) ? OVERLAY_KEYS
                     : CLOUD_KEYS.includes(key)    ? CLOUD_KEYS
+                    : WIND_KEYS.includes(key)     ? WIND_KEYS
                     : null;
       if (mutexRow) {
         for (const other of mutexRow) {
@@ -353,9 +424,11 @@ export class Menu {
     this.state[key] = !wasActive;
 
     // Mutex rows: turning one entry on turns the others in the same row off. Used by
-    // overlay (one scalar field at a time) and clouds (one source backend at a time).
+    // overlay (one scalar field at a time), clouds (one source backend at a time), and
+    // wind (one intensity level at a time).
     const mutexRow = OVERLAY_KEYS.includes(key) ? OVERLAY_KEYS
                   : CLOUD_KEYS.includes(key)    ? CLOUD_KEYS
+                  : WIND_KEYS.includes(key)     ? WIND_KEYS
                   : null;
     if (mutexRow && this.state[key]) {
       for (const other of mutexRow) {
@@ -387,16 +460,9 @@ export class Menu {
     (Object.keys(LABELS) as LayerKey[]).forEach(k => this.apply(k));
   }
 
-  /** 3D moon-beam visibility is gated by BOTH the Moon toggle and the Beams toggle —
-   *  the beam needs a destination (moon mesh visible) AND the user has to want beams.
-   *  Either toggle can hide it. Called from both `moon` and `hands` apply() branches. */
-  private setBeamVisibility() {
-    this.layers.radiusVectors.setMoonBeamVisible(this.state.moon && this.state.hands);
-  }
-
   private apply(key: LayerKey) {
     const on = this.state[key];
-    const { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap } = this.layers;
+    const { globe, atmosphere, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails } = this.layers;
     switch (key) {
       // Cloud source picker — visibility is "is any source active?" The actual texture/
       // scalar swap happens in main.ts via onCloudsChange. (CloudLayer doesn't know the
@@ -450,31 +516,18 @@ export class Menu {
         coastlines.mesh.visible     = on;
         coastlines.flatMesh.visible = on;
         break;
-      case "moon":
-        // Moon toggle: 3D moon mesh AND flat-map moon dot. The flat-map dot is the
-        // moon's equivalent in 2D — without it, "Moon off" only removes the sphere
-        // and the user sees no change on the flat map. The associated 3D moon-beam
-        // is gated by both Moon and Beams (see setBeamVisibility).
-        moon.mesh.visible = on;
-        radiusVectors.setMoonDotVisible(on);
-        this.setBeamVisibility();
-        break;
       case "atmosphere":  atmosphere.mesh.visible = on; break;
       case "hands":
-        // Beams toggle: sun beam (3D) + sun dot (flat) always; moon beam (3D) only
-        // when Moon is also on. We auto-enable Moon when Beams is turned on as a
-        // convenience — the moon beam needs a target to point at, so the two are
-        // naturally coupled in that direction. The reverse is NOT true: switching
-        // Moon off leaves the sun beam alone, and switching Beams off doesn't touch
-        // Moon.
-        if (on && !this.state.moon) {
-          this.state.moon = true;
-          this.apply("moon");
-          saveState(this.state);
-        }
+        // Beams toggle controls the full beam system: the 3D sun beam, the 3D moon
+        // beam, and the paired sun + moon dots on the flat map. As of v0.1.4 the
+        // 3D moon mesh is always visible (no separate Moon toggle), so the moon
+        // beam can be tied to Beams alone without needing a "does the moon exist"
+        // gate. On the flat map the sun and moon dots are paired — both visible
+        // with Beams on, both hidden with Beams off.
         radiusVectors.setSunBeamVisible(on);
+        radiusVectors.setMoonBeamVisible(on);
         radiusVectors.setSunDotVisible(on);
-        this.setBeamVisibility();
+        radiusVectors.setMoonDotVisible(on);
         break;
       case "terminator":
         // Day/night rendering switch — applies to globe AND flat map. With it off, both
@@ -488,7 +541,17 @@ export class Menu {
         globe.setNightLightsVisible(on);
         flatMap.setNightLightsVisible(on);
         break;
-      case "wind":        /* consumed by main loop via isWindVisible() */ break;
+      // Wind row — mutex intensity picker. Each entry triggers a Trails.setIntensity()
+      // call for whichever level is active; the animate loop separately gates
+      // trails.step() via isWindVisible(). When none is active, isWindVisible() returns
+      // false and the trail accumulator stops updating.
+      case "windSubtle":
+      case "windStandard":
+      case "windBold": {
+        const active = this.activeWindIntensity();
+        if (active) trails.setIntensity(WIND_INTENSITY_LEVEL[active]);
+        break;
+      }
       case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
       case "orbit":       /* consumed by main loop via isAutoOrbit() → controls.autoRotate */ break;
       case "clock":       this.panels.clock?.setVisible(on); break;
@@ -590,8 +653,11 @@ function injectStyles() {
     .orrery-menu p { margin: 4px 0; }
     .orrery-label {
       display: inline-block;
-      width: 5.5em;
+      /* Wide enough for "Geography" (the longest current label) to fit on one line
+         without wrapping the trailing " | " separator onto a second line. */
+      width: 6.5em;
       color: #6e7a90;
+      white-space: nowrap;
     }
     .orrery-label::after { content: " | "; color: #3d4658; }
     .orrery-tb {
@@ -601,6 +667,14 @@ function injectStyles() {
     }
     .orrery-tb:hover { color: #fff; }
     .orrery-tb.highlighted { color: #e2b42e; }
+    /* Action buttons (e.g. "Find moon") don't toggle a persistent state. Style them
+       in a slightly cooler shade than regular toggles to hint that they're a different
+       kind of thing, but still part of the same row. */
+    .orrery-tb.orrery-action {
+      color: #9ab8e6;
+      font-style: italic;
+    }
+    .orrery-tb.orrery-action:hover { color: #cfe0ff; }
     .orrery-meta { color: #555c6b; margin-top: 6px !important; font-size: 12px; }
     .orrery-meta a { color: #7c869a; text-decoration: none; }
     .orrery-meta a:hover { color: #fff; }

@@ -1,7 +1,7 @@
 earth-clock
 ===========
 
-![earth-clock](https://github.com/InfantLab/earth-clock/raw/master/public/classic/cover.jpg)
+![earth-clock — 2026-08-12 solar eclipse umbra over Spain](https://github.com/InfantLab/earth-clock/raw/master/public/screenshots/103-earth-clock-eclipse2.png)
 
 **[earth-clock](https://earth-clock.onemonkey.org/)** is a real-time 3D visualisation of planet Earth — live wind, weather, clouds, auroras, fires, hurricanes, lightning, and the sun, moon, and stars in their true positions. It is a clock told by Earth's place in space.
 

@@ -72,6 +72,42 @@ eclipses still render correctly even though we now have NASA paths for every eve
 the catalogue. Half-day effort. Reference: Meeus, *Astronomical Algorithms* 2nd ed.,
 ch. 47.
 
+### ⬜ Flat-map should pan + zoom like classic earth.nullschool
+The flat map currently renders as a static 2:1 plane — pretty, but inert. In the
+classic earth.nullschool renderer every projection (including the equirectangular
+one) is **draggable** (mouse / touch pan) and **zoomable** (wheel / pinch).
+That's the expectation for any global-data viewer and the current static view
+feels broken compared to the 3D globe (which has OrbitControls).
+
+Implementation outline:
+
+- **Pan**: orthographic camera horizontal/vertical drag. Horizontal pan wraps
+  across ±180° lon (covered by item 6 in the FlatMap v2 layer-port list — see
+  below); vertical pan should clamp at ±90° lat so the user can't scroll past
+  the poles into empty space.
+- **Zoom**: mouse-wheel + pinch. Scale the ortho camera frustum size, not the
+  plane geometry. Centre the zoom on the cursor position (like Google Maps), not
+  on the camera target. Clamp to a reasonable zoom range — out to "whole world"
+  view, in to maybe ~5° lat span before the plane texture starts to look
+  pixelated at default texture resolution.
+- **Wrap-around** when panned past ±180°: easiest is to render the plane twice
+  with –360° / +360° offsets. Same trick as classic earth's "tear at the
+  antimeridian" behaviour. (Already item 6 in the FlatMap v2 list.)
+- **Reset / "home" gesture**: a small button or double-click resets pan + zoom
+  to the default whole-world view.
+- **Existing Click-to-pin** must continue to work — pan-vs-click already uses a
+  threshold in [frontend/src/main.ts](frontend/src/main.ts); the same drag-vs-
+  click suppression should cover pan gestures.
+- **Reuse OrbitControls** in 2D mode? Three.js's `MapControls` is purpose-built
+  for top-down ortho pan/zoom and is probably the right base. Worth trying it
+  before hand-rolling.
+
+Implementation effort: half-day to a day. The eight other classic projections
+(Phase C roadmap entry below) all become more compelling once the equirectangular
+case has pan/zoom — without it, the projection selector would just swap one
+static plane for another. So this is **prerequisite** work for that broader
+parity push.
+
 ### ⬜ FlatMap v2 — remaining layer ports
 8 items remaining (in priority order), tracked in detail in
 [frontend/docs/PLAN-archive.md](frontend/docs/PLAN-archive.md#-equirectangular-flat-map-mode-):
@@ -100,6 +136,101 @@ corner (or a slot on the menu / DataPanel) showing the active palette's gradient
 + labelled min/mid/max with units would close the loop. Cheap: each `OverlayCfg` in
 [frontend/src/main.ts](frontend/src/main.ts) already carries `vmin / vmax / palette` —
 just render those into an SVG/canvas gradient strip.
+
+### ⬜ Weather under time-warp is inconsistent with reality — design a systematic policy
+Right now the weather/data layers refresh on their own real-wall-clock cadences
+(VIIRS daily, GFS 6 h, aurora 5 min, hurricanes 15 min, lightning live WebSocket,
+Kp 5 min) regardless of simulated time. When the user time-warps forward into an
+eclipse (or backward to a known event), the globe shows **today's weather** glued
+to **a different date** — physically inconsistent, and the inconsistency varies
+per layer in confusing ways (cloud mosaic = a fixed date; aurora = a 5-min
+forecast; lightning = a live stream that visibly flashes during a 1923 simulated
+year). The eclipse path is the one layer that does track simulated time.
+
+Needs a coherent design choice. Options to weigh:
+
+1. **Freeze live data at time-warp ≠ 1.** Clearly mark "wind / clouds / aurora /
+   lightning frozen at <date>" in the Data panel. Simple to implement and honest
+   about the inconsistency.
+2. **Fetch historical data when warp ≠ 1.** GFS reanalysis (NCEP/NCAR R1, ERA5) goes
+   back decades; NOAA NHC has historical-storms archive; GIBS has every VIIRS day
+   back to launch. Wires in via the existing loader paths but each layer needs a
+   per-source historical archive integration. Way more work; arguably the
+   "right" behaviour for an Earth-time-machine.
+3. **Hybrid**: freeze most layers, time-shift the ones whose historical archive is
+   trivial (VIIRS daily mosaic, lunar/solar position — already simulated-time
+   already, just confirm), drop the others entirely under warp.
+
+Live API affected: `DataSource` + every loader in
+[frontend/src/data/](frontend/src/data/). Lightning is special because it's a
+WebSocket stream — under warp it's meaningless and probably should be hidden.
+
+UI gesture: when warp ≠ 1, layers whose data doesn't track simulated time get a
+visible tag ("live / now" badge in the Data row), or a desaturation / dim cue
+on the globe — pick one. The current behaviour silently misleads.
+
+### ✅ Wind streamlines had visible lat/lon gaps — fixed in v0.1.3
+QA noted "panel-like artifacts" in the wind composite: streamline gaps running
+along regular latitude and longitude lines (most prominent over open ocean where
+the streamlines are otherwise uniform). Looks like grid-aligned seams.
+
+**Root cause**: the wind texture was uploaded as `THREE.FloatType` (32-bit
+float). In WebGL2, linear filtering on float textures requires the
+`OES_texture_float_linear` extension. Many GPUs silently lack it and the driver
+falls back to NEAREST sampling even when LinearFilter is requested — so every
+fragment read a single 1° grid cell's value, producing visible 1°-wide "panels"
+of uniform wind direction tiled across the globe and sharp discontinuities at
+cell boundaries.
+
+**Fix**: switched to `HalfFloatType` in
+[frontend/src/data/windToTexture.ts](frontend/src/data/windToTexture.ts) (and
+the same in the mock texture in
+[frontend/src/scene/Particles.ts](frontend/src/scene/Particles.ts)). Half-float
+textures support linear filtering natively in WebGL2 with no extension. Range
+(±65 504) and precision (~3 decimal digits) are plenty for m/s wind values.
+~0.5 MB for the 360×181 grid vs. ~1 MB for Float32.
+
+Bumped frontend to v0.1.3.
+
+### ✅ Wind intensity picker (subtle / standard / bold) — landed in v0.1.3
+Even with the panel-tile artifact fixed, the bold-by-default wind composite
+visually smothered the rest of the globe. The new Wind row in the menu is a
+mutex picker (same pattern as Clouds / Overlay) — click any level to enable wind
+at that intensity; click the active level to turn wind off.
+- **Subtle** (new default): short streaks, dim composite (`uFade=0.98`,
+  `uOpacity=0.35`). Wind reads as a layer, doesn't compete with continents.
+- **Standard**: moderate streaks, mid brightness (`uFade=0.99`, `uOpacity=0.65`).
+- **Bold**: the previous default — long, bright streaks (`uFade=0.992`,
+  `uOpacity=1.0`), the classic earth.nullschool look.
+
+`Trails.setIntensity(level)` is exposed and live-tunable from the console.
+
+Plausible causes (in order of likelihood):
+
+- **Wind grid has structural zero rows/cols** from the weather-service GRIB2
+  decode — particles drift through those cells but pick up zero advection, so the
+  trails accumulator gets no fresh stamps along those bands. Quick check from
+  DevTools: `let g = await new (await import('/assets/index-XXX.js')).LiveDataSource().getWindGrid(new Date()); g.u.filter(x => Math.abs(x) < 0.001).length / g.u.length` — if more than a few %, this is it. (Easier: expose the grid on `window.__orrery.wind` for inspection.)
+- **Trail buffer texture-wrap seam at ±180° lon.** Wrap mode is RepeatWrapping
+  in [frontend/src/scene/Trails.ts](frontend/src/scene/Trails.ts) so the antimeridian
+  should be clean — but it would only produce ONE meridian line, not the regular
+  pattern observed, so not the prime suspect.
+- **Particle-stamp under-sampling at higher latitudes.** The flat render uses a
+  fixed-pixel stamp (1.7 px), but the cos(lat) compensation in the compute shader
+  means particles move further in pixel-space per frame at high latitudes. If wind
+  is fast enough, consecutive frames leave visible gaps that the 0.992 fade keeps
+  visible for ~1.4 s. Test by raising `__orrery.particles.setSpeed(0.06)` (half
+  default) — if the gaps narrow, this is the cause.
+- **GPUComputationRenderer respawn hash clustering.** The classic shadertoy hash
+  used for respawn positions has known iso-line correlations; particles that
+  respawn in the same frame may cluster along sin(dot)-lines. Would typically
+  show as *diagonal* striations rather than lat/lon gaps, so probably not the
+  cause here — but worth ruling out by swapping for a better PRNG.
+
+**To diagnose quickly:** time-warp pause, toggle Clouds + Day/night off in the
+menu so the trail buffer renders against black, then observe whether the bands
+are still present. If yes → trail buffer / wind data is the source. If no →
+compositing artifact (interaction with day texture or clouds).
 
 ### ⬜ Pressure map looks unexpectedly uniform — investigate
 MSLP overlay renders almost-uniformly across the globe even though `vmin=96_000` /

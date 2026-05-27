@@ -165,6 +165,38 @@
     .feed-desc { color: var(--fg); margin: 0; font-size: 15px; }
     .feed-src { color: var(--fg-mute); font-size: 13px; margin-top: 4px; }
 
+    /* ---- Figures (screenshots with captions) ---- */
+    figure.fig {
+      margin: 28px 0 32px;
+      padding: 0;
+    }
+    figure.fig img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.55);
+      background: #050a1e;
+    }
+    figure.fig figcaption {
+      color: var(--fg-mute);
+      font-size: 13px;
+      line-height: 1.5;
+      margin-top: 10px;
+      padding: 0 4px;
+      font-style: italic;
+    }
+    /* Hero figure — slightly bigger break above, no top margin since it follows the lede. */
+    figure.fig.hero {
+      margin: 32px 0 0;
+    }
+    /* Inline / smaller figures for UI screenshots that don't need full width. */
+    figure.fig.inset {
+      max-width: 520px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
     /* ---- Callouts ---- */
     .note {
       border-left: 2px solid var(--accent);
@@ -210,6 +242,10 @@
   <p class="lede">
     A real-time view of planet Earth in its actual orientation in space, lit by the actual sun in its actual position, with weather and atmospheric phenomena drawn from live scientific data feeds. The clock isn't on the wall — it <em>is</em> the Earth.
   </p>
+  <figure class="fig hero">
+    <img src="/screenshots/102-earthrise.png" alt="Earth from above the moon — Apollo-8-style framing">
+    <figcaption>The camera repositioned via <code>window.__orrery.findMoon()</code> to look back at Earth from the moon's current world position. Apollo 8's <em>Earthrise</em>, rendered live in your browser.</figcaption>
+  </figure>
 </div>
 
 <nav class="toc">
@@ -231,6 +267,11 @@
 
   <p>Most globes you see are stylised. This one isn't.</p>
 
+  <figure class="fig">
+    <img src="/screenshots/101%20-%20standard%20view.png" alt="Default earth-clock view — clouds, day/night terminator, wind streamlines, atmospheric rim glow">
+    <figcaption>The default view at any random moment — true-colour cloud composite from NASA satellites, GPU wind streamlines tracing the surface flow, the day/night terminator where it really is right now, atmospheric rim glow on the limb. Everything live.</figcaption>
+  </figure>
+
   <h3>The sun and the day/night terminator</h3>
   <p>
     The position of the sun in the scene is computed from <em>actual celestial mechanics</em> — your computer's clock, fed through a sub-degree-accurate solar-ephemeris formula, gives the sun's right ascension and declination. The day/night terminator on Earth's surface is therefore exactly where reality has placed it at this instant. If the sub-solar point shows over the Caribbean, it's because the sun really is overhead in the Caribbean.
@@ -248,6 +289,11 @@
   <p>
     A real photographic equirectangular star map (from Solar System Scope, derived from extensive deep-sky imagery) wraps the scene at the far horizon. The Milky Way band visible behind Earth is in approximately the right celestial orientation.
   </p>
+
+  <figure class="fig">
+    <img src="/screenshots/07-earth-clock-nightlights.png" alt="Earth's night side — city lights overlay glowing against the dark hemisphere">
+    <figcaption>The night side, with city lights rendered as an additive emission overlay. The boundary between lit and unlit hemisphere is the same per-pixel sun-direction calculation that drives the day texture's shading — there's no painted-on shadow.</figcaption>
+  </figure>
 </section>
 
 <section id="feeds">
@@ -255,6 +301,11 @@
   <p>
     Almost everything moving on the globe is fetched directly from public-domain scientific data feeds. Click any source name in the in-app Data panel to open the originating organisation's overview page.
   </p>
+
+  <figure class="fig inset">
+    <img src="/screenshots/07-earth-clock-data.png" alt="The live Data panel — every layer with its source, freshness, and refresh cadence">
+    <figcaption>The in-app Data panel (top-right, toggled from the View row). Every layer reports its source and the age of the data on screen, with a colour indicator for fresh / stale / failed.</figcaption>
+  </figure>
 
   <ul class="feeds">
     <li>
@@ -351,6 +402,11 @@
     Computed from a low-precision (~0.01° accuracy) solar ephemeris using mean longitude, mean anomaly, and the obliquity of the ecliptic. The same formula drives day-of-year lighting in every Earth visualisation since cambecc/earth.
   </p>
 
+  <figure class="fig inset">
+    <img src="/screenshots/06-earth-clock-location.png" alt="The Location panel showing pinned coordinates, place name, true solar time, plus live sub-solar and sub-lunar positions">
+    <figcaption>The Location panel — click anywhere on the globe to pin (or hit "use my location"). Reads back the coordinates, the reverse-geocoded place name, and the true solar time at that longitude. The live sub-solar (☀️) and sub-lunar (🌙) rows show where the sun and moon are currently directly overhead — click either to drop the pin there.</figcaption>
+  </figure>
+
   <h3>Greenwich mean sidereal time</h3>
   <p>
     The angle Earth has rotated past the J2000 epoch reference point, after correcting for precession of the equinoxes. This is the conversion factor between the inertial celestial frame (where stars sit at fixed positions) and Earth's geographic frame (where Greenwich is at longitude 0°). Everything that has to stay "glued to the ground" — coastlines, weather overlays, fire detections, hurricane tracks — applies a daily rotation by GMST.
@@ -368,9 +424,19 @@
 <section id="eclipse">
   <h2>The solar-eclipse renderer</h2>
 
+  <figure class="fig">
+    <img src="/screenshots/103-earth-clock-eclipse2.png" alt="The 2026-08-12 total solar eclipse — umbra disc + path of totality over Spain">
+    <figcaption>The 2026-08-12 total solar eclipse, mid-event. The dark umbra disc + thin gold "diamond ring" sit on the path of totality (the smooth orange arc), derived directly from NASA Goddard's published centerline waypoints.</figcaption>
+  </figure>
+
   <p>
     Toggle "Eclipse" in the menu's Astro row to open the in-app Eclipse panel — it lists every catalogued event in chronological order. Click any row to jump simulated time to T-minus-one-minute of that event, dial time-warp to 60×, and select that eclipse's path. While simulated time sits within 24 h of the loaded event's window, three things appear on the globe: a smooth orange <strong>path of totality</strong>, a dark <strong>umbra disc</strong> sliding along it, and a thin <strong>diamond-ring</strong> outlining the boundary between full totality and partial eclipse.
   </p>
+
+  <figure class="fig inset">
+    <img src="/screenshots/05-earth-clock-eclipses.png" alt="The Eclipse panel listing four catalogued events">
+    <figcaption>The Eclipse panel — four catalogued events (one historical, three upcoming). Click any row to jump simulated time to T-1 m of that event at 60× warp.</figcaption>
+  </figure>
 
   <h3>Why we use NASA's data, not runtime computation</h3>
   <p>
@@ -442,6 +508,12 @@
 
 <section id="tech">
   <h2>How it's built</h2>
+
+  <figure class="fig inset">
+    <img src="/screenshots/04-earth-clock-main-menu.png" alt="The main menu — six rows of toggles for layers and view modes">
+    <figcaption>The menu — Weather, Wind (with intensity picker), Clouds, Overlay, Geography, Astro, View. Click the "earth-clock" wordmark to collapse it; selections persist between visits via <code>localStorage</code>.</figcaption>
+  </figure>
+
   <p>
     The current 3D experience is a TypeScript SPA built with <a href="https://vitejs.dev/">Vite</a>, rendering to WebGL2 via <a href="https://threejs.org/">Three.js</a>. No backend per page load; all data is fetched from public endpoints client-side. The one exception is the GFS weather pipeline (<code>weather-service.js</code> at the repo root), which runs a small Node service on the server every 6 hours to download GRIB2 from NOAA NOMADS, decode it with a pure-JS GRIB2 parser, and write JSON files that the frontend reads.
   </p>
