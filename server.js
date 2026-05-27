@@ -77,46 +77,64 @@ var server = http.createServer(function (req, res) {
         return;
     }
 
+    // Directory-index fallback: requests like `/about/` resolve to a directory,
+    // not a file. Serve `<dir>/index.html` if it exists, otherwise 404. Mirrors
+    // NGINX's default `index index.html;` behaviour; the dev-server.js has the
+    // same fix. Without this, the in-app About page (linked from the menu)
+    // 404s in production.
     fs.stat(filePath, function (err, stats) {
+        if (!err && stats.isDirectory()) {
+            filePath = path.join(filePath, "index.html");
+            fs.stat(filePath, function (err2, stats2) {
+                if (err2 || !stats2.isFile()) {
+                    res.writeHead(404);
+                    res.end("Not Found");
+                    return;
+                }
+                serveFile(filePath, res, basePath);
+            });
+            return;
+        }
         if (err || !stats.isFile()) {
             res.writeHead(404);
             res.end("Not Found");
             return;
         }
-
-        var ext = path.extname(filePath).toLowerCase();
-        var contentType = mimeTypes[ext] || "application/octet-stream";
-
-        // Check if this is an HTML file that needs base tag injection
-        var relativePath = path.relative(publicDirResolved, filePath).replace(/\\/g, "/");
-        var needsBaseTag = htmlFiles.indexOf(relativePath) >= 0;
-
-        if (needsBaseTag) {
-            // Read file, inject base tag, and serve
-            fs.readFile(filePath, "utf8", function (readErr, content) {
-                if (readErr) {
-                    res.writeHead(500);
-                    res.end("Internal Server Error");
-                    return;
-                }
-                var modifiedContent = injectBaseTag(content, basePath);
-                res.setHeader("Content-Type", contentType);
-                res.setHeader("Cache-Control", "public, max-age=300");
-                res.end(modifiedContent);
-            });
-        } else {
-            // Serve file normally
-            res.setHeader("Content-Type", contentType);
-            res.setHeader("Cache-Control", "public, max-age=300");
-            var stream = fs.createReadStream(filePath);
-            stream.on("error", function () {
-                res.writeHead(500);
-                res.end("Internal Server Error");
-            });
-            stream.pipe(res);
-        }
+        serveFile(filePath, res, basePath);
     });
 });
+
+function serveFile(filePath, res, basePath) {
+    var ext = path.extname(filePath).toLowerCase();
+    var contentType = mimeTypes[ext] || "application/octet-stream";
+
+    // Check if this is an HTML file that needs base tag injection.
+    var relativePath = path.relative(publicDirResolved, filePath).replace(/\\/g, "/");
+    var needsBaseTag = htmlFiles.indexOf(relativePath) >= 0;
+
+    if (needsBaseTag) {
+        fs.readFile(filePath, "utf8", function (readErr, content) {
+            if (readErr) {
+                res.writeHead(500);
+                res.end("Internal Server Error");
+                return;
+            }
+            var modifiedContent = injectBaseTag(content, basePath);
+            res.setHeader("Content-Type", contentType);
+            res.setHeader("Cache-Control", "public, max-age=300");
+            res.end(modifiedContent);
+        });
+    } else {
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Cache-Control", "public, max-age=300");
+        var stream = fs.createReadStream(filePath);
+        stream.on("error", function () {
+            res.writeHead(500);
+            res.end("Internal Server Error");
+        });
+        stream.pipe(res);
+    }
+}
 
 server.listen(port, function () {
     console.log("============================================================");
