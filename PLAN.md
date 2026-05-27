@@ -25,13 +25,17 @@ This doc is for **what's next**: current focus, near-term work, blockers, roadma
 
 ## Version
 
-Current: **v0.1.6** (2026-05-27).
+Current: **v0.2.0** (2026-05-27). 🎉 Public-launch milestone.
 
 - v0.1.2 — Location-panel redesign, pin/beam alignment fix, drag-vs-click, eclipse-close → snap-to-live, wordmark tooltip
 - v0.1.3 — wind streamlines fixed (HalfFloat), wind intensity picker (subtle / standard / bold)
 - v0.1.4 — Moon-toggle retirement, "Find moon" action button on the Astro row
 - v0.1.5 — geocoder behind same-origin `/proxy/geocode/`, structured GeocodeResult with retry, service-unavailable UX
 - v0.1.6 — Meeus ELP-2000-82B lunar model; ~10 arcsec accuracy (100× better than Schlyter). Any eclipse now renders correctly from first principles at runtime, not just the four catalogued headline events.
+- v0.1.7 — Eclipse sun-disc inset: when an eclipse is loaded and a location pinned, an SVG panel shows the sun's disc with the moon overlapping it at the geometrically correct topocentric offset for that observer + that moment. Linear magnitude readout. Auto-shows when sun is up and moon is within 5° of sun.
+- v0.1.8 — Overlay scale-key legend (bottom-centre gradient strip with min / mid / max + units). Pressure-uniform bug fixed: OverlayLayer switched to byte texture because half-float overflowed at MSLP's ~101 325 Pa range, collapsing the whole globe to red.
+- v0.1.9 — Flat-map pan + zoom (Three.js MapControls), zoom-on-cursor, ±360° wrap-around via two extra plane copies, double-click resets to whole-world view, Y-pan clamped at the poles.
+- v0.2.0 — Public-launch milestone. Tooltip sweep (every menu button reads as plain English); first-visit hint above the wordmark, gated by localStorage so it never reappears; [frontend/docs/qa-checklist.md](frontend/docs/qa-checklist.md) updated with the v0.1.6–v0.1.9 verification matrix; DEPLOYMENT.md docs for LocationIQ swap already in place from v0.1.5.
 
 ---
 
@@ -60,63 +64,100 @@ About-page Moon + Eclipse sections updated to drop the "we use NASA centerlines
 because our calc isn't good enough" framing; Schlyter's credit retained as
 historical attribution.
 
-### ⬜ v0.1.7 — Eclipse sun-disc view
-The user has pinned a location + loaded an eclipse → render an inset showing the
-sun's disc with the moon's disc overlapping it from that observer's vantage.
-Magnitude readout = % of sun covered. Updates live during time-warp through the
-eclipse window. Full math sketch in the [Eclipse sun-disc view](#-eclipse-sun-disc-view--what-youd-see-from-this-spot)
-entry below.
+### ✅ v0.1.7 — Eclipse sun-disc view — landed
+Two new files:
+- [frontend/src/astro/observerView.ts](frontend/src/astro/observerView.ts) —
+  projects the sun + moon into the observer's local AltAz at the pinned
+  location and simulated moment. Includes topocentric parallax for the moon
+  (geocentric vs surface-observer direction differs by up to ~1° — bigger
+  than the sun's disc, so non-optional). Returns altitude/azimuth, apparent
+  angular radii, angular separation, linear eclipse magnitude, and east/up
+  offsets for 2D rendering.
+- [frontend/src/ui/SunDiscPanel.ts](frontend/src/ui/SunDiscPanel.ts) — small
+  SVG inset (top-left, beneath the Eclipse panel). Sun rendered with a
+  radial gradient; moon as a dark disc positioned at the observer's
+  apparent offset. Magnitude readout: "magnitude 0.847" + "84.7% obscured"
+  (or "total" / "annular peak" at totality). Auto-shows when an eclipse is
+  loaded, a location is pinned, the sun is above the observer's horizon,
+  AND the moon is within 5° of the sun (outside that, the inset would just
+  show the moon way off-screen and convey nothing).
 
-**Why second**: single most "shareable moment" feature we can land before the
-2026-08-12 Spain eclipse. Lands on top of the Meeus upgrade from v0.1.6, so the
-moon's apparent position is accurate enough for the rendered geometry to be
-believable. Half-day to a day depending on inset polish.
+Per-frame update is gated on `pinnedLocation.visible && eclipseLayer.mesh.visible`
+in the animate loop, so the inset auto-tracks simulated time during the
+warp-driven eclipse run.
 
-### ⬜ v0.1.8 — Overlay scale key + pressure-uniform fix
-Two related issues in one batch — both around the GFS overlay row (MSLP / Temp /
-Humidity / Moisture / Cloud water):
+Worth testing: pin Bilbao (~43.26°N, 2.93°W), open Eclipse panel, click
+"Spain total solar eclipse (2026)". The 60× time-warp plays through the
+eclipse over four minutes; the moon visibly slides across the sun.
 
-1. **Scale key**: render a coloured gradient strip with labelled min / mid / max
-   (units) so the overlay is interpretable. Each `OverlayCfg` already carries
-   `vmin`/`vmax`/`palette`; this is a one-pass SVG/canvas widget.
-2. **Pressure-uniform investigation**: the MSLP overlay looks nearly uniform —
-   probably a unit issue (Pa vs hPa, ×100), palette tuning, or shader clamp.
-   Diagnose + fix.
+### ✅ v0.1.8 — Overlay scale key + pressure-uniform fix — landed
+Two related issues, one batch:
 
-**Why third**: makes the entire Overlay row actually useful. Currently striking
-but illegible. Both small; together they fit a half-day. See
-[Visible scale key](#-visible-scale-key-for-overlays) and [Pressure map](#-pressure-map-looks-unexpectedly-uniform--investigate)
-below.
+**Pressure-uniform root cause**: `scalarGridToTexture` produced a *half-float*
+texture (max representable ±65 504). MSLP values are ~96 000–104 000 Pa —
+they overflowed to Infinity at upload, then clamped to 1.0 in the shader, so
+the whole globe rendered as the highest-value red. Fix:
+[frontend/src/scene/OverlayLayer.ts](frontend/src/scene/OverlayLayer.ts) now
+uses `scalarGridToByteTexture` (same as CloudLayer) which pre-normalises
+vmin/vmax into [0, 255] at upload — no overflow possible, linear filtering
+guaranteed everywhere. Shader simplified (uVmin / uVmax uniforms removed).
 
-### ⬜ v0.1.9 — Flat-map pan + zoom
-Make the equirectangular flat map draggable + zoomable like classic earth.nullschool.
-Three.js's built-in `MapControls` is purpose-built for this and should be the right
-base — try it before hand-rolling. Wrap-around at the antimeridian by rendering the
-plane twice with ±360° offsets.
+**Scale key**: new
+[frontend/src/ui/ScaleKeyPanel.ts](frontend/src/ui/ScaleKeyPanel.ts) — SVG
+gradient strip at the bottom-centre with min / mid / max value labels in
+human-friendly units (Pa → hPa, K → °C, etc.). Palette stops shared with the
+shader via [frontend/src/ui/overlayPalettes.ts](frontend/src/ui/overlayPalettes.ts)
+so the legend can't drift out of sync with what's rendered. Auto-shows when
+an overlay is active; hides when none.
 
-**Why fourth**: addresses the loudest known UX gap (the flat map feels static and
-broken next to the 3D globe). Half-day to a day. **Prerequisite** for any
-restoration of the other six classic projections — without pan/zoom, swapping
-projections is just one static plane for another.
+`OVERLAY_CFGS` in main.ts gained `label` + `format(raw)` fields per overlay
+so each one carries its own unit conversion.
 
-See [Flat-map should pan + zoom](#-flat-map-should-pan--zoom-like-classic-earthnullschool)
-below for the implementation outline.
+### ✅ v0.1.9 — Flat-map pan + zoom — landed
+[frontend/src/scene/FlatMap.ts](frontend/src/scene/FlatMap.ts) now wires Three.js's
+`MapControls` (purpose-built top-down ortho pan + dolly) on its own camera.
+`zoomToCursor: true` for Google-Maps-style cursor-centred zoom. Damping is
+on (factor 0.18). Y-pan is clamped each frame so the user can't scroll the
+camera target past the poles into empty space. Double-click resets to the
+default whole-world view.
 
-### ⬜ v0.2.0 — Public-launch milestone: onboarding + QA + LocationIQ live
-The "we're ready and the blog post is up" version bump. Three things bundled
-because they're cross-cutting polish:
+Wrap-around at ±180° lon: two extra plane meshes at world X = ±2 share the
+material with the canonical plane. Pan past the antimeridian and the world
+tiles seamlessly (no black void). `FlatMap.wrapWorldX()` is a small static
+helper used by the click-to-pin handler in main.ts to translate clicks on
+the wrap-around tiles back to canonical longitudes.
 
-1. **Onboarding pass**: tooltip sweep over every menu button (plain-English,
-   no jargon — *"MSLP" → "atmospheric pressure"*); first-visit nudge that
-   points at the wordmark for ~3 s on first load, gated by a `localStorage`
-   flag so it never repeats. Optional follow-up: a "tour" mode walking
-   through Clock → Layers → Location → Eclipse.
-2. **QA matrix pass** — browser-matrix (Safari + Firefox + mobile in addition
-   to Chrome/Edge), confirm no regressions across v0.1.6–v0.1.9, update
-   [frontend/docs/qa-checklist.md](frontend/docs/qa-checklist.md).
-3. **LocationIQ live in production** — confirm the NGINX `/proxy/geocode/`
-   block is deployed (DEPLOYMENT.md §5b) and points at LocationIQ (§5c).
-   Site is no longer dependent on Nominatim's charity service.
+main.ts edge-triggers `flatMap.enableControls(renderer.domElement)` when
+`menu.isMapMode()` transitions on, and `flatMap.disableControls()` on off,
+so the controls don't compete for events with the 3D globe's OrbitControls.
+
+### 🔄 v0.2.0 — Public-launch milestone — partially landed
+Code-side work shipped: onboarding pass + tooltip sweep + first-visit hint
++ qa-checklist updated for v0.1.6–v0.1.9. Outstanding (operational, needs
+your hands):
+
+1. **Browser-matrix QA pass** — walk through
+   [frontend/docs/qa-checklist.md](frontend/docs/qa-checklist.md)'s v0.2.0
+   section in Safari + Firefox + mobile in addition to Chrome/Edge. Flag
+   anything broken.
+2. **LocationIQ live in production** — sign up at <https://locationiq.com/>
+   for a free API key. Paste the NGINX block from
+   [DEPLOYMENT.md §5c](DEPLOYMENT.md) into the CapRover override with your
+   key. Verify with the curl test in the QA checklist. Site stops
+   depending on Nominatim's charity service.
+
+What landed in v0.2.0 code:
+
+- [frontend/src/ui/Menu.ts](frontend/src/ui/Menu.ts): first-visit onboarding
+  hint above the wordmark — amber callout with a bouncing arrow, fades in,
+  holds for ~5 s, fades out. Gated by `orrery.onboarded.v1` in
+  localStorage so it never repeats. Wordmark click dismisses immediately.
+- Tooltip sweep: Map / Clock / Data / Location tooltips refreshed to
+  mention the v0.1.8 + v0.1.9 features (pan + zoom on the flat map, the
+  Data panel's clickable source names, geocoded place names, etc.).
+- qa-checklist.md got a fresh v0.2.0 verification section at the top —
+  browser matrix + per-feature checks for everything that landed in
+  v0.1.6 → v0.1.9.
 
 ---
 
@@ -154,9 +195,10 @@ The wordmark tooltip is the first onboarding nudge. Two more layers to add:
 
 ## Near-term (Phase A polish — pre-v0.2)
 
-### 🔄 Geocoder behind a same-origin proxy (Nominatim → LocationIQ)
-**Status: client-side resilience + dev proxy landed; production NGINX block +
-LocationIQ signup pending.**
+### ✅ Geocoder behind a same-origin proxy (LocationIQ)
+**Status: client-side resilience landed v0.1.5; LocationIQ key acquired and
+baked into the dev proxy in v0.2.0. Production NGINX block ready to paste from
+[DEPLOYMENT.md §5c](DEPLOYMENT.md).**
 
 The reverse-geocoder for the Location panel used to hit `nominatim.openstreetmap.org`
 directly from the browser. Nominatim is run as a charity by the OSM Foundation and

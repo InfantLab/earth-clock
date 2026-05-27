@@ -26,6 +26,9 @@ import { DataRegistry } from "./ui/DataRegistry";
 import { DataPanel } from "./ui/DataPanel";
 import { Clock } from "./ui/Clock";
 import { LocationPanel, type PinSource } from "./ui/LocationPanel";
+import { SunDiscPanel } from "./ui/SunDiscPanel";
+import { ScaleKeyPanel } from "./ui/ScaleKeyPanel";
+import { computeObserverView } from "./astro/observerView";
 import { EclipsePanel } from "./ui/EclipsePanel";
 import type { EclipseEvent } from "./data/eclipseCatalog";
 import { LiveDataSource } from "./data/DataSource";
@@ -241,6 +244,10 @@ const latestSubLunar = { lat: 0, lon: 0 };
 // advance N simulated seconds (e.g. 3600 for hour-per-second). Useful while developing.
 let simulatedTime = Date.now();
 let lastFrame = performance.now();
+// Tracks the previously-seen map-mode flag so the animate loop can edge-trigger
+// FlatMap.enableControls / disableControls only on transition (not every frame).
+// `null` on startup so the first frame always runs the enable/disable path.
+let lastMapMode: boolean | null = null;
 
 declare global {
   interface Window {
@@ -367,6 +374,16 @@ const clock = new Clock(document.body, {
 // user enables Location mode and clicks the globe.
 const locationPanel = new LocationPanel(document.body);
 
+// Sun-disc inset. Shows what the sun looks like in the observer's local sky, with the
+// moon's disc overlapping it at the geometrically correct offset. Auto-shows when an
+// eclipse layer is active AND a location is pinned AND the sun + moon are within ~5°
+// of each other in the observer's sky. Otherwise hidden — irrelevant the rest of the
+// time. See SunDiscPanel for the visibility logic.
+const sunDiscPanel = new SunDiscPanel(document.body);
+/** Cached state of the active pin — updated by `pinLocation` so the per-frame
+ *  observer-view update doesn't have to dig through the LocationPanel internals. */
+const pinnedLocation: { lat: number; lon: number; visible: boolean } = { lat: 0, lon: 0, visible: false };
+
 // Eclipse catalogue panel (top-left, under the Clock + Location stack). Lists every
 // bundled eclipse event with a one-click "jump to peak". Toggled by the Astro row's
 // "Eclipse" entry — same toggle drives the 3D EclipseLayer.mesh visibility.
@@ -422,6 +439,11 @@ function pinLocation(lat: number, lon: number, source: PinSource) {
   locationPin.setLocation(lat, lon);
   locationPin.setVisible(true);
   locationPanel.setLocation(lat, lon, source);
+  // Cache for the per-frame sun-disc inset.
+  pinnedLocation.lat = lat;
+  pinnedLocation.lon = lon;
+  pinnedLocation.visible = true;
+  sunDiscPanel.setPlaceName(`${lat.toFixed(2)}°, ${lon.toFixed(2)}°`); // coord fallback until geocode resolves
   console.log(`[earth-clock] pinned via ${source}: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
   // Reverse-geocode in the background. The geocoder routes through `/proxy/geocode/`
   // (NGINX in prod, Vite dev-proxy in dev) and returns a structured result; we
@@ -431,6 +453,7 @@ function pinLocation(lat: number, lon: number, source: PinSource) {
     switch (result.status) {
       case "ok":
         locationPanel.setPlaceName(result.place.short);
+        sunDiscPanel.setPlaceName(result.place.short);
         break;
       case "no-name":
         // Upstream returned a valid response but no feature at this location
@@ -484,9 +507,12 @@ renderer.domElement.addEventListener("click", (event) => {
   if (menu.isMapMode()) {
     // Unproject NDC at z=0 (the plane sits at z=0) → world position on the plane.
     const planeWorld = new THREE.Vector3(ndc.x, ndc.y, 0).unproject(flatMap.camera);
-    // Plane is 2 wide × 1 tall centred at origin: x ∈ [-1, +1] → lon ∈ [-180, +180].
-    if (Math.abs(planeWorld.x) > 1 || Math.abs(planeWorld.y) > 0.5) return; // clicked outside the map
-    lon = planeWorld.x * 180;
+    // After v0.1.9 pan+zoom: the user can be looking at one of the wrap-around
+    // plane copies at x = ±2. Wrap X back into the canonical [-1, +1] range
+    // before deriving the longitude. Y is unaffected (no wrap on latitude).
+    if (Math.abs(planeWorld.y) > 0.5) return; // clicked outside the map (above the N pole or below the S pole)
+    const wrappedX = FlatMap.wrapWorldX(planeWorld.x);
+    lon = wrappedX * 180;
     lat = planeWorld.y * 180;
   } else {
     raycaster.setFromCamera(ndc, camera);
@@ -632,6 +658,11 @@ type OverlayCfg = {
   vmin: number;
   vmax: number;
   palette: "pressure" | "temperature" | "humidity" | "water" | "cloud";
+  /** Human-readable label for the ScaleKeyPanel legend. */
+  label: string;
+  /** Format a raw value (in the GFS unit — Pa, K, etc.) into a user-facing
+   *  string with units (e.g. 101325 Pa → "1013 hPa", 295 K → "22 °C"). */
+  format: (raw: number) => string;
 };
 
 // Ranges chosen to emphasise contrast across the typical global distribution rather than
@@ -643,6 +674,8 @@ const OVERLAY_CFGS: Record<"mslp" | "temp" | "rh" | "tpw" | "tcw", OverlayCfg> =
     sourceLabel: "NOAA GFS · MSLP",
     vmin: 96_000, vmax: 104_000, // Pa  →  960–1040 hPa
     palette: "pressure",
+    label: "Atmospheric pressure",
+    format: (pa) => `${Math.round(pa / 100)} hPa`,
   },
   temp: {
     type: "temp",
@@ -650,6 +683,8 @@ const OVERLAY_CFGS: Record<"mslp" | "temp" | "rh" | "tpw" | "tcw", OverlayCfg> =
     sourceLabel: "NOAA GFS · 2 m temperature",
     vmin: 240, vmax: 310,         // K  →  -33 to +37 °C
     palette: "temperature",
+    label: "Temperature at 2 m",
+    format: (k) => `${Math.round(k - 273.15)} °C`,
   },
   rh: {
     type: "relative_humidity",
@@ -657,6 +692,8 @@ const OVERLAY_CFGS: Record<"mslp" | "temp" | "rh" | "tpw" | "tcw", OverlayCfg> =
     sourceLabel: "NOAA GFS · 2 m relative humidity",
     vmin: 0, vmax: 100,           // %
     palette: "humidity",
+    label: "Relative humidity at 2 m",
+    format: (pct) => `${Math.round(pct)}%`,
   },
   tpw: {
     type: "total_precipitable_water",
@@ -664,6 +701,8 @@ const OVERLAY_CFGS: Record<"mslp" | "temp" | "rh" | "tpw" | "tcw", OverlayCfg> =
     sourceLabel: "NOAA GFS · total precipitable water",
     vmin: 0, vmax: 70,            // mm
     palette: "water",
+    label: "Total precipitable water",
+    format: (mm) => `${Math.round(mm)} mm`,
   },
   tcw: {
     type: "total_cloud_water",
@@ -671,6 +710,8 @@ const OVERLAY_CFGS: Record<"mslp" | "temp" | "rh" | "tpw" | "tcw", OverlayCfg> =
     sourceLabel: "NOAA GFS · total cloud water",
     vmin: 0, vmax: 2,             // kg/m²
     palette: "cloud",
+    label: "Total cloud water",
+    format: (kgm2) => `${kgm2.toFixed(1)} kg/m²`,
   },
 };
 
@@ -702,6 +743,11 @@ const overlayGrids: Partial<Record<OverlayKey, import("./data/DataSource").Scala
     });
 });
 
+// Bottom-centre legend for whichever GFS scalar overlay is active. Shows the
+// active palette as a gradient strip with min / mid / max value readouts in
+// human-readable units. Auto-hides when no overlay is active.
+const scaleKeyPanel = new ScaleKeyPanel(document.body);
+
 function applyActiveOverlay() {
   const active = menu.activeOverlay() as OverlayKey | null;
   if (!active) return;
@@ -709,11 +755,25 @@ function applyActiveOverlay() {
   const cfg = OVERLAY_CFGS[active];
   if (!grid || !cfg) return; // data may still be loading; will reapply when it arrives
   overlay.setData(grid, cfg.vmin, cfg.vmax, cfg.palette);
+  // Sync the scale-key legend with the newly-active overlay's range + palette.
+  scaleKeyPanel.update({
+    label: cfg.label,
+    palette: cfg.palette,
+    displayMin: cfg.format(cfg.vmin),
+    displayMid: cfg.format((cfg.vmin + cfg.vmax) / 2),
+    displayMax: cfg.format(cfg.vmax),
+  });
+  scaleKeyPanel.setVisible(true);
 }
 
 menu.onOverlayChange((active) => {
-  if (active) applyActiveOverlay();
-  // If active is null, overlay.mesh.visible is already false (apply() in Menu handled it).
+  if (active) {
+    applyActiveOverlay();
+  } else {
+    // No overlay active → hide the scale key. (overlay.mesh.visible is already
+    // false — apply() in Menu handled that.)
+    scaleKeyPanel.setVisible(false);
+  }
 });
 
 // GFS cloud source — drives the "GFS" entry in the Clouds picker. Prefers TCDC (total
@@ -1360,6 +1420,18 @@ function animate(t: number) {
   updateAstro();
   clock.setTime(now);
   locationPanel.setNow(now);
+
+  // Sun-disc inset (the "what the observer at the pinned location sees" SVG).
+  // Visible only when an eclipse is loaded AND a location is pinned AND the
+  // panel itself decides the geometry is meaningful (sun above horizon, moon
+  // within ~5° of sun on the sky). SunDiscPanel.update returns false in any
+  // of those off-frame cases and we hide the inset.
+  if (pinnedLocation.visible && eclipseLayer.mesh.visible) {
+    const view = computeObserverView(pinnedLocation.lat, pinnedLocation.lon, now, sunDir, moonPos);
+    sunDiscPanel.setVisible(sunDiscPanel.update(view));
+  } else {
+    sunDiscPanel.setVisible(false);
+  }
   // Use real wall-clock dt for particles (independent of simulated-time warp;
   // wind drift should look the same regardless of how fast Earth is spinning).
   particles.update(dtMs / 1000, t / 1000);
@@ -1373,6 +1445,16 @@ function animate(t: number) {
   controls.autoRotate = menu.isAutoOrbit();
   controls.update();
 
+  // FlatMap pan/zoom controls: enable only while in flat-map mode so they don't
+  // intercept events meant for the 3D globe's OrbitControls. Edge-triggered on
+  // mode change — lazy-initialised on first enable.
+  const mapModeNow = menu.isMapMode();
+  if (mapModeNow !== lastMapMode) {
+    if (mapModeNow) flatMap.enableControls(renderer.domElement);
+    else            flatMap.disableControls();
+    lastMapMode = mapModeNow;
+  }
+
   // Update the world-space trail accumulator: fade prev frame, render flat-projected
   // particles into the equirectangular trail texture. The composite (sphere in main scene,
   // plane in flat map) reads the updated texture during the upcoming render passes. Toggle
@@ -1381,7 +1463,13 @@ function animate(t: number) {
   trails.setVisible(windOn);
   if (windOn) trails.step(renderer);
 
+  // Mode-specific update + render. Per-frame pan/zoom damping happens here
+  // (only for whichever mode is active so the inactive set of controls doesn't
+  // consume input). FlatMap's enable/disable is handled by the menu toggle
+  // listener below; we just call update() unconditionally — it short-circuits
+  // when disabled.
   if (menu.isMapMode()) {
+    flatMap.update();
     // Flat equirectangular mode — composite plane is in flatMap.scene so it renders here.
     renderer.render(flatMap.scene, flatMap.camera);
   } else {

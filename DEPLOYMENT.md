@@ -145,42 +145,48 @@ curl -i "https://earth-clock.onemonkey.org/proxy/geocode/reverse?format=jsonv2&l
 ```
 Expected: `200 OK` + JSON containing `"display_name"` field starting with "Bilbao".
 
-### 5c. (Optional) Swap to LocationIQ
+### 5c. Swap to LocationIQ — recommended
 
-When the public Nominatim instance is degraded — or to avoid being a freeloader
-on a charity service — swap the upstream to **[LocationIQ](https://locationiq.com/)**.
-Same Nominatim-compatible API, dedicated infrastructure, 5,000 requests / day on
-the free tier, paid tiers for more.
+Nominatim's public instance periodically 503s under load (it's run as a charity
+by the OSMF). For production we use **[LocationIQ](https://locationiq.com/)**:
+same Nominatim-compatible API surface, dedicated infrastructure, free tier
+covers 5 000 requests / day which is plenty for a typical day on this site.
 
-1. Sign up at <https://locationiq.com/register>. Verify email; you get an API key.
-2. In CapRover → app settings → **App Configs → Environmental Variables**, add:
-   ```
-   LOCATIONIQ_KEY=pk.your_key_here
-   ```
-   CapRover injects this into the container's environment.
-3. Update the NGINX block (replace **5b**'s contents):
-   ```nginx
-   location /proxy/geocode/ {
-       # Strip /proxy/geocode and inject the API key into the query string,
-       # then pass to LocationIQ's reverse endpoint. The `set` + `if` dance is
-       # needed because NGINX doesn't substitute env vars in directive values
-       # directly — CapRover renders the literal value at config-write time
-       # (sub in the key here when you paste, or use `lua-resty-env` for true
-       # runtime substitution if you have it installed).
-       set $loc_key "pk.your_key_here";   # ← paste your LocationIQ key here
-       proxy_pass https://us1.locationiq.com/v1/reverse.php$is_args$args&key=$loc_key;
-       proxy_ssl_server_name on;
-       proxy_set_header Host us1.locationiq.com;
-       proxy_hide_header Set-Cookie;
-       add_header Access-Control-Allow-Origin *  always;
-       add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
-       proxy_intercept_errors on;
-       proxy_cache geocode;
-       proxy_cache_valid 200 12h;
-       proxy_cache_valid 404 1h;
-   }
-   ```
-4. Save the override. The client doesn't change — same URL contract.
+**Replace the `5b` NGINX block** with this one. The key below is earth-clock's
+LocationIQ publishable key — LocationIQ's `pk.`-prefix keys are designed to be
+visible to clients (their docs say so explicitly; that's why the prefix
+distinguishes them from `sk.` server-only secrets), so committing it here is
+fine. Rotate by replacing in this block + the curl test below.
+
+```nginx
+location /proxy/geocode/ {
+    # Strip /proxy/geocode/ and pass through to LocationIQ's reverse-geocode
+    # endpoint, injecting our API key. $is_args expands to "?" if any query
+    # args were present, "" otherwise — so the &key= is correctly appended.
+    proxy_pass         https://us1.locationiq.com/v1/reverse$is_args$args&key=pk.4fe14b2bb708d093c52fa1f37206ead4;
+    proxy_ssl_server_name on;
+    proxy_set_header   Host us1.locationiq.com;
+    proxy_hide_header  Set-Cookie;
+    add_header Access-Control-Allow-Origin *  always;
+    add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
+    proxy_intercept_errors on;
+    # 12-hour cache of successful results; 1-hour cache of 404s.
+    proxy_cache geocode;
+    proxy_cache_valid 200 12h;
+    proxy_cache_valid 404 1h;
+}
+```
+
+Save the override. The client doesn't change — same `/proxy/geocode/reverse`
+URL contract.
+
+Verify:
+```bash
+curl -i "https://earth-clock.onemonkey.org/proxy/geocode/reverse?format=jsonv2&lat=43.26&lon=-2.93"
+```
+Expected: `200 OK` + JSON with `"display_name":"Bilbao, …"`. (Our actual
+verification at v0.2.0 from a dev machine: LocationIQ returned `place_id`
+289723926 for Bilbao with the full Basque-Country / Spain hierarchy.)
 
 LocationIQ's response shape is Nominatim-compatible (they fork Nominatim and add
 their own infra), so the client parser in [geocoder.ts](frontend/src/data/geocoder.ts)

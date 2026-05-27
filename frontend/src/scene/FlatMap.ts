@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
 /**
  * Equirectangular flat-map mode. Renders the Earth as a 2:1 plane (lon = -180..+180,
@@ -7,17 +8,37 @@ import * as THREE from "three";
  * direction uniform (geographic frame — no axial tilt or daily spin needed because the
  * flat map IS the geographic frame).
  *
+ * **Pan + zoom (v0.1.9)**: bound to Three.js's `MapControls` — drag to pan, wheel/pinch
+ * to zoom. The camera is an orthographic looking straight down the +Z axis; MapControls
+ * pans by translating both camera + target in world X/Y, and zooms by adjusting
+ * `camera.zoom` (which Three.js multiplies into the frustum). Two extra plane meshes
+ * sit at x = ±2 to handle wrap-around past the ±180° meridian: each one is a copy of
+ * the main plane shifted by one full world-width, so panning right past the right edge
+ * reveals the same world tiled, not a black void.
+ *
  * Owns its own scene + orthographic camera so it can be rendered independently — main.ts
- * picks between the 3D scene and this scene each frame based on the menu's "Map" toggle.
+ * picks between the 3D scene and this scene each frame based on the menu's "Map" toggle,
+ * and calls `enableControls()` / `disableControls()` so the controls only intercept
+ * events while flat-map mode is active.
  *
  * Layers wired in v1: day surface, night lights, clouds, day/night terminator.
  * Layers TODO for flat-map v2: aurora points, fires, hurricanes, wind particles, coastlines.
  */
+
+/** Min camera.zoom (max zoom-out) — full world view. */
+const MIN_ZOOM = 0.9;
+/** Max camera.zoom (max zoom-in) — ~5° lat span at default texture resolution. */
+const MAX_ZOOM = 20;
+/** Default initial zoom — whole world fits. */
+const DEFAULT_ZOOM = 1.0;
+
 export class FlatMap {
   readonly scene: THREE.Scene;
   readonly camera: THREE.OrthographicCamera;
-  private readonly mesh: THREE.Mesh;
+  private readonly mainMesh: THREE.Mesh;
   private readonly material: THREE.ShaderMaterial;
+  private controls: MapControls | null = null;
+  private baseFrustum = { left: -1, right: 1, top: 0.5, bottom: -0.5 };
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -126,27 +147,118 @@ export class FlatMap {
     });
 
     const geom = new THREE.PlaneGeometry(2, 1);
-    this.mesh = new THREE.Mesh(geom, this.material);
-    this.scene.add(this.mesh);
+    this.mainMesh = new THREE.Mesh(geom, this.material);
+    this.scene.add(this.mainMesh);
+
+    // Wrap-around copies. Same geometry + material as the main plane, offset by
+    // ±2 in X (one full world-width on the 2-unit plane). When the user pans past
+    // ±180° these duplicates fill in the side of the canvas that would otherwise
+    // be the black backdrop. They share the material so any uniform tweak
+    // applies to all three; they're identical content shifted in space.
+    for (const dx of [-2, 2]) {
+      const m = new THREE.Mesh(geom, this.material);
+      m.position.x = dx;
+      this.scene.add(m);
+    }
   }
 
-  /** Adjust ortho frustum so the 2:1 map fits the viewport (letterbox or pillarbox). */
+  /** Adjust ortho frustum so the 2:1 map fits the viewport (letterbox or pillarbox).
+   *  Called on window resize from main.ts. The stored `baseFrustum` is the
+   *  zoom-1 baseline; MapControls' `camera.zoom` scales the frustum on top of
+   *  this (Three.js multiplies the frustum extents by 1/zoom internally). */
   resize(viewportWidth: number, viewportHeight: number) {
     const aspect = viewportWidth / viewportHeight;
     if (aspect > 2.0) {
       // Wider than 2:1 — fit height, pillarbox
-      this.camera.top = 0.5;
-      this.camera.bottom = -0.5;
-      this.camera.left  = -0.5 * aspect;
-      this.camera.right =  0.5 * aspect;
+      this.baseFrustum = { left: -0.5 * aspect, right: 0.5 * aspect, top: 0.5, bottom: -0.5 };
     } else {
       // Narrower than 2:1 — fit width, letterbox
-      this.camera.left  = -1;
-      this.camera.right =  1;
-      this.camera.top    =  1.0 / aspect;
-      this.camera.bottom = -1.0 / aspect;
+      this.baseFrustum = { left: -1, right: 1, top: 1.0 / aspect, bottom: -1.0 / aspect };
     }
+    this.camera.left   = this.baseFrustum.left;
+    this.camera.right  = this.baseFrustum.right;
+    this.camera.top    = this.baseFrustum.top;
+    this.camera.bottom = this.baseFrustum.bottom;
     this.camera.updateProjectionMatrix();
+  }
+
+  /** Enable MapControls. Called when the user switches to flat-map mode so
+   *  the controls only intercept events while flat-map is active (otherwise
+   *  they'd compete with OrbitControls on the 3D globe). Lazy-initialised on
+   *  first call. */
+  enableControls(domElement: HTMLElement) {
+    if (!this.controls) {
+      this.controls = new MapControls(this.camera, domElement);
+      this.controls.enableRotate = false;        // top-down only — no tilt
+      this.controls.enableDamping = true;
+      this.controls.dampingFactor = 0.18;
+      this.controls.screenSpacePanning = true;
+      this.controls.zoomToCursor = true;          // Google-Maps-style zoom-on-cursor
+      this.controls.minZoom = MIN_ZOOM;
+      this.controls.maxZoom = MAX_ZOOM;
+      // Y-pan is clamped in update() so the user can't scroll past the poles
+      // into empty space. X-pan is unconstrained and uses the wrap-around
+      // plane copies for visual continuity.
+      // Double-click resets to the home view. The control library doesn't
+      // give us a "reset" event, so we wire dblclick ourselves.
+      domElement.addEventListener("dblclick", this.resetView);
+    }
+    this.controls.connect();
+    this.controls.enabled = true;
+  }
+
+  /** Disable MapControls — called when the user switches back to 3D globe
+   *  mode so the controls stop receiving events. We don't dispose; toggling
+   *  modes shouldn't pay the cost of rebuilding the listener wiring. */
+  disableControls() {
+    if (this.controls) this.controls.enabled = false;
+  }
+
+  /** Per-frame update: apply damping, clamp Y-pan to keep the camera target
+   *  within the plane's lat extent so the user can't scroll into empty space
+   *  above the north pole or below the south pole. Call this from the main
+   *  animate loop only while flat-map mode is active. */
+  update() {
+    if (!this.controls || !this.controls.enabled) return;
+    this.controls.update();
+    // Clamp Y-pan. With camera.zoom = z, the visible Y half-height is
+    // baseFrustum.top / z. We want the camera target's Y to stay within
+    // [-0.5 + half, 0.5 - half] so we always see the world strip, never
+    // black above/below the poles. (When the visible strip is taller than
+    // the plane, just centre.)
+    const halfV = this.baseFrustum.top / this.camera.zoom;
+    let clamped = false;
+    if (halfV >= 0.5) {
+      // View is taller than the plane — just centre.
+      if (this.controls.target.y !== 0) { this.controls.target.y = 0; this.camera.position.y = 0; clamped = true; }
+    } else {
+      const yMax = 0.5 - halfV;
+      if (this.controls.target.y > yMax) { this.controls.target.y = yMax; this.camera.position.y = yMax; clamped = true; }
+      if (this.controls.target.y < -yMax) { this.controls.target.y = -yMax; this.camera.position.y = -yMax; clamped = true; }
+    }
+    // Snap the controls' internal state to the clamped target so the next
+    // damping tick doesn't push past the limit again.
+    if (clamped) this.controls.update();
+  }
+
+  /** Reset pan + zoom to the default "whole world" view. Wired to double-click
+   *  on the canvas. */
+  resetView = () => {
+    this.camera.position.set(0, 0, 1);
+    this.camera.zoom = DEFAULT_ZOOM;
+    this.camera.updateProjectionMatrix();
+    if (this.controls) {
+      this.controls.target.set(0, 0, 0);
+      this.controls.update();
+    }
+  };
+
+  /** Wrap an x-coordinate (world units) back into the canonical plane's range
+   *  [-1, 1]. Used by the click-to-pin handler in main.ts to translate a click
+   *  on one of the wrap-around plane copies back into a real longitude. */
+  static wrapWorldX(x: number): number {
+    let wx = ((x + 1) % 2 + 2) % 2 - 1;
+    return wx;
   }
 
   /**

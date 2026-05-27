@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { ScalarGrid } from "../data/DataSource";
-import { scalarGridToTexture } from "../data/scalarToTexture";
+import { scalarGridToByteTexture } from "../data/scalarToTexture";
 
 const AXIAL_TILT = 23.44 * Math.PI / 180;
 
@@ -38,10 +38,14 @@ export class OverlayLayer {
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
+        // Byte texture, pre-normalised to [0, 1] at upload time by
+        // scalarGridToByteTexture. Earlier versions used a half-float texture
+        // with shader-side vmin/vmax normalisation, but half-float overflows
+        // at ±65504 — MSLP values (~101 325 Pa at sea level) overflowed to
+        // Infinity and rendered as a single uniform red colour. Byte
+        // textures linear-filter everywhere with no extension shenanigans.
         uMap:      { value: null as THREE.Texture | null },
         uHasData:  { value: 0.0 },     // 0 = nothing rendered (no texture loaded yet)
-        uVmin:     { value: 0.0 },
-        uVmax:     { value: 1.0 },
         uPalette:  { value: 0 },       // index into the shader's palette switch
         uOpacity:  { value: 0.65 },
       },
@@ -62,8 +66,6 @@ export class OverlayLayer {
       fragmentShader: /* glsl */`
         uniform sampler2D uMap;
         uniform float uHasData;
-        uniform float uVmin;
-        uniform float uVmax;
         uniform int   uPalette;
         uniform float uOpacity;
         varying vec3 vLocalNormal;
@@ -150,8 +152,9 @@ export class OverlayLayer {
           float lon = atan(-vLocalNormal.z, vLocalNormal.x);
           float u = (lon < 0.0 ? lon + 2.0 * PI : lon) / (2.0 * PI);
           float vv = (0.5 * PI - lat) / PI;
-          float val = texture2D(uMap, vec2(u, vv)).r;
-          float t = (val - uVmin) / max(uVmax - uVmin, 1e-6);
+          // Byte texture is pre-normalised to [0, 1] — read .r directly as the
+          // colour-ramp parameter, no shader-side vmin/vmax math.
+          float t = texture2D(uMap, vec2(u, vv)).r;
           vec3 col;
           if      (uPalette == 0) col = paletteTemp(t);
           else if (uPalette == 1) col = paletteHumidity(t);
@@ -184,16 +187,16 @@ export class OverlayLayer {
   /**
    * Replace the overlay data. Disposes the previous texture to avoid leaks. `vmin`/`vmax`
    * define the colour-mapped value range in the same units as the underlying GFS field
-   * (e.g. K for temperature, Pa for pressure, % for RH, mm for TPW).
+   * (e.g. K for temperature, Pa for pressure, % for RH, mm for TPW); they're baked into
+   * the byte texture at upload time so the shader can read directly as a normalised
+   * [0, 1] colour-ramp parameter.
    */
   setData(grid: ScalarGrid, vmin: number, vmax: number, palette: OverlayPalette) {
-    const tex = scalarGridToTexture(grid);
+    const tex = scalarGridToByteTexture(grid, vmin, vmax);
     const prev = this.material.uniforms.uMap.value as THREE.Texture | null;
     if (prev) prev.dispose();
     this.material.uniforms.uMap.value     = tex;
     this.material.uniforms.uHasData.value = 1.0;
-    this.material.uniforms.uVmin.value    = vmin;
-    this.material.uniforms.uVmax.value    = vmax;
     this.material.uniforms.uPalette.value = PALETTE_INDEX[palette];
     this.currentTexture = tex;
   }

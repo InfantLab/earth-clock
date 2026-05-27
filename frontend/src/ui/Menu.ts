@@ -181,11 +181,11 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
   // View
-  map:         "Switch to equirectangular flat-map projection",
+  map:         "Equirectangular flat-map view — drag to pan, wheel to zoom (centred on cursor), double-click to reset",
   orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
-  clock:       "Time display. Click the zone to flip UTC ⇄ local.",
-  data:        "Unified data panel — per-layer status, source (linked), detail, last-fetched age",
-  location:    "Click the globe / map to pin a location and look it up",
+  clock:       "Top-left clock readout. Click the zone label to flip UTC ⇄ local. ⏱ reveals time-warp controls.",
+  data:        "Top-right panel — every live data layer with its source, freshness, and refresh cadence. Click a source name to open the originating organisation's page.",
+  location:    "Click anywhere on the globe (or flat map) to pin a spot and read its coordinates, place name (geocoded), and true solar time. The bottom-right panel shows the result.",
 };
 
 /**
@@ -271,7 +271,16 @@ export class Menu {
 
     this.panel = root.querySelector("#orrery-menu") as HTMLElement;
     const brand = root.querySelector("#orrery-brand") as HTMLElement;
-    brand.addEventListener("click", () => this.toggleOpen());
+    brand.addEventListener("click", () => {
+      this.toggleOpen();
+      this.dismissOnboardingHint();
+    });
+
+    // First-visit onboarding hint — a small fading callout above the wordmark
+    // that draws the user's eye to it. Only shown once; subsequent visits skip
+    // it via the `orrery.onboarded.v1` localStorage flag. Dismisses immediately
+    // if the user clicks the wordmark before the timeout (they discovered it).
+    this.maybeShowOnboardingHint(root);
 
     const categoriesHost = root.querySelector("#orrery-menu-categories") as HTMLElement;
     for (const cat of CATEGORIES) {
@@ -456,6 +465,39 @@ export class Menu {
     saveOpen(this.open);
   }
 
+  /**
+   * Show a small one-time hint above the wordmark on a first visit, pointing
+   * at the wordmark so newcomers realise it's clickable. Gated by the
+   * `orrery.onboarded.v1` localStorage flag — never shown twice. Fade-in,
+   * 5-second hold, fade-out; dismisses immediately if the user clicks the
+   * wordmark in the meantime. All the styling is in CSS keyframes.
+   */
+  private onboardingHint: HTMLElement | null = null;
+  private maybeShowOnboardingHint(root: HTMLElement) {
+    if (loadOnboarded()) return;
+    const hint = document.createElement("div");
+    hint.className = "orrery-onboarding-hint";
+    hint.innerHTML = `
+      <span>Click <strong>earth-clock</strong> for layers · clock · location · eclipses</span>
+      <span class="orrery-onboarding-arrow">↓</span>
+    `;
+    root.appendChild(hint);
+    this.onboardingHint = hint;
+    // Auto-dismiss after the animation completes — a single timer is enough
+    // because the CSS animation handles the fade-in/out timing.
+    setTimeout(() => this.dismissOnboardingHint(), 7000);
+  }
+
+  private dismissOnboardingHint() {
+    if (!this.onboardingHint) return;
+    this.onboardingHint.classList.add("orrery-onboarding-dismissed");
+    saveOnboarded(true);
+    // Let the fade-out finish before removing from the DOM.
+    const hintRef = this.onboardingHint;
+    this.onboardingHint = null;
+    setTimeout(() => hintRef.remove(), 600);
+  }
+
   private applyAll() {
     (Object.keys(LABELS) as LayerKey[]).forEach(k => this.apply(k));
   }
@@ -596,6 +638,22 @@ function saveOpen(o: boolean) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
   } catch { /* */ }
 }
+/** First-visit onboarding flag — once set, the wordmark hint never shows again.
+ *  Stored alongside the menu's other settings under the same key. */
+function loadOnboarded(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? !!JSON.parse(raw).onboarded : false;
+  } catch { return false; }
+}
+function saveOnboarded(o: boolean) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const blob = raw ? JSON.parse(raw) : {};
+    blob.onboarded = o;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
+  } catch { /* */ }
+}
 
 // ---- styles (self-contained; injected once) ----
 
@@ -678,6 +736,51 @@ function injectStyles() {
     .orrery-meta { color: #555c6b; margin-top: 6px !important; font-size: 12px; }
     .orrery-meta a { color: #7c869a; text-decoration: none; }
     .orrery-meta a:hover { color: #fff; }
+
+    /* First-visit onboarding hint — small amber callout above the wordmark.
+       Fades in over 500 ms, holds for ~5 s, fades out over 500 ms. The
+       wordmark's own click handler dismisses it early if the user discovers
+       it on their own. Only shown once per browser via the orrery.onboarded
+       localStorage flag. */
+    .orrery-onboarding-hint {
+      pointer-events: none;
+      position: absolute;
+      bottom: 84px; left: 16px;
+      background: rgba(226, 180, 46, 0.95);
+      color: #050a1e;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      max-width: 320px;
+      animation: orrery-onboarding-cycle 7s ease-in-out forwards;
+      z-index: 11;
+    }
+    .orrery-onboarding-hint strong { font-weight: 600; }
+    .orrery-onboarding-arrow {
+      font-size: 18px;
+      line-height: 1;
+      animation: orrery-onboarding-bounce 1.2s ease-in-out infinite;
+    }
+    .orrery-onboarding-hint.orrery-onboarding-dismissed {
+      animation: orrery-onboarding-fadeout 500ms ease-in forwards;
+    }
+    @keyframes orrery-onboarding-cycle {
+      0%   { opacity: 0; transform: translateY(8px); }
+      8%   { opacity: 1; transform: translateY(0); }
+      90%  { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-4px); }
+    }
+    @keyframes orrery-onboarding-fadeout {
+      from { opacity: 1; }
+      to   { opacity: 0; transform: translateY(-4px); }
+    }
+    @keyframes orrery-onboarding-bounce {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(4px); }
+    }
   `;
   const el = document.createElement("style");
   el.textContent = css;

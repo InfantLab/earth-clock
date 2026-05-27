@@ -48,14 +48,21 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/proxy\/nhc/, ""),
       },
       // Reverse-geocoder proxy. Same URL contract in dev + prod (the production
-      // NGINX block at /proxy/geocode/ has the matching rule — see DEPLOYMENT.md).
-      // Upstream is Nominatim by default; swap to LocationIQ by changing the
-      // target + the rewrite (LocationIQ wants an API key in the query string).
+      // NGINX block at /proxy/geocode/ has the matching rule — see DEPLOYMENT.md
+      // §5c). Both dev + prod target LocationIQ, which has a Nominatim-compatible
+      // API surface, dedicated infra (no public-service 503s), and a 5k-req/day
+      // free tier. `pk.`-prefix keys are intended to be visible — see DEPLOYMENT.md
+      // for the rationale.
       "/proxy/geocode": {
-        target: "https://nominatim.openstreetmap.org",
+        target: "https://us1.locationiq.com",
         changeOrigin: true,
         secure: true,
-        rewrite: (path) => path.replace(/^\/proxy\/geocode/, ""),
+        rewrite: (path) => {
+          // /proxy/geocode/reverse?lat=X&lon=Y → /v1/reverse?lat=X&lon=Y&key=pk.XXX
+          const stripped = path.replace(/^\/proxy\/geocode/, "/v1");
+          const sep = stripped.includes("?") ? "&" : "?";
+          return `${stripped}${sep}key=pk.4fe14b2bb708d093c52fa1f37206ead4`;
+        },
       },
     },
   },
