@@ -321,9 +321,25 @@ export class Menu {
   }
 
   /** Read by the animation loop to decide whether to render wind. True if any of the
-   *  Wind row's mutex picker entries is active. */
+   *  Wind row's mutex picker entries is active AND live data is in-range for the
+   *  current simulated time (see setLiveFreshnessOk). */
   isWindVisible(): boolean {
-    return this.activeWindIntensity() !== null;
+    return this.activeWindIntensity() !== null && this.liveFreshnessOk;
+  }
+
+  /** Whether live-data layers are currently considered fresh enough to show at
+   *  the user's simulated time. Default true; main.ts flips this when the user
+   *  warps simulated time more than ±24 h from wall-clock now, so we hide live
+   *  layers rather than render today's wind/clouds/aurora on a 2027 date.
+   *  Affects wind, clouds, aurora, fires, hurricanes, tracks, lightning, and
+   *  the MSLP/Temp/RH/TPW/TCW overlays. Astronomy + day/night + eclipse stay on. */
+  private liveFreshnessOk = true;
+  setLiveFreshnessOk(ok: boolean) {
+    if (this.liveFreshnessOk === ok) return;
+    this.liveFreshnessOk = ok;
+    // Re-apply every layer so the gated ones flip visibility according to the
+    // new freshness state. Cheap — apply() is just `mesh.visible = ...` per layer.
+    this.applyAll();
   }
 
   /** Currently active wind intensity, or null if wind is hidden. */
@@ -504,6 +520,7 @@ export class Menu {
 
   private apply(key: LayerKey) {
     const on = this.state[key];
+    const fresh = this.liveFreshnessOk;
     const { globe, atmosphere, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails } = this.layers;
     switch (key) {
       // Cloud source picker — visibility is "is any source active?" The actual texture/
@@ -512,26 +529,26 @@ export class Menu {
       case "cloudsViirs":
       case "cloudsGfs":
       case "cloudsGoes": {
-        const cloudsOn = this.activeCloudSource() !== null;
+        const cloudsOn = this.activeCloudSource() !== null && fresh;
         clouds.mesh.visible = cloudsOn;
         flatMap.setCloudsVisible(cloudsOn);
         break;
       }
       case "aurora":
-        aurora.mesh.visible     = on;
-        aurora.flatMesh.visible = on;
+        aurora.mesh.visible     = on && fresh;
+        aurora.flatMesh.visible = on && fresh;
         break;
       case "fires":
-        fires.mesh.visible     = on;
-        fires.flatMesh.visible = on;
+        fires.mesh.visible     = on && fresh;
+        fires.flatMesh.visible = on && fresh;
         break;
       case "hurricanes":
-        hurricanes.mesh.visible     = on;
-        hurricanes.flatMesh.visible = on;
+        hurricanes.mesh.visible     = on && fresh;
+        hurricanes.flatMesh.visible = on && fresh;
         break;
       case "tracks":
-        hurricaneTracks.mesh.visible     = on;
-        hurricaneTracks.flatMesh.visible = on;
+        hurricaneTracks.mesh.visible     = on && fresh;
+        hurricaneTracks.flatMesh.visible = on && fresh;
         break;
       case "eclipse":
         // Eclipse toggle drives BOTH the 3D EclipseLayer mesh and the top-left Eclipse
@@ -542,8 +559,8 @@ export class Menu {
         this.panels.eclipse?.setVisible(on);
         break;
       case "lightning":
-        lightning.mesh.visible     = on;
-        lightning.flatMesh.visible = on;
+        lightning.mesh.visible     = on && fresh;
+        lightning.flatMesh.visible = on && fresh;
         break;
       // The five overlay-row keys share one OverlayLayer; visibility is just "is any
       // overlay active?" (the data-swap happens in main.ts via onOverlayChange).
@@ -552,7 +569,7 @@ export class Menu {
       case "rh":
       case "tpw":
       case "tcw":
-        overlay.mesh.visible = this.activeOverlay() !== null;
+        overlay.mesh.visible = this.activeOverlay() !== null && fresh;
         break;
       case "coastlines":
         coastlines.mesh.visible     = on;

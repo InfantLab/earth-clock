@@ -40,6 +40,10 @@ import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { reverseGeocode } from "./data/geocoder";
 import { computeShadow, computePathOfTotality } from "./astro/eclipse";
 import { nextEclipse, ECLIPSE_CATALOG } from "./data/eclipseCatalog";
+import {
+  lunarEclipseFraction,
+  type LunarEclipseEvent,
+} from "./data/lunarEclipseCatalog";
 import { getCataloguedEclipsePath, interpolateUmbraPosition } from "./data/nasaEclipsePaths";
 import { LightningLoader } from "./data/lightningLoader";
 import { windGridToTexture } from "./data/windToTexture";
@@ -379,7 +383,33 @@ const locationPanel = new LocationPanel(document.body);
 // eclipse layer is active AND a location is pinned AND the sun + moon are within ~5°
 // of each other in the observer's sky. Otherwise hidden — irrelevant the rest of the
 // time. See SunDiscPanel for the visibility logic.
-const sunDiscPanel = new SunDiscPanel(document.body);
+/** Last live warp speed before the scrub bar (or play-button) paused — used to
+ *  restore the user's chosen tempo on ▶/play-resume. Mirrors Clock.ts's
+ *  `warpBeforePause` (the two pause/resume paths stay independent so they
+ *  don't have to share state). */
+let _warpBeforeScrubPause = 1;
+const sunDiscPanel = new SunDiscPanel(document.body, {
+  // Scrub-bar drag → set simulatedTime + pause warp (so it doesn't fight the user).
+  onScrubTo: (utcMs) => {
+    simulatedTime = utcMs;
+    if (window.__orreryTimeWarp !== 0) {
+      _warpBeforeScrubPause = window.__orreryTimeWarp ?? 1;
+      window.__orreryTimeWarp = 0;
+    }
+  },
+  // ⏪ / ⏩ buttons step simulatedTime by the panel's STEP_MS (±30 s).
+  onStep: (deltaMs) => { simulatedTime += deltaMs; },
+  // ⏸/▶ button toggles warp between 0 and the last live speed.
+  onPlayPause: () => {
+    const cur = window.__orreryTimeWarp ?? 1;
+    if (cur === 0) {
+      window.__orreryTimeWarp = _warpBeforeScrubPause || 1;
+    } else {
+      _warpBeforeScrubPause = cur;
+      window.__orreryTimeWarp = 0;
+    }
+  },
+});
 /** Cached state of the active pin — updated by `pinLocation` so the per-frame
  *  observer-view update doesn't have to dig through the LocationPanel internals. */
 const pinnedLocation: { lat: number; lon: number; visible: boolean } = { lat: 0, lon: 0, visible: false };
@@ -388,7 +418,18 @@ const pinnedLocation: { lat: number; lon: number; visible: boolean } = { lat: 0,
 // bundled eclipse event with a one-click "jump to peak". Toggled by the Astro row's
 // "Eclipse" entry — same toggle drives the 3D EclipseLayer.mesh visibility.
 const eclipsePanel = new EclipsePanel(document.body, {
-  onJump:  (event) => jumpToEclipseEvent(event),
+  onJumpSolar: (event) => jumpToEclipseEvent(event),
+  onJumpLunar: (event) => jumpToLunarEclipseEvent(event),
+  // Tab change — clear the OTHER eclipse kind so its visuals stop. Without
+  // this, switching to 🌑 Lunar would leave the previously-loaded solar
+  // umbra disc + path-of-totality polyline still drawn on Earth (and vice
+  // versa). The catalogue UI implies "I'm browsing this kind now", so it
+  // should drive what's rendered.
+  onTabChange: (tab) => {
+    if (tab === "lunar") loadEclipse(null);
+    else                 activeLunarEclipse = null;
+    sunDiscPanel.setMode(tab);
+  },
   // Closing the panel signals "I'm done with the eclipse experience" — snap simulated
   // time back to wall-clock now and drop warp to 1× so the rest of the app shows the
   // current state of the world. Without this, the user is left staring at 2026-08-12
@@ -523,6 +564,25 @@ renderer.domElement.addEventListener("click", (event) => {
   pinLocation(lat, lon, "click");
 });
 
+// Double-click on the 3D globe drops a pin AND auto-enables Location mode — a
+// discoverable shortcut for users who haven't found the menu's Location toggle.
+// Skipped in flat-map mode because FlatMap already wires dblclick to its
+// "reset to whole-world view" gesture (FlatMap.ts), and we don't want to fight
+// over the event. The single-click handler above still requires Location mode
+// to be on; this dblclick is the bootstrap that turns it on.
+renderer.domElement.addEventListener("dblclick", (event) => {
+  if (menu.isMapMode()) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1;
+  ndc.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObject(globe.earthMesh, false);
+  if (!hits.length) return;
+  const { lat, lon } = globe.worldToLatLon(hits[0].point);
+  pinLocation(lat, lon, "click");
+  menu.setLayer("location", true);
+});
+
 /**
  * Snap simulatedTime to T-1m of the given eclipse, dial warp to 60×, swap the eclipse
  * layer over to that event's path of totality, turn the layer on, surface the Clock
@@ -536,6 +596,9 @@ function jumpToEclipseEvent(event: EclipseEvent) {
   // we're jumping into. Without this, only the startup-loaded eclipse ever had a
   // visible path — jumping to 2024 or 2027 used to leave 2026's path on screen.
   loadEclipse(event);
+  // Solar jump replaces any loaded lunar eclipse so the moon stops dimming.
+  activeLunarEclipse = null;
+  sunDiscPanel.setMode("solar");
   simulatedTime = event.startUtc.getTime() - 60_000;
   window.__orreryTimeWarp = 60;
   menu.setLayer("eclipse", true);
@@ -543,6 +606,46 @@ function jumpToEclipseEvent(event: EclipseEvent) {
   // Surface the Clock + its time-controls so the user doesn't have to discover
   // the ⏱ icon mid-event. setLayer keeps the menu state + persisted prefs in sync.
   // Row highlight is handled by loadEclipse() above.
+  menu.setLayer("clock", true);
+  clock.setControlsExpanded(true);
+  // Auto-pin to the greatest-eclipse point so the SunDiscPanel inset appears
+  // immediately — without this, the inset is gated off (no pinned location) and
+  // the user has to know to click somewhere on the path of totality to get the
+  // "what you'd see from your spot" view. Only auto-pin if the user hasn't
+  // already set one (don't clobber an explicit choice like "use my location").
+  if (!pinnedLocation.visible && activeNasaPath) {
+    const greatest = activeNasaPath.waypoints.reduce(
+      (best, wp) => (wp.magnitude ?? 0) > (best.magnitude ?? 0) ? wp : best,
+      activeNasaPath.waypoints[0],
+    );
+    pinLocation(greatest.lat, greatest.lon, "click");
+  }
+  console.log(
+    `[earth-clock] jumped to T-1m of ${event.name} (peak ${event.peakUtc.toISOString()}). ` +
+    `Set window.__orreryTimeWarp = 1 to stop the warp.`,
+  );
+}
+
+/**
+ * Lunar-eclipse jump — same UX as the solar version (set time, dial warp,
+ * surface the clock controls) but loads the chosen event into `activeLunarEclipse`
+ * for the per-frame moon-mesh dimming/tint. No auto-pin: a lunar eclipse is
+ * visible from the entire night-side hemisphere, so there's no "best spot" to
+ * point the user at the way there is for a solar umbra path.
+ */
+function jumpToLunarEclipseEvent(event: LunarEclipseEvent) {
+  activeLunarEclipse = event;
+  // A lunar jump replaces any loaded solar eclipse — the user is now in lunar
+  // mode, so clear activeEclipse / activeNasaPath so the umbra disc + path-of-
+  // totality polyline on Earth stop rendering. This matches the tab-change
+  // behaviour for users who click a lunar row directly from the catalogue.
+  loadEclipse(null);
+  eclipsePanel.setSelected("lunar", event.id);
+  sunDiscPanel.setMode("lunar");
+  sunDiscPanel.setEclipseWindow(event.startUtc, event.endUtc, event.peakUtc);
+  simulatedTime = event.startUtc.getTime() - 60_000;
+  window.__orreryTimeWarp = 60;
+  menu.setLayer("eclipse", true);
   menu.setLayer("clock", true);
   clock.setControlsExpanded(true);
   console.log(
@@ -1048,12 +1151,41 @@ function latLonToGeographic(latDeg: number, lonDeg: number, out = new THREE.Vect
 let activeEclipse: ReturnType<typeof nextEclipse> = null;
 let activeNasaPath: ReturnType<typeof getCataloguedEclipsePath> = undefined;
 
+/** The currently-loaded lunar eclipse. Null when none is active. The per-frame
+ *  animate loop checks this and drives moon.setEclipseShadow() based on how
+ *  far through the P1→peak→P4 window simulated time has progressed. */
+let activeLunarEclipse: LunarEclipseEvent | null = null;
+
+// Live-data freshness gating. Wind / clouds / aurora / fires / hurricanes /
+// lightning / overlay data is sourced from real-time feeds (GFS forecasts,
+// VIIRS daily mosaics, SWPC aurora, FIRMS, NHC, Blitzortung, etc.) and is only
+// valid for a narrow window around wall-clock now. When the user warps far
+// from now we'd rather hide it than render today's wind on a different date.
+// Hysteresis: hide once we're >24h out, only re-show once we're back within
+// 22h, so scrubbing across the boundary doesn't flicker layers on/off. See
+// ROADMAP.md "Live-data freshness gating" for the full design.
+const LIVE_DATA_HIDE_MS = 24 * 3600 * 1000;
+const LIVE_DATA_SHOW_MS = 22 * 3600 * 1000;
+let liveDataInRange = true;
+
+// State for the camera-follows-Earth-spin lock (see the animate-loop comment
+// next to the rotation maths). prevEarthY is null on the very first frame so
+// we have nothing to diff against; from frame 2 onward we apply the delta.
+let _prevEarthY: number | null = null;
+const _camOffset = new THREE.Vector3();
+
 function loadEclipse(event: EclipseEvent | null) {
   activeEclipse = event;
   activeNasaPath = event ? getCataloguedEclipsePath(event.id) : undefined;
   // Keep the EclipsePanel's row-highlight in sync with the actually-loaded event.
   // Covers both the startup load (next upcoming) and any later jump.
-  eclipsePanel.setSelected(event?.id ?? null);
+  eclipsePanel.setSelected("solar", event?.id ?? null);
+
+  // Configure the SunDiscPanel's scrub bar to span this eclipse's window so the
+  // slider drags across U1−5m → U4+5m, with the greatest-eclipse marker at the
+  // right fraction. Show/hide of the controls themselves is driven by the
+  // animate loop (gates on `eclipseModeOn`) — here we just configure the range.
+  if (event) sunDiscPanel.setEclipseWindow(event.startUtc, event.endUtc, event.peakUtc);
 
   if (!event) {
     eclipseLayer.setPath([]);
@@ -1403,6 +1535,40 @@ function updateAstro() {
   // Drift between 5-min fetches is <1.3° and gets corrected next refresh.
   aurora.setRotationY(earthY);
   aurora.setSunDirection(sunDir);
+
+  // Lunar-eclipse dimming. When the user has picked a lunar eclipse from the
+  // 🌑 Lunar tab, drive the moon mesh's emissive intensity + colour from how
+  // far through the P1→peak→P4 window we are. Zero outside the window → moon
+  // reverts to the default bright disc. The dim curve is linear (visual
+  // approximation; not a photometric model) — driven by lunarEclipseFraction.
+  // The same fraction also feeds the SunDiscPanel's lunar moon-disc inset so
+  // the 3D moon and the panel inset stay visually in lockstep.
+  if (activeLunarEclipse) {
+    const f = lunarEclipseFraction(activeLunarEclipse, now);
+    moon.setEclipseShadow(f);
+    sunDiscPanel.setLunarFraction(f);
+    // Magnitude readout mirrors the solar version's shape. Status string maps
+    // the fraction back to a human-readable phase: ≤0 outside the event,
+    // climbing → "approaching", at peak → either "totality" (umbral mag > 1)
+    // or "deepest" (partial / penumbral), then "receding" on the way down.
+    const peakMs = activeLunarEclipse.peakUtc.getTime();
+    const mag = activeLunarEclipse.umbralMagnitude;
+    const magStr = f > 0 ? `magnitude ${mag.toFixed(3)}` : "—";
+    let statusStr: string;
+    if (f <= 0) {
+      statusStr = activeLunarEclipse.type;
+    } else if (f >= 0.98) {
+      statusStr = mag > 1 ? "totality" : "deepest";
+    } else if (simulatedTime < peakMs) {
+      statusStr = `approaching · ${(f * 100).toFixed(0)}%`;
+    } else {
+      statusStr = `receding · ${(f * 100).toFixed(0)}%`;
+    }
+    sunDiscPanel.setLunarReadout(magStr, statusStr);
+  } else {
+    moon.setEclipseShadow(0);
+    sunDiscPanel.setLunarFraction(0);
+  }
 }
 
 function wrapLon(d: number): number {
@@ -1421,17 +1587,53 @@ function animate(t: number) {
   clock.setTime(now);
   locationPanel.setNow(now);
 
-  // Sun-disc inset (the "what the observer at the pinned location sees" SVG).
-  // Visible only when an eclipse is loaded AND a location is pinned AND the
-  // panel itself decides the geometry is meaningful (sun above horizon, moon
-  // within ~5° of sun on the sky). SunDiscPanel.update returns false in any
-  // of those off-frame cases and we hide the inset.
-  if (pinnedLocation.visible && eclipseLayer.mesh.visible) {
+  // Live-data freshness. When the user warps far from wall-clock now (catalogued
+  // 2027 eclipse, scrubbing back to 1923, etc.), we hide every live-weather
+  // layer rather than render today's wind + clouds + lightning on the wrong
+  // date. Astronomy + day/night + eclipse layer stay on because they track
+  // simulated time correctly. Hysteresis bands keep the toggles from flickering
+  // at the boundary if the user scrubs across it. See ROADMAP.md.
+  const driftMs = Math.abs(simulatedTime - Date.now());
+  if (liveDataInRange && driftMs > LIVE_DATA_HIDE_MS)  liveDataInRange = false;
+  if (!liveDataInRange && driftMs < LIVE_DATA_SHOW_MS) liveDataInRange = true;
+  menu.setLiveFreshnessOk(liveDataInRange);
+  clock.setLiveDataStale(!liveDataInRange, liveDataInRange ? null : now);
+
+  // Sun-disc inset (the "what the observer at the pinned location sees" SVG +
+  // eclipse scrub controls). Two paths into visibility:
+  //   1. Easter egg — geometry match (sun up, moon within 5° at the pin).
+  //   2. Eclipse-mode — user clicked an eclipse row, layer is on; we show
+  //      the panel even if geometry doesn't match so the scrub controls are
+  //      reachable (e.g., the moon may be on the other side of Earth for the
+  //      pinned location at U1).
+  // Both paths require a pinned location.
+  // Two-mode panel visibility:
+  //   - Solar: needs a pin (observer-perspective sun+moon SVG is only
+  //     meaningful for a specific spot on Earth). Eclipse-mode keeps it on
+  //     even if geometry doesn't match (so the user can reach the scrub bar).
+  //     Easter-egg path: visible when a geometric eclipse is happening at the
+  //     pin even without explicit eclipse-mode.
+  //   - Lunar: no pin needed — the moon is the same for every observer on the
+  //     night side. Panel visible whenever a lunar event is loaded.
+  const eclipseModeOn = activeEclipse !== null && eclipseLayer.mesh.visible;
+  const tab = eclipsePanel.getActiveTab();
+  if (tab === "lunar") {
+    sunDiscPanel.setVisible(activeLunarEclipse !== null);
+    sunDiscPanel.setScrubControlsVisible(activeLunarEclipse !== null);
+  } else if (pinnedLocation.visible) {
     const view = computeObserverView(pinnedLocation.lat, pinnedLocation.lon, now, sunDir, moonPos);
-    sunDiscPanel.setVisible(sunDiscPanel.update(view));
+    const geomMatch = sunDiscPanel.update(view);
+    sunDiscPanel.setVisible(geomMatch || eclipseModeOn);
+    sunDiscPanel.setScrubControlsVisible(eclipseModeOn);
   } else {
     sunDiscPanel.setVisible(false);
+    sunDiscPanel.setScrubControlsVisible(false);
   }
+  // Drive the scrub bar's position and the ⏸/▶ icon from the current
+  // simulatedTime / warp. SunDiscPanel.setSimulatedTime is a no-op while the
+  // user is mid-drag (its own isDragging flag), so this doesn't fight input.
+  sunDiscPanel.setSimulatedTime(simulatedTime);
+  sunDiscPanel.setPlaying((window.__orreryTimeWarp ?? 1) !== 0);
   // Use real wall-clock dt for particles (independent of simulated-time warp;
   // wind drift should look the same regardless of how fast Earth is spinning).
   particles.update(dtMs / 1000, t / 1000);
@@ -1439,6 +1641,41 @@ function animate(t: number) {
   fires.setTime(t / 1000);
   hurricanes.setTime(t / 1000);
   lightning.setTime(t / 1000);
+  // Camera-locks-to-Earth-surface when auto-orbit is off. Without this, time-warp
+  // visibly drifts the view: Earth rotates beneath the camera (because
+  // globe.setRotationY advances with simulated time) but the camera sits still in
+  // the world frame, so the surface point the user was looking at scrolls off
+  // screen. Locking means: every frame, rotate camera.position around the
+  // controls target (Earth centre) by the same Δ Earth rotated. Net effect — the
+  // user keeps staring at the same Spain / Iceland / wherever as time advances,
+  // and only the celestial geometry (sun, moon, eclipse umbra) visibly moves.
+  // Skipped in flat-map mode (no orbit camera there) and when auto-orbit is on
+  // (then the user explicitly wants the camera to revolve in world frame). The
+  // user's own drag input remains additive — OrbitControls reads camera.position
+  // *after* this rotation, so dragging still spins on top of the lock.
+  const earthYNow = earthRotationY(new Date(simulatedTime));
+  // Gate the lock on `warp !== 0`: when the user is paused (or scrubbing the
+  // eclipse slider, which pauses), don't track Earth's spin. The slider can
+  // jump simulatedTime by hours in a single frame; without this gate, the
+  // camera swings just as far around Earth and the user sees the viewpoint
+  // sweep across the scene. With it gated, scrubbing keeps the camera dead
+  // still — surface texture scrolls past as Earth rotates internally, but
+  // the viewpoint stays where the user parked it. Lock resumes naturally
+  // when warp returns to non-zero (press ▶ / pick a speed).
+  const warpForLock = window.__orreryTimeWarp ?? 1;
+  if (!menu.isAutoOrbit() && !menu.isMapMode() && _prevEarthY !== null && warpForLock !== 0) {
+    const deltaEarthY = earthYNow - _prevEarthY;
+    if (deltaEarthY !== 0) {
+      _camOffset.subVectors(camera.position, controls.target);
+      const cosA = Math.cos(deltaEarthY);
+      const sinA = Math.sin(deltaEarthY);
+      const x = _camOffset.x, z = _camOffset.z;
+      _camOffset.x =  x * cosA + z * sinA;
+      _camOffset.z = -x * sinA + z * cosA;
+      camera.position.addVectors(controls.target, _camOffset);
+    }
+  }
+  _prevEarthY = earthYNow;
   // OrbitControls' built-in autoRotate. Three.js pauses it automatically while the user is
   // actively dragging, so input handover is implicit; we just keep the flag in sync with
   // the menu toggle each frame.

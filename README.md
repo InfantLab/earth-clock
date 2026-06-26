@@ -11,7 +11,8 @@ The current experience is the spiritual successor to Cameron Beccario's [`earth`
 |---|---|
 | earth-clock (default)    | [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/) |
 | Classic archive          | [earth-clock.onemonkey.org/classic/](https://earth-clock.onemonkey.org/classic/) |
-| Project plan             | [frontend/PLAN.md](frontend/PLAN.md) |
+| Roadmap                  | [ROADMAP.md](ROADMAP.md) |
+| Changelog                | [CHANGELOG.md](CHANGELOG.md) |
 | Credits & licences       | [frontend/CREDITS.md](frontend/CREDITS.md) |
 
 The current version is built on [Three.js](https://threejs.org/) with GPU wind particles, modern satellite feeds (NASA GIBS, NOAA SWPC, NASA FIRMS, NOAA NHC, NOAA SPC, Blitzortung), and physically-based lighting from a true-position sun. It includes a NASA-derived solar-eclipse renderer (path of totality + live umbra disc, targeting the 2026-08-12 Spain eclipse as a headline event), plus an equirectangular flat-map mode. The other classic projections are on the roadmap.
@@ -47,7 +48,7 @@ npm install
 npm run dev
 ```
 
-Vite dev server at <http://localhost:5173>. Hot module reload, source maps, full TypeScript checking. The dev server also reverse-proxies `/proxy/nhc/*` to NHC's CORS-blocked feeds so hurricanes work in development. See [`frontend/README.md`](frontend/README.md) and [`frontend/PLAN.md`](frontend/PLAN.md) for architecture notes and the current development plan.
+Vite dev server at <http://localhost:5173>. Hot module reload, source maps, full TypeScript checking. The dev server also reverse-proxies `/proxy/nhc/*` to NHC's CORS-blocked feeds so hurricanes work in development. See [`frontend/README.md`](frontend/README.md) for architecture notes, [`ROADMAP.md`](ROADMAP.md) for the current development plan, and [`CHANGELOG.md`](CHANGELOG.md) for what has shipped.
 
 ### Run the classic archive locally
 

@@ -25,7 +25,18 @@ const STORAGE_KEY = "orrery.clock.v1";
  * warp naturally — Earth, sun, and moon all unwind). 0 is included as a pause stop on
  * the way between forward and reverse.
  */
-const SPEED_PRESETS = [-86400, -1440, -60, -1, 0, 1, 60, 1440, 86400];
+// Speed presets ⏪ / ⏩ step through, symmetric around 0. The mid-range
+// (60 → 1440) is bridged with extra stops at 120, 240, 480, 720 because
+// eclipse playback lives in that band: 60× plays the 2026 Spain eclipse
+// over ~4 minutes (whole window), 240× over ~1 minute, 720× over ~20 s.
+// Top speed is 10080× — one real-time second = a week of simulated time;
+// fast enough to skim through months without making the rendering jitter
+// or skipping astronomical events you'd want to see in passing. The old
+// 86400× (1 second = 1 day) blew past lunar cycles too quickly to watch.
+const SPEED_PRESETS = [
+  -10080, -1440, -720, -480, -240, -120, -60, -1, 0,
+   1, 60, 120, 240, 480, 720, 1440, 10080,
+];
 const WARP_PAUSE_DEFAULT = 60;  // value restored on play if there's no prior warp memory
 
 type Zone = "utc" | "local";
@@ -48,6 +59,8 @@ export class Clock {
   private readonly controlsEl: HTMLElement;
   private readonly warpReadoutEl: HTMLElement;
   private readonly pauseBtn: HTMLElement;
+  private readonly staleCaptionEl: HTMLElement;
+  private readonly staleDateEl: HTMLElement;
   private zone: Zone;
   private expanded: boolean;
   /** Warp value to restore on un-pause (the speed the user was at before hitting pause). */
@@ -57,6 +70,7 @@ export class Clock {
   private lastZoneStr = "";
   private lastWarpStr = "";
   private lastPauseLabel = "";
+  private lastStaleDateStr = "";
 
   private readonly callbacks: ClockCallbacks;
 
@@ -79,11 +93,14 @@ export class Clock {
         </div>
       </div>
       <div class="orrery-clock-controls hidden" id="orrery-clock-controls">
-        <button class="orrery-clock-btn" id="orrery-clock-slower" title="Step backward through speeds: 86400× / 1440× / 60× / 1× / 0 / -1× / -60× / -1440× / -86400× (negative speeds run time in reverse)">⏪</button>
+        <button class="orrery-clock-btn" id="orrery-clock-slower" title="Step backward through speeds: 10080× / 1440× / 720× / 480× / 240× / 120× / 60× / 1× / 0 / negatives (run time in reverse)">⏪</button>
         <button class="orrery-clock-btn" id="orrery-clock-pause"  title="Pause / play">⏸</button>
-        <button class="orrery-clock-btn" id="orrery-clock-faster" title="Step forward through speeds: -86400× / -1440× / -60× / -1× / 0 / 1× / 60× / 1440× / 86400×">⏩</button>
+        <button class="orrery-clock-btn" id="orrery-clock-faster" title="Step forward through speeds: 0 / 1× / 60× / 120× / 240× / 480× / 720× / 1440× / 10080×">⏩</button>
         <button class="orrery-clock-btn" id="orrery-clock-reset"  title="Reset to real time — warp 1× and snap to now">↺</button>
         <span class="orrery-clock-warp" id="orrery-clock-warp">× 1</span>
+      </div>
+      <div class="orrery-clock-stale hidden" id="orrery-clock-stale" title="Live weather is hidden while simulated time is far from now — the data we have isn't valid for this date. Click ↺ above to snap back to real time.">
+        live weather hidden · sim <span id="orrery-clock-stale-date">—</span>
       </div>
     `;
     parent.appendChild(this.root);
@@ -96,6 +113,8 @@ export class Clock {
     this.controlsEl    = this.root.querySelector("#orrery-clock-controls") as HTMLElement;
     this.warpReadoutEl = this.root.querySelector("#orrery-clock-warp")     as HTMLElement;
     this.pauseBtn      = this.root.querySelector("#orrery-clock-pause")    as HTMLElement;
+    this.staleCaptionEl = this.root.querySelector("#orrery-clock-stale")        as HTMLElement;
+    this.staleDateEl    = this.root.querySelector("#orrery-clock-stale-date")   as HTMLElement;
 
     // The whole time block (not just the zone label) toggles zone. Catch clicks on the
     // ⏱ icon or ✕ button so the click doesn't ALSO flip the zone — they live inside
@@ -172,6 +191,25 @@ export class Clock {
     this.expanded = expanded;
     saveExpanded(this.expanded);
     this.refreshExpandState();
+  }
+
+  /**
+   * Show / hide the "live weather hidden · sim <date>" caption beneath the
+   * Clock when simulated time is far enough from wall-clock now that live data
+   * (wind, clouds, aurora, etc.) is no longer meaningful — main.ts drives this
+   * via menu.setLiveFreshnessOk + this method in lockstep. The caption itself
+   * is informational; the existing ↺ reset button is the snap-back action, so
+   * we point the user at that with a tooltip rather than adding another link.
+   */
+  setLiveDataStale(stale: boolean, simDate: Date | null) {
+    this.staleCaptionEl.classList.toggle("hidden", !stale);
+    if (stale && simDate) {
+      const dateStr = simDate.toISOString().slice(0, 10);
+      if (dateStr !== this.lastStaleDateStr) {
+        this.staleDateEl.textContent = dateStr;
+        this.lastStaleDateStr = dateStr;
+      }
+    }
   }
 
   private refreshExpandState() {
@@ -381,6 +419,18 @@ function injectStyles() {
       transition: color 125ms ease;
     }
     .orrery-clock-warp.warped { color: #e2b42e; }
+    /* Stale-data caption: appears when simulated time is far from wall-clock now
+       and the live weather layers have been hidden. Sits at the bottom of the
+       Clock panel, dim grey so it doesn't compete with the time readout. */
+    .orrery-clock-stale {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #6e7a90;
+      font-style: italic;
+      cursor: help;
+    }
+    .orrery-clock-stale.hidden { display: none; }
+    #orrery-clock-stale-date { color: #8a93a7; font-style: normal; }
   `;
   const el = document.createElement("style");
   el.textContent = css;
