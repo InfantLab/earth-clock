@@ -409,7 +409,23 @@ const sunDiscPanel = new SunDiscPanel(document.body, {
       window.__orreryTimeWarp = 0;
     }
   },
+  // ✕ closes the whole eclipse experience: clears both kinds of active event
+  // (so the umbra disc / path / moon-dim all stop), flips the menu's Eclipse
+  // toggle off (which hides the EclipsePanel + 3D EclipseLayer), and snaps
+  // simulated time back to wall-clock now at warp 1× — the same end-state as
+  // closing via the EclipsePanel's own ✕.
+  onClose: () => closeEclipseExperience(),
 });
+
+/** Centralised close action so the ✕ on either panel ends up in the same
+ *  end-state. Without this both close-buttons drift apart as we add behaviour. */
+function closeEclipseExperience() {
+  loadEclipse(null);
+  activeLunarEclipse = null;
+  menu.setLayer("eclipse", false);
+  simulatedTime = Date.now();
+  window.__orreryTimeWarp = 1;
+}
 /** Cached state of the active pin — updated by `pinLocation` so the per-frame
  *  observer-view update doesn't have to dig through the LocationPanel internals. */
 const pinnedLocation: { lat: number; lon: number; visible: boolean } = { lat: 0, lon: 0, visible: false };
@@ -433,12 +449,9 @@ const eclipsePanel = new EclipsePanel(document.body, {
   // Closing the panel signals "I'm done with the eclipse experience" — snap simulated
   // time back to wall-clock now and drop warp to 1× so the rest of the app shows the
   // current state of the world. Without this, the user is left staring at 2026-08-12
-  // T-1m frozen in time after dismissing the panel.
-  onClose: () => {
-    menu.setLayer("eclipse", false);
-    simulatedTime = Date.now();
-    window.__orreryTimeWarp = 1;
-  },
+  // T-1m frozen in time after dismissing the panel. Shared with the SunDiscPanel's
+  // ✕ via closeEclipseExperience so both close-buttons land in identical state.
+  onClose: () => closeEclipseExperience(),
 });
 
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;

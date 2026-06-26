@@ -43,6 +43,10 @@ export interface SunDiscCallbacks {
   onStep?: (deltaMs: number) => void;
   /** User pressed ⏸/▶. Caller toggles warp between 0 and the last live speed. */
   onPlayPause?: () => void;
+  /** User pressed the ✕ in the title bar. Closes the eclipse experience:
+   *  this panel + the EclipsePanel catalogue + the 3D EclipseLayer all go away
+   *  in lockstep, simulated time snaps back to wall-clock now. */
+  onClose?: () => void;
 }
 
 /** How far ⏪ / ⏩ step `simulatedTime` per click. 30 seconds gives ~5 frames
@@ -105,6 +109,7 @@ export class SunDiscPanel {
       <div class="orrery-sundisc-title">
         <span class="orrery-sundisc-label" id="orrery-sundisc-label">sky from</span>
         <span class="orrery-sundisc-place" id="orrery-sundisc-place">—</span>
+        <span class="orrery-sundisc-close" id="orrery-sundisc-close" title="Close eclipse view (closes both panels)">✕</span>
       </div>
       <!-- Solar view: sun's gold disc + moon's dark disc at observer-view offset. -->
       <svg id="orrery-sundisc-svg-solar" viewBox="${-half} ${-half} ${2 * half} ${2 * half}" width="${2 * half}" height="${2 * half}">
@@ -200,6 +205,9 @@ export class SunDiscPanel {
       this.callbacks.onStep?.(STEP_MS);
     });
     this.playBtn.addEventListener("click", () => { this.callbacks.onPlayPause?.(); });
+    (this.root.querySelector("#orrery-sundisc-close") as HTMLElement).addEventListener("click", () => {
+      this.callbacks.onClose?.();
+    });
   }
 
   setVisible(visible: boolean) {
@@ -402,6 +410,18 @@ function injectStyles() {
       font-size: 10px;
     }
     .orrery-sundisc-place { color: #cfd6e4; font-size: 12px; }
+    /* Close ✕ in the title row — matches EclipsePanel + LocationPanel styling.
+       Pushed to the far right via margin-left:auto so the label + place name
+       still hug the left. Hover turns red to signal destructive (closes both
+       eclipse panels). */
+    .orrery-sundisc-close {
+      color: #6e7a90;
+      cursor: pointer;
+      transition: color 125ms ease;
+      margin-left: auto;
+      font-size: 12px;
+    }
+    .orrery-sundisc-close:hover { color: #ff7a7a; }
     /* Both the solar and lunar SVG views share layout. Background tint subtly
        hints at the body being shown — warm for sun, cool for moon. */
     #orrery-sundisc-svg-solar, #orrery-sundisc-svg-lunar {
