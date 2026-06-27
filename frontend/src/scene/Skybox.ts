@@ -24,8 +24,12 @@ import * as THREE from "three";
  * **404s in the console while no file is present are expected.** They go away the
  * moment you drop the texture in.
  */
-export async function tryLoadSkybox(): Promise<THREE.Texture | null> {
+export type SkyboxQuality = "lo" | "hi";
+
+export async function tryLoadSkybox(quality: SkyboxQuality = "lo"): Promise<THREE.Texture | null> {
   // Prefer cubemap (sharper at all zooms; no equirectangular reprojection cost).
+  // Cubemap quality is fixed by whatever's bundled, so the `quality` arg only
+  // influences the equirectangular fallback order below.
   const cubeFaces = ["px", "nx", "py", "ny", "pz", "nz"]
     .map(s => `textures/starmap_${s}.jpg`);
   const cubeOk = await headProbe(cubeFaces[0]);
@@ -37,15 +41,21 @@ export async function tryLoadSkybox(): Promise<THREE.Texture | null> {
     }
   }
 
-  // Fallback: equirectangular JPEG, trying Solar System Scope's published filenames
-  // first (the same source as the earth/moon textures), then a generic `starmap.jpg`.
-  // Order is 2K-before-8K by default to keep initial load fast; the planned quality
-  // toggle (Phase A polish — see PLAN.md) will flip the order at runtime.
-  const eqCandidates = [
-    "textures/2k_stars_milky_way.jpg",
-    "textures/starmap.jpg",
-    "textures/8k_stars_milky_way.jpg",
-  ];
+  // Fallback: equirectangular JPEG. Default `lo` keeps initial paint snappy
+  // (~250 KB); `hi` upgrades to the 8K NASA "Deep Star Map" (~1.9 MB) — sharper
+  // Milky Way detail when zoomed out. The Menu's Astro² "Hi-res sky" toggle
+  // calls back through here with `hi` / `lo` and swaps `scene.background`.
+  const eqCandidates = quality === "hi"
+    ? [
+        "textures/8k_stars_milky_way.jpg",
+        "textures/starmap.jpg",
+        "textures/2k_stars_milky_way.jpg",
+      ]
+    : [
+        "textures/2k_stars_milky_way.jpg",
+        "textures/starmap.jpg",
+        "textures/8k_stars_milky_way.jpg",
+      ];
   for (const url of eqCandidates) {
     if (!(await headProbe(url))) continue;
     const eq = await loadEquirect(url);

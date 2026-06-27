@@ -34,6 +34,7 @@ import type { DataPanel } from "./DataPanel";
 import type { Clock } from "./Clock";
 import type { LocationPanel } from "./LocationPanel";
 import type { EclipsePanel } from "./EclipsePanel";
+import type { TimezoneLayer } from "../scene/TimezoneLayer";
 
 export interface MenuLayers {
   globe: Globe;
@@ -50,6 +51,7 @@ export interface MenuLayers {
   radiusVectors: RadiusVectors;
   eclipse: EclipseLayer;
   flatMap: FlatMap;
+  timezoneLayer: TimezoneLayer;
   /** Wind-trail accumulator. The Wind row's mutex picker calls
    *  `trails.setIntensity(level)` directly via Menu.apply(). */
   trails: Trails;
@@ -79,8 +81,8 @@ type LayerKey =
   | "cloudsViirs" | "cloudsGfs" | "cloudsGoes"
   // Overlay row — mutex (unchanged)
   | "mslp" | "temp" | "rh" | "tpw" | "tcw"
-  // Geography row
-  | "coastlines" | "nightLights"
+  // Geography row — timezone display is a mutex pair (nominal vs political) plus a modifier
+  | "coastlines" | "nightLights" | "tzNominal" | "tzPolitical" | "tzRelative"
   // Astro row. `eclipse` toggles both the 3D EclipseLayer mesh AND the top-left
   // Eclipse panel (catalogue browser + jump-to). The Moon toggle was removed in
   // v0.1.4 — the 3D moon mesh is always visible now, and the flat-map sun + moon
@@ -122,8 +124,9 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   cloudsViirs: true, cloudsGfs: false, cloudsGoes: false,
   // Overlay
   mslp: false, temp: false, rh: false, tpw: false, tcw: false,
-  // Geography
+  // Geography — timezone: both modes off by default; political falls back to nominal when data absent
   coastlines: true, nightLights: true,
+  tzNominal: false, tzPolitical: false, tzRelative: false,
   // Astro
   terminator: true, atmosphere: true, hands: true, eclipse: false,
   // Astro² — hi-res sky off by default so first paint stays on the 250 KB 2K texture.
@@ -162,6 +165,7 @@ const LABELS: Record<LayerKey, string> = {
   mslp: "Pressure", temp: "Temperature", rh: "Humidity",
   tpw: "Moisture", tcw: "Cloud water",
   coastlines: "Coastlines", nightLights: "Night lights",
+  tzNominal: "Meridians", tzPolitical: "Time Zones", tzRelative: "Relative",
   terminator: "Day/night", atmosphere: "Atmosphere", hands: "Beams", eclipse: "Eclipse",
   skyboxHi: "Hi-res sky",
   map: "Flat map", orbit: "Auto-spin",
@@ -198,8 +202,11 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   tpw:         "Total precipitable water (TPW, mm) — atmospheric water vapour column",
   tcw:         "Total cloud water (TCW, kg/m²) — liquid + ice in the atmospheric column",
   // Geography
-  coastlines:  "Natural Earth 50 m coastlines",
-  nightLights: "City lights on the night side (Solar System Scope)",
+  coastlines:   "Natural Earth 50 m coastlines",
+  nightLights:  "City lights on the night side (Solar System Scope)",
+  tzNominal:    "Nominal UTC hour meridian boundaries (every 15°) — geometrically regular, no DST. Labels show current local time at each zone centre.",
+  tzPolitical:  "Real political timezone boundaries from /data/timezone-bounds.json — run scripts/build-timezone-bounds.mjs to generate. DST-correct via IANA/Intl. Falls back to nominal if data absent.",
+  tzRelative:   "Swap labels from absolute HH:MM to hours offset relative to your local timezone (+2h, −3h…). Requires UTC lines or Real zones to be active.",
   // Astro
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
@@ -224,6 +231,8 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
 const OVERLAY_KEYS: LayerKey[] = ["mslp", "temp", "rh", "tpw", "tcw"];
 const CLOUD_KEYS:   LayerKey[] = ["cloudsViirs", "cloudsGfs", "cloudsGoes"];
 const WIND_KEYS:    LayerKey[] = ["windSubtle", "windStandard", "windBold"];
+/** Mutex pair — clicking the active mode again turns timezone overlay off entirely. */
+const TZ_MODE_KEYS: LayerKey[] = ["tzNominal", "tzPolitical"];
 
 const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   {
@@ -244,7 +253,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "Geography",
-    keys: ["coastlines", "nightLights"],
+    keys: ["coastlines", "nightLights", "tzNominal", "tzPolitical", "tzRelative"],
   },
   {
     label: "Astro",
@@ -419,6 +428,13 @@ export class Menu {
     return null;
   }
 
+  /** Currently active timezone display mode ("nominal" | "political"), or null if both off. */
+  activeTzMode(): "nominal" | "political" | null {
+    if (this.state.tzNominal)   return "nominal";
+    if (this.state.tzPolitical) return "political";
+    return null;
+  }
+
   /**
    * Hook for overlay changes. Called with the new active overlay key (or null when the
    * user clicks an active overlay a second time to turn it off). main.ts uses this to
@@ -477,9 +493,10 @@ export class Menu {
     this.state[key] = on;
 
     if (on) {
-      const mutexRow = OVERLAY_KEYS.includes(key) ? OVERLAY_KEYS
+      const mutexRow = OVERLAY_KEYS.includes(key)  ? OVERLAY_KEYS
                     : CLOUD_KEYS.includes(key)    ? CLOUD_KEYS
                     : WIND_KEYS.includes(key)     ? WIND_KEYS
+                    : TZ_MODE_KEYS.includes(key)  ? TZ_MODE_KEYS
                     : null;
       if (mutexRow) {
         for (const other of mutexRow) {
@@ -502,9 +519,10 @@ export class Menu {
     // Mutex rows: turning one entry on turns the others in the same row off. Used by
     // overlay (one scalar field at a time), clouds (one source backend at a time), and
     // wind (one intensity level at a time).
-    const mutexRow = OVERLAY_KEYS.includes(key) ? OVERLAY_KEYS
-                  : CLOUD_KEYS.includes(key)    ? CLOUD_KEYS
-                  : WIND_KEYS.includes(key)     ? WIND_KEYS
+    const mutexRow = OVERLAY_KEYS.includes(key)  ? OVERLAY_KEYS
+                  : CLOUD_KEYS.includes(key)     ? CLOUD_KEYS
+                  : WIND_KEYS.includes(key)      ? WIND_KEYS
+                  : TZ_MODE_KEYS.includes(key)   ? TZ_MODE_KEYS
                   : null;
     if (mutexRow && this.state[key]) {
       for (const other of mutexRow) {
@@ -575,7 +593,7 @@ export class Menu {
   private apply(key: LayerKey) {
     const on = this.state[key];
     const fresh = this.liveFreshnessOk;
-    const { globe, atmosphere, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails } = this.layers;
+    const { globe, atmosphere, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails, timezoneLayer } = this.layers;
     switch (key) {
       // Cloud source picker — visibility is "is any source active?" The actual texture/
       // scalar swap happens in main.ts via onCloudsChange. (CloudLayer doesn't know the
@@ -628,6 +646,18 @@ export class Menu {
       case "coastlines":
         coastlines.mesh.visible     = on;
         coastlines.flatMesh.visible = on;
+        break;
+      case "tzNominal":
+      case "tzPolitical": {
+        const mode = this.activeTzMode();
+        const tzOn = mode !== null;
+        if (tzOn) timezoneLayer.setDisplayMode(mode!);
+        timezoneLayer.mesh.visible     = tzOn;
+        timezoneLayer.flatMesh.visible = tzOn;
+        break;
+      }
+      case "tzRelative":
+        timezoneLayer.setRelativeMode(on);
         break;
       case "atmosphere":  atmosphere.mesh.visible = on; break;
       case "hands":

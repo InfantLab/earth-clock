@@ -14,37 +14,38 @@ first-visit onboarding hint shows, then verify every feature below).
 
 ### v0.2.0 — onboarding
 - [ ] First-visit hint: clear `localStorage` for the site, reload. A small amber callout appears above the "earth-clock" wordmark, ~6 s, then fades out. Reload again — should NOT reappear.
-- [ ] Clicking the wordmark while the hint is visible dismisses it immediately + permanently.
-- [ ] Hover-tooltip on every menu button reads as plain English (no jargon). Confirm: Map (mentions pan/zoom), Clock (mentions zone-flip + ⏱ controls), Data (mentions linked sources), Location (mentions geocoded place names + true solar time), Eclipse (mentions catalogue panel).
+- [x] Clicking the wordmark while the hint is visible dismisses it immediately + permanently.
+- [x] Hover-tooltip on every menu button reads as plain English (no jargon). Confirm: Map (mentions pan/zoom), Clock (mentions zone-flip + ⏱ controls), Data (mentions linked sources), Location (mentions geocoded place names + true solar time), Eclipse (mentions catalogue panel).
 
 ### v0.1.9 — Flat-map pan + zoom
-- [ ] Toggle View → Flat map. Drag with mouse — plane pans smoothly with damping. Touch drag works on mobile.
+- [x] Toggle View → Flat map. Drag with mouse — plane pans smoothly with damping. Touch drag works on mobile.
 - [ ] Wheel zoom — zooms toward the cursor position (not the centre).
-- [ ] Pan past the antimeridian (drag left or right past ±180° longitude) — the world tiles seamlessly into the visible region. No black gap.
-- [ ] Vertical pan stops at the poles — drag up at max zoom-out and you can't scroll past the north pole into empty space above.
-- [ ] Double-click on the plane — pan + zoom reset to the default whole-world view.
-- [ ] Click-to-pin in flat-map mode: pin a location on the canonical plane; pan past ±180° and pin the same place again on the wrap-around tile. Both should pin to the same lat/lon.
+- [f] Pan past the antimeridian (drag left or right past ±180° longitude) — the world tiles seamlessly into the visible region. No black gap. 
+FAIL - doesn't keep tiling after 1 full cycle
+- [x] Vertical pan stops at the poles — drag up at max zoom-out and you can't scroll past the north pole into empty space above.
+- [x] Double-click on the plane — pan + zoom reset to the default whole-world view.
+- [x] Click-to-pin in flat-map mode: pin a location on the canonical plane; pan past ±180° and pin the same place again on the wrap-around tile. Both should pin to the same lat/lon.
 
 ### v0.1.8 — overlays
-- [ ] Toggle Overlay → Pressure. Globe shows real high/low variation (no longer uniform red). The bottom-centre scale key shows "Atmospheric pressure / 960 hPa / 1000 hPa / 1040 hPa" with a violet-to-red gradient.
-- [ ] Cycle Overlay → Temperature → Humidity → Moisture → Cloud water. Each one shows its palette + appropriate units (°C, %, mm, kg/m²).
-- [ ] Toggle the active overlay off (click it again). Globe overlay disappears AND scale-key panel disappears.
+- [x] Toggle Overlay → Pressure. Globe shows real high/low variation (no longer uniform red). The bottom-centre scale key shows "Atmospheric pressure / 960 hPa / 1000 hPa / 1040 hPa" with a violet-to-red gradient.
+- [x] Cycle Overlay → Temperature → Humidity → Moisture → Cloud water. Each one shows its palette + appropriate units (°C, %, mm, kg/m²).
+- [x] Toggle the active overlay off (click it again). Globe overlay disappears AND scale-key panel disappears.
 
 ### v0.1.7 — eclipse sun-disc view
-- [ ] Toggle Eclipse → click "Spain total solar eclipse (2026)". Globe time-warps to T-1m.
-- [ ] Pin Bilbao (use globe-click or "use my location" if in northern Spain). Sun-disc inset appears top-left under the Eclipse panel.
-- [ ] As the warp plays through the eclipse, moon visibly slides across the sun. Magnitude readout climbs from 0 → ~1.01 at totality.
-- [ ] Pin Sydney instead → during 2028 Australia eclipse → similar sliding moon at peak time.
-- [ ] Pin a location WHERE the sun is below the horizon at the eclipse moment (e.g. somewhere on Pacific night side during the 2026 Spain eclipse) — inset auto-hides.
+- [x] Toggle Eclipse → click "Spain total solar eclipse (2026)". Globe time-warps to T-1m.
+- [x] Pin Bilbao (use globe-click or "use my location" if in northern Spain). Sun-disc inset appears top-left under the Eclipse panel.
+- [x] As the warp plays through the eclipse, moon visibly slides across the sun. Magnitude readout climbs from 0 → ~1.01 at totality.
+- [x] Pin Sydney instead → during 2028 Australia eclipse → similar sliding moon at peak time.
+- [x] Pin a location WHERE the sun is below the horizon at the eclipse moment (e.g. somewhere on Pacific night side during the 2026 Spain eclipse) — inset auto-hides.
 
 ### v0.1.6 — Meeus lunar
-- [ ] Run any eclipse with no NASA centerline (catalogue is currently exhaustive, so this is automatic for any new eclipse). The runtime path of totality should now land on the right continent. (Pre-v0.1.6 this would miss by 30° on Earth's surface for non-catalogued events.)
-- [ ] Open the in-app About page — Moon section now says "Meeus / ~10 arcsec / 100× better than Schlyter". No "we use NASA centerlines because our calc isn't good enough" framing.
+- [x] Run any eclipse with no NASA centerline (catalogue is currently exhaustive, so this is automatic for any new eclipse). The runtime path of totality should now land on the right continent. (Pre-v0.1.6 this would miss by 30° on Earth's surface for non-catalogued events.)
+- [x] Open the in-app About page — Moon section now says "Meeus / ~10 arcsec / 100× better than Schlyter". No "we use NASA centerlines because our calc isn't good enough" framing.
 
 ### v0.1.5 — geocoder
-- [ ] In dev (`npm run dev` from frontend/): pin a location, the place name should resolve within ~1 s via the Vite-proxied `/proxy/geocode/`.
-- [ ] **Production**: confirm the NGINX `/proxy/geocode/` block is deployed per [DEPLOYMENT.md §5b](../../DEPLOYMENT.md). Curl test: `curl -i "https://earth-clock.onemonkey.org/proxy/geocode/reverse?format=jsonv2&lat=43.26&lon=-2.93"` should return 200 with a JSON body containing "Bilbao".
-- [ ] **LocationIQ**: if/when swapped per [DEPLOYMENT.md §5c](../../DEPLOYMENT.md), repeat the curl test. LocationIQ should have no 5xx outages.
+- [x] In dev (`npm run dev` from frontend/): pin a location, the place name should resolve within ~1 s via the Vite-proxied `/proxy/geocode/`.
+- [x] **Production**: confirm the NGINX `/proxy/geocode/` block is deployed per [DEPLOYMENT.md §5b](../../DEPLOYMENT.md). Curl test: `curl -i "https://earth-clock.onemonkey.org/proxy/geocode/reverse?format=jsonv2&lat=43.26&lon=-2.93"` should return 200 with a JSON body containing "Bilbao".
+- [x] **LocationIQ**: if/when swapped per [DEPLOYMENT.md §5c](../../DEPLOYMENT.md), repeat the curl test. LocationIQ should have no 5xx outages.
 
 ---
 
