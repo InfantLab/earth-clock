@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>earth-clock — for kids</title>
+  <meta name="description" content="What is earth-clock? A live 3D globe showing the real Earth right now — explained for younger readers.">
+  <style>
+    :root {
+      --bg: #050a1e;
+      --bg-panel: rgba(10, 16, 36, 0.85);
+      --fg: #cfd6e4;
+      --fg-mute: #8a93a7;
+      --fg-dim: #6e7a90;
+      --accent: #e2b42e;
+      --accent-warm: #ffcc66;
+      --link: #9ab8e6;
+      --link-hover: #cfe0ff;
+      --rule: rgba(255, 255, 255, 0.08);
+      --max-width: 720px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 17px;
+      line-height: 1.7;
+    }
+    body {
+      background-image: radial-gradient(ellipse at top, rgba(20, 30, 60, 0.6), transparent 60%);
+      min-height: 100vh;
+    }
+    a { color: var(--link); text-decoration: none; border-bottom: 1px solid rgba(154,184,230,0.25); transition: color 125ms; }
+    a:hover { color: var(--link-hover); border-bottom-color: rgba(207,224,255,0.6); }
+    code {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+      background: rgba(255,255,255,0.05);
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: var(--accent-warm);
+    }
+
+    /* Top bar */
+    header.topbar {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(5,10,30,0.92);
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--rule);
+      padding: 12px 0;
+    }
+    .topbar-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    }
+    .brand { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 20px; letter-spacing: 0.06em; color: var(--fg); }
+    .brand-tag { color: var(--fg-dim); margin-left: 0.4em; font-size: 0.8em; }
+    .back { font-size: 13px; color: var(--fg-mute); border-bottom: none; }
+    .back:hover { color: var(--accent); }
+
+    /* Hero */
+    .hero {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 56px 24px 24px;
+    }
+    .hero h1 {
+      font-size: 38px;
+      font-weight: 700;
+      line-height: 1.2;
+      margin: 0 0 16px;
+      color: var(--accent-warm);
+    }
+    .hero p.lede {
+      font-size: 19px;
+      color: var(--fg-mute);
+      margin: 0;
+    }
+
+    /* Main content */
+    main {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 24px 96px;
+    }
+    section { padding-top: 52px; scroll-margin-top: 72px; }
+    section > h2 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--accent-warm);
+      margin: 0 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rule);
+    }
+    section > h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--accent);
+      margin: 28px 0 8px;
+    }
+    p { margin: 0 0 14px; }
+    p:last-child { margin-bottom: 0; }
+    ul { padding-left: 1.4em; margin: 0 0 14px; }
+    li { margin-bottom: 8px; }
+
+    /* Big emoji intro icons */
+    .big { font-size: 2.4em; line-height: 1; margin-bottom: 6px; display: block; }
+
+    /* Fun fact callouts */
+    .funfact {
+      border-left: 3px solid var(--accent);
+      background: rgba(226,180,46,0.07);
+      padding: 14px 18px;
+      margin: 20px 0;
+      font-size: 15.5px;
+      border-radius: 0 6px 6px 0;
+    }
+    .funfact strong { color: var(--accent); }
+
+    /* Question style */
+    .q {
+      border-left: 3px solid #5ba4e0;
+      background: rgba(91,164,224,0.07);
+      padding: 14px 18px;
+      margin: 20px 0;
+      font-size: 15.5px;
+      border-radius: 0 6px 6px 0;
+      color: var(--fg-mute);
+    }
+    .q strong { color: #9ab8e6; }
+
+    /* Figures */
+    figure.fig { margin: 28px 0 32px; padding: 0; }
+    figure.fig img { display: block; width: 100%; height: auto; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.55); background: #050a1e; }
+    figure.fig figcaption { color: var(--fg-mute); font-size: 13.5px; line-height: 1.5; margin-top: 10px; padding: 0 4px; font-style: italic; }
+
+    /* Footer */
+    footer { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 64px; border-top: 1px solid var(--rule); color: var(--fg-dim); font-size: 13px; }
+    footer p { margin: 0 0 6px; }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 28px; }
+      .hero { padding-top: 32px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand">earth-clock <span class="brand-tag">for kids</span></span>
+    <a class="back" href="/">← try it yourself</a>
+  </div>
+</header>
+
+<div class="hero">
+  <h1>You're looking at Earth.<br>Right now. For real.</h1>
+  <p class="lede">
+    This isn't a picture. It's a live 3D model of our planet showing exactly what Earth looks like at this very moment — real clouds, real weather, real time, real sun.
+  </p>
+</div>
+
+<main>
+
+<section id="globe">
+  <h2>🌍 What is the globe?</h2>
+
+  <figure class="fig">
+    <img src="/screenshots/00-%20earthclock%20v022.png" alt="earth-clock showing the globe with timezone labels and the menu">
+    <figcaption>This is what earth-clock looks like. The bright side of the globe is where the sun is shining right now. The dark side is where it's night. The coloured labels show what time it is in different parts of the world.</figcaption>
+  </figure>
+
+  <p>
+    The globe in the middle is planet Earth, spinning just like the real thing. The bright part is daytime — that's where the sun is shining on Earth right now. The dark part is night-time — those little glowing dots are city lights seen from space.
+  </p>
+  <p>
+    There's a gold arm stretching away from the globe. Follow it with your eyes and you'll reach the sun. There's a silver arm too — that one points to the moon. Both are pointing to exactly where the sun and moon are in space right now.
+  </p>
+
+  <div class="funfact">
+    <strong>Did you know?</strong> The Earth is always spinning. It spins all the way around once every 24 hours, which is why we have day and night. As it spins, different parts of Earth face the sun — and that's what makes different time zones.
+  </div>
+</section>
+
+<section id="time">
+  <h2>🕰️ Why is it called a clock?</h2>
+
+  <p>
+    Normally a clock is something you hang on the wall. But what does a clock actually show you? It shows you <em>where the Earth has rotated to</em> since midnight.
+  </p>
+  <p>
+    Instead of showing you a number, earth-clock shows you the whole planet — you can see exactly where the sun is and where the night side is. That <em>is</em> the time. No numbers needed.
+  </p>
+
+  <div class="q">
+    <strong>Think about it:</strong> Why is it 12 noon in London when it's 7 in the morning in New York? Because the Earth has rotated so that London is facing the sun, but New York hasn't got there yet. earth-clock shows you this happening live.
+  </div>
+
+  <h3>The floating labels</h3>
+  <p>
+    You'll see coloured pills floating around the middle of the globe. Each one shows what time it is in a different part of the world. The pill for <strong>UTC+1</strong> (Central Europe) shows the time in places like France and Germany. The pill for <strong>UTC-5</strong> shows the time in New York.
+  </p>
+  <p>
+    They're all different times, but it's the same moment on Earth — the planet just happens to be in a different position relative to the sun for each place.
+  </p>
+</section>
+
+<section id="weather">
+  <h2>🌦️ What about the clouds and weather?</h2>
+
+  <p>
+    The white swirls you see on the globe are real clouds. A satellite called NOAA-20 flies 824 km above Earth and takes photos every day. Those photos get stitched together into one giant picture that wraps around the globe here — so you're looking at yesterday's actual clouds over every part of the planet.
+  </p>
+
+  <div class="funfact">
+    <strong>Did you know?</strong> The satellite image is made from 50 separate photo tiles and covers the whole world at a resolution of 250 metres per pixel. That means a football pitch would be about one pixel across.
+  </div>
+
+  <h3>Wind</h3>
+  <p>
+    The flowing lines you can see drifting across the surface are wind. Every six hours, a giant weather computer called <strong>GFS</strong> (run by NOAA in America) calculates the wind speed and direction at every point on Earth. earth-clock uses that data to draw 65,536 tiny particles all moving in the real wind direction — that's what makes the flowing pattern you see.
+  </p>
+
+  <h3>Storms</h3>
+  <p>
+    If there's a hurricane or typhoon anywhere in the world, you'll see a spinning spiral on the globe. These are updated every 15 minutes from live hurricane data. The bigger and more intense the storm, the brighter the spiral. You can even see the forecast track — where the storm is expected to go over the next five days.
+  </p>
+</section>
+
+<section id="sun-moon">
+  <h2>☀️🌙 The sun and the moon</h2>
+
+  <p>
+    Both the sun and the moon move across the sky because of the Earth's spin and orbit. Scientists have very precise equations — like very complicated maths — that tell us exactly where they are at any moment in time.
+  </p>
+  <p>
+    earth-clock uses those equations. Every second, it calculates where the sun and moon should be in 3D space and moves them there. The gold arm always points at the sun's real position. The silver arm always points at the moon's real position.
+  </p>
+
+  <div class="funfact">
+    <strong>Mind-blowing fact:</strong> The moon is about 384,000 km away from Earth. The sun is about 150 million km away. In earth-clock you can actually zoom out far enough to see the sun — it's a tiny bright dot very far from the globe.
+  </div>
+
+  <h3>Finding the moon</h3>
+  <p>
+    In the menu, there's a button called <strong>Find moon</strong>. Click it and the camera flies all the way to where the moon is right now and looks back at Earth. You'll see Earth the way the Apollo 8 astronauts saw it in 1968 — but with today's clouds and today's weather. Astronaut Bill Anders called that view the most important photograph ever taken, because it showed us how small and beautiful and alone our planet is.
+  </p>
+
+  <figure class="fig">
+    <img src="/screenshots/102-earthrise.png" alt="Earth seen from the moon's position — Apollo-8-style Earthrise view">
+    <figcaption>This is what you see if you click "Find moon" — Earth as it looks right now from where the moon actually is. The clouds are real. The day/night line is real. The moon is really out there at this distance.</figcaption>
+  </figure>
+</section>
+
+<section id="timezones">
+  <h2>🗺️ Time zones — why is New York 5 hours behind London?</h2>
+
+  <p>
+    The Earth is a sphere. It spins all the way around in 24 hours. That means it rotates 360° ÷ 24 hours = <strong>15 degrees per hour</strong>.
+  </p>
+  <p>
+    So every 15 degrees of longitude you travel east, the local time goes forward by one hour. And every 15 degrees west, it goes back by one hour. New York is about 75° west of London, which is 75 ÷ 15 = <strong>5 hours behind</strong>.
+  </p>
+
+  <div class="q">
+    <strong>Try this:</strong> Look at the <strong>Meridians</strong> mode in the Geography menu. You'll see 24 straight lines, each 15° apart. Those are the "ideal" time zone lines — the ones you'd have if politicians hadn't moved them around to fit country borders.
+  </div>
+
+  <h3>Why don't the lines go straight?</h3>
+  <p>
+    The real political time zones (try <strong>Time Zones</strong> in the menu) look very wobbly. That's because countries decided they wanted everyone inside their borders to have the same time, even if parts of the country are 15° away from where the line "should" be. China is nearly 5,000 km wide but uses only one time zone — that means the sun rises at completely different local times in the east and west of the country.
+  </p>
+
+  <h3>The colours</h3>
+  <p>
+    Each timezone gets its own colour. The colours are picked using a special trick from mathematics called the <strong>golden angle</strong> — the same angle that sunflower seeds use to pack themselves into a sunflower head. It makes sure that neighbouring time zones always get very different colours, so they're easy to tell apart.
+  </p>
+
+  <figure class="fig">
+    <img src="/screenshots/earth-clock-timezones.png" alt="Political timezone mode with coloured fills">
+    <figcaption>Time Zones mode: real political timezone borders with golden-angle colours. Each floating pill matches the colour of its zone, and shows the current local time there.</figcaption>
+  </figure>
+</section>
+
+<section id="aurora">
+  <h2>🌌 What are auroras?</h2>
+
+  <p>
+    Auroras (the Northern Lights and Southern Lights) happen when tiny particles shot out from the sun crash into Earth's magnetic field near the North and South Poles. This makes the atmosphere glow in beautiful greens, purples, and pinks.
+  </p>
+  <p>
+    earth-clock shows a live forecast of where auroras are likely to be visible right now. It updates every 5 minutes using data from NOAA's Space Weather Prediction Center. If the aurora oval is glowing brightly near your country, it might be worth looking outside on a clear night!
+  </p>
+
+  <div class="funfact">
+    <strong>Did you know?</strong> Aurora activity is driven by something called the K-index, a scale from 0 to 9. A K-index of 5 or above means auroras might be visible even from the UK. earth-clock shows you the current K-index in the Data panel.
+  </div>
+</section>
+
+<section id="eclipse">
+  <h2>🌑 Solar eclipses</h2>
+
+  <p>
+    A solar eclipse happens when the moon moves exactly between the Earth and the sun, blocking the sunlight for a small patch of Earth. The patch of shadow is called the <strong>umbra</strong>, and it's only about 300 km wide — so only a thin strip of Earth sees totality (the sun totally blocked) as the shadow races across at about 3,000 km/h.
+  </p>
+  <p>
+    earth-clock has a built-in eclipse mode. You can jump to any upcoming solar eclipse and watch the moon's shadow race across the globe in fast-forward. The next big one over Europe is on <strong>12 August 2026</strong>, crossing Spain. After that there's a spectacular one over Egypt in 2027 and one over Australia and New Zealand in 2028.
+  </p>
+
+  <div class="funfact">
+    <strong>Think about this:</strong> The sun is 400 times wider than the moon, but it's also 400 times further away. That's why they look almost exactly the same size in the sky. It's a complete cosmic coincidence — and it's why we get total solar eclipses at all.
+  </div>
+</section>
+
+<section id="data">
+  <h2>📡 Where does the data come from?</h2>
+
+  <p>
+    Almost everything you see on earth-clock is downloaded automatically from real scientific organisations:
+  </p>
+
+  <ul>
+    <li><strong>Clouds</strong> — NASA satellites taking pictures of Earth every day</li>
+    <li><strong>Wind and weather</strong> — NOAA (America's weather agency), using a supercomputer that runs weather forecasts every 6 hours</li>
+    <li><strong>Hurricanes and storms</strong> — NOAA's National Hurricane Center, updated every 15 minutes</li>
+    <li><strong>Lightning</strong> — a worldwide network of volunteer radio stations called Blitzortung, detecting lightning strikes within a fraction of a second</li>
+    <li><strong>Fires</strong> — NASA's FIRMS system, detecting heat from wildfires and forest fires using infrared cameras on satellites</li>
+    <li><strong>Auroras</strong> — NOAA's Space Weather Prediction Center, updated every 5 minutes</li>
+    <li><strong>Time zones</strong> — a global open-source project that maps every timezone boundary in the world, maintained by volunteers</li>
+  </ul>
+
+  <p>
+    All of this data is public and free — it's paid for by governments so that everyone can use it.
+  </p>
+</section>
+
+<section id="trythis">
+  <h2>🔭 Things to try</h2>
+
+  <ul>
+    <li><strong>Drag the globe</strong> to spin it and look at different parts of the world.</li>
+    <li><strong>Scroll to zoom in or out</strong> — zoom in on a hurricane, or zoom way out to see the whole solar neighbourhood.</li>
+    <li>Turn on <strong>Meridians</strong> (Geography menu) and count the timezone lines — there are 24, one for each hour of the day.</li>
+    <li>Turn on <strong>Time Zones</strong> and find your own country. What colour is your timezone?</li>
+    <li>Click <strong>Eclipse</strong> in the Astro menu and jump to the 2026 eclipse over Spain. Hit play and watch the shadow race across Europe.</li>
+    <li>Click <strong>Find moon</strong> (Astro menu) and look back at Earth from space.</li>
+    <li>Turn on <strong>Aurora</strong> (Weather menu) and see if the northern lights are active tonight.</li>
+    <li>Click anywhere on the globe to find out what city or country you clicked on.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <p>
+    earth-clock · <a href="/">live view</a> · <a href="/about/">full about page</a> · <a href="/classic/">classic archive</a> · MIT licensed
+  </p>
+  <p>
+    Built by <a href="https://onemonkey.org">Caspar Addyman</a> · data from NASA, NOAA, Blitzortung, OpenStreetMap · <a href="https://github.com/infantlab/earth-clock">source on GitHub</a>
+  </p>
+</footer>
+
+</body>
+</html>
