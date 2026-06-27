@@ -28,26 +28,44 @@ function run(cmd, opts = {}) {
   return execSync(cmd, { stdio: "inherit", cwd: ROOT, ...opts });
 }
 
-function bundleFiles() {
+function trackedBundleFiles() {
+  // Use git ls-files so we only remove files git actually knows about.
+  try {
+    return execSync("git ls-files public/assets/", { cwd: ROOT, encoding: "utf8" })
+      .trim().split("\n")
+      .filter(f => /index-[A-Za-z0-9]+\.js(\.map)?$/.test(f))
+      .map(f => f.replace("public/assets/", ""));
+  } catch { return []; }
+}
+
+function diskBundleFiles() {
   if (!existsSync(ASSETS)) return [];
   return readdirSync(ASSETS).filter(f => /^index-[A-Za-z0-9]+\.js(\.map)?$/.test(f));
 }
 
-// ---- 1. Record old bundle ----
-const oldFiles = bundleFiles();
+// ---- 1. Record old bundle (from git, not disk) ----
+const oldFiles = trackedBundleFiles();
 console.log("Old bundle:", oldFiles.length ? oldFiles.join(", ") : "(none tracked)");
 
 // ---- 2. Build ----
 run("npm run build", { cwd: join(ROOT, "frontend"), env: { ...process.env, BUILD_AS_ROOT: "1" } });
 
 // ---- 3. Find new bundle ----
-const newFiles = bundleFiles();
+const newFiles = diskBundleFiles();
 const added    = newFiles.filter(f => !oldFiles.includes(f));
 const removed  = oldFiles.filter(f => !newFiles.includes(f));
 
 if (!added.length) {
-  console.error("\nBuild produced no new bundle files — aborting.");
-  process.exit(1);
+  // Build output hash unchanged — source changes don't affect the bundle
+  // (or the fix was already compiled). Commit any remaining staged changes.
+  if (removed.length) {
+    run(`git rm ${removed.map(f => `public/assets/${f}`).join(" ")}`);
+    run(`git add public/index.html`);
+  } else {
+    console.log("\nBundle hash unchanged — no new bundle to commit.");
+    if (PUSH) run("git push");
+    process.exit(0);
+  }
 }
 console.log("\nNew bundle:", added.join(", "));
 
