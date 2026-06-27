@@ -8,6 +8,7 @@ import { Sun } from "./scene/Sun";
 import { Particles } from "./scene/Particles";
 import { Trails } from "./scene/Trails";
 import { Coastlines } from "./scene/Coastlines";
+import { TimezoneLayer } from "./scene/TimezoneLayer";
 import { CloudLayer } from "./scene/CloudLayer";
 import { AuroraLayer } from "./scene/AuroraLayer";
 import { FireLayer } from "./scene/FireLayer";
@@ -74,12 +75,29 @@ scene.add(sky.mesh);
 // (or textures/starmap_{px,nx,py,ny,pz,nz}.jpg) is present, it's installed as scene.background
 // and the procedural Points fallback is hidden. If not, the fallback stays visible and the
 // loader logs a one-time warning with download instructions. See [Skybox.ts](scene/Skybox.ts).
-tryLoadSkybox().then(tex => {
-  if (tex) {
-    scene.background = tex;
-    sky.mesh.visible = false;
-  }
-});
+//
+// First paint always kicks off the lo-res (2K, ~250 KB) starfield for snappy boot. The
+// Menu's Astro² "Hi-res sky" toggle triggers an upgrade to the 8K NASA Deep Star Map
+// (~1.9 MB) via applySkybox() below; if the user had hi-res persisted, the upgrade fires
+// once the menu is constructed.
+//
+// A monotonic token guards against the obvious race — two loads in flight (initial lo-res
+// + boot-time hi-res restore, or rapid toggling) resolving out of order would otherwise let
+// a stale lo-res clobber a freshly-installed hi-res. Latest call wins; in-flight stragglers
+// dispose their texture instead of clobbering the background.
+let _skyboxToken = 0;
+async function applySkybox(quality: "lo" | "hi") {
+  const myToken = ++_skyboxToken;
+  const tex = await tryLoadSkybox(quality);
+  if (!tex) return;
+  if (myToken !== _skyboxToken) { tex.dispose(); return; }
+  const old = scene.background as THREE.Texture | THREE.CubeTexture | null;
+  if (old === tex) return;
+  scene.background = tex;
+  sky.mesh.visible = false;
+  old?.dispose?.();
+}
+applySkybox("lo");
 
 const globe = new Globe();
 scene.add(globe.mesh);
@@ -98,6 +116,11 @@ scene.add(moon.mesh);
 // Both representations: 3D sphere (mesh) and flat-map plane (flatMesh).
 const coastlines = new Coastlines();
 scene.add(coastlines.mesh);
+
+// Timezone meridian overlay — nominal UTC-hour lines every 15° of longitude with floating
+// local-time labels at the equator. Default off (toggled via Geography row in the menu).
+const timezoneLayer = new TimezoneLayer();
+scene.add(timezoneLayer.mesh);
 
 // Live cloud cover layer — translucent shell above the surface, textured with yesterday's
 // NASA GIBS VIIRS true-color mosaic. Loaded async; until the texture lands, the shell is invisible.
@@ -188,6 +211,7 @@ const locationPin = new LocationPin();
 globe.attachToEarth(locationPin.meshGlobe);
 flatMap.scene.add(locationPin.meshFlat);
 flatMap.scene.add(coastlines.flatMesh);
+flatMap.scene.add(timezoneLayer.flatMesh);
 flatMap.scene.add(fires.flatMesh);
 flatMap.scene.add(hurricanes.flatMesh);
 flatMap.scene.add(lightning.flatMesh);
@@ -223,6 +247,15 @@ const sunBody = new Sun();
 scene.add(sunBody.mesh);
 
 const camera = createCamera(window.innerWidth / window.innerHeight);
+// Default view: Africa centre (lon ≈ 20°E, equator) rather than empty Pacific.
+// Compute where that longitude sits in world space for the current GMST, then
+// park the camera there — the surface-lock on frame 2 keeps it facing that spot.
+{
+  const africaLon = 20 * Math.PI / 180;
+  const gm = earthRotationY(new Date());
+  const a = gm + africaLon;
+  camera.position.set(Math.cos(a) * 3.2, 0.3, -Math.sin(a) * 3.2);
+}
 const controls = attachOrbitControls(camera, renderer.domElement);
 
 window.addEventListener("resize", () => {
@@ -457,14 +490,20 @@ const eclipsePanel = new EclipsePanel(document.body, {
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
-  { globe, atmosphere, moon, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks,
-    lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap, trails },
+  { globe, atmosphere, moon, coastlines, timezoneLayer, clouds, aurora, fires, hurricanes,
+    hurricaneTracks, lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap, trails },
   { data: dataPanel, clock, location: locationPanel, eclipse: eclipsePanel },
 );
 
 // Wire the "Find moon" action button at the end of the Astro row. Reuses the same
 // camera-repositioning helper that powers `window.__orrery.findMoon()`.
 menu.onFindMoon(() => findMoonInCamera());
+
+// Wire the Astro² "Hi-res sky" toggle. Subsequent toggles route through applySkybox;
+// on initial mount, if the user had hi-res persisted from a previous session, kick
+// off the upgrade now (boot already loaded lo-res for fast first paint above).
+menu.onSkyboxHiResChange((hires) => { applySkybox(hires ? "hi" : "lo"); });
+if (menu.isSkyboxHiRes()) applySkybox("hi");
 
 // QA v001dev: the ✕ button now closes the Location panel entirely (toggles off in the menu)
 // rather than just clearing the pin. Clearing-but-keeping-panel-open turned out to be
@@ -1483,6 +1522,8 @@ function updateAstro() {
   particles.setRotationY(earthY);
   trails.setRotationY(earthY);
   coastlines.setRotationY(earthY);
+  timezoneLayer.setRotationY(earthY);
+  timezoneLayer.update(simulatedTime);
   clouds.setRotationY(earthY);
   clouds.setSunDirection(sunDir);
   fires.setRotationY(earthY);
