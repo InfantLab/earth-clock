@@ -103,8 +103,12 @@ export default defineConfig({
           svg: "image/svg+xml", woff2: "font/woff2", webp: "image/webp",
         };
         server.middlewares.use((req, res, next) => {
-          const url = (req.url ?? "").split("?")[0];
-          if (!PREFIXES.some(p => url === p || url.startsWith(p + "/"))) return next();
+          const rawUrl = (req.url ?? "").split("?")[0];
+          if (!PREFIXES.some(p => rawUrl === p || rawUrl.startsWith(p + "/"))) return next();
+          // URL-decode before joining to the filesystem — nginx/caddy do this automatically
+          // in production, but the Node middleware receives the raw encoded path.
+          let url: string;
+          try { url = decodeURIComponent(rawUrl); } catch { url = rawUrl; }
           const candidates = [
             join(publicStaticDir, url),
             join(publicStaticDir, url.replace(/\/?$/, "/index.html")),

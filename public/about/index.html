@@ -376,6 +376,11 @@
     Twenty-four lines at the <em>centres</em> of each nominal UTC hour band — 0° (prime meridian), ±15°, ±30° … ±165°, and the antimeridian at ±180°. These are the lines dividing the world the way a simple geometry would: one hour = 15°, no exceptions. Each is labelled with the current local time and UTC offset.
   </p>
 
+  <figure class="fig">
+    <img src="/screenshots/earth-clock-meridiems.png" alt="Meridians mode — 24 straight lines at 15° intervals with coloured floating time labels">
+    <figcaption>Meridians mode: 24 nominal hour-band centre lines at 15° spacing. Each floating pill shows the UTC offset and current local time, coloured by the same golden-angle hue scheme as the political zones.</figcaption>
+  </figure>
+
   <h3>Time Zones — political boundaries</h3>
   <p>
     Real IANA timezone polygon boundaries from the <a href="https://github.com/evansiroky/timezone-boundary-builder">timezone-boundary-builder</a> project (2026b release, derived from OpenStreetMap). The raw data covers 364 named IANA zones; on the globe these reduce to 31 unique UTC offsets for labelling — one floating pill per offset, placed at the centroid of the geographically most representative zone for that offset (closest to the ideal longitude of <em>offset × 15°</em>). Boundaries are simplified at 0.4° RDP tolerance (~44 km at the equator) to keep the file compact without losing the political shape.
@@ -391,6 +396,11 @@
   <p>
     The floating label pills use the same hue as the zone fill they represent — a teal pill corresponds to a teal band on the globe, a purple pill to a purple band — so the colour functions as a legend without needing a separate key.
   </p>
+
+  <figure class="fig">
+    <img src="/screenshots/earth-clock-timezones.png" alt="Time Zones mode — political IANA boundaries with coloured fills and floating offset labels">
+    <figcaption>Time Zones mode: real IANA political boundaries from timezone-boundary-builder 2026b, filled with golden-angle hue colours. Each floating pill matches its zone fill and shows the DST-correct current time.</figcaption>
+  </figure>
 
   <h3>Relative mode</h3>
   <p>
