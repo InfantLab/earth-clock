@@ -289,13 +289,13 @@
 </header>
 
 <div class="hero">
-  <h1>What you're looking at</h1>
+  <h1>A clock made of planet Earth</h1>
   <p class="lede">
-    A real-time view of planet Earth in its actual orientation in space, lit by the actual sun in its actual position, with weather and atmospheric phenomena drawn from live scientific data feeds. The clock isn't on the wall — it <em>is</em> the Earth.
+    What time is it? The honest answer is: look at where the sun is. earth-clock is a live 3D globe showing Earth exactly as it is right now — the sun in its true position, real satellite weather, live storms and fires, and the time in every timezone at a glance.
   </p>
   <figure class="fig hero">
-    <img src="/screenshots/102-earthrise.png" alt="Earth from above the moon — Apollo-8-style framing">
-    <figcaption>The camera repositioned via <code>window.__orrery.findMoon()</code> to look back at Earth from the moon's current world position. Apollo 8's <em>Earthrise</em>, rendered live in your browser.</figcaption>
+    <img src="/screenshots/00-%20earthclock%20v022.png" alt="earth-clock v0.2.2 — the globe showing North and South America with timezone labels, the menu, and the sun and moon pointer arms">
+    <figcaption>The default view, v0.2.2. The gold arm points to the sun; the silver arm to the moon. The coloured pills floating around the equator show the current local time in each timezone. City lights glow on the night side. The menu at lower-left toggles every layer.</figcaption>
   </figure>
 </div>
 
@@ -331,37 +331,36 @@
 <main>
 
 <section id="what">
-  <h2>What you see, exactly</h2>
+  <h2>What you see</h2>
 
-  <p>Most globes you see are stylised. This one isn't.</p>
+  <p>
+    Most globes are stylised diagrams. This one is trying to be accurate. The texture is a real daily satellite composite. The clouds are from yesterday's VIIRS pass. The day/night boundary is where it actually is at this second — not a painted-on approximation. The gold arm pointing away from the globe shows you exactly where the sun is in 3D space; follow it and you'd reach the sun. The silver arm does the same for the moon.
+  </p>
 
+  <h3>The day/night terminator</h3>
+  <p>
+    The sun's position is computed from your computer's clock via a sub-degree-accurate solar ephemeris — right ascension, declination, and the resulting terminator on Earth's surface all follow directly. If the lit hemisphere is centred over the Indian Ocean, the sun really is overhead in the Indian Ocean right now.
+  </p>
+
+  <h3>The night side</h3>
   <figure class="fig">
-    <img src="/screenshots/101%20-%20standard%20view.png" alt="Default earth-clock view — clouds, day/night terminator, wind streamlines, atmospheric rim glow">
-    <figcaption>The default view at any random moment — true-colour cloud composite from NASA satellites, GPU wind streamlines tracing the surface flow, the day/night terminator where it really is right now, atmospheric rim glow on the limb. Everything live.</figcaption>
+    <img src="/screenshots/07-earth-clock-nightlights.png" alt="Earth's night side — city lights glowing against the dark hemisphere">
+    <figcaption>City lights on the night side, rendered as an additive emission overlay. The lit/dark boundary is the same per-pixel sun-direction calculation that drives the day texture — there's no painted-on shadow.</figcaption>
   </figure>
-
-  <h3>The sun and the day/night terminator</h3>
-  <p>
-    The position of the sun in the scene is computed from <em>actual celestial mechanics</em> — your computer's clock, fed through a sub-degree-accurate solar-ephemeris formula, gives the sun's right ascension and declination. The day/night terminator on Earth's surface is therefore exactly where reality has placed it at this instant. If the sub-solar point shows over the Caribbean, it's because the sun really is overhead in the Caribbean.
-  </p>
-  <p>
-    The sun itself is rendered as a billboard sprite at the true distance (1 AU ≈ 23 482 Earth radii). Zoom out far enough and you can fly toward it.
-  </p>
 
   <h3>The moon</h3>
   <p>
-    The moon is placed at its true geocentric position — distance 56 to 63 Earth radii from us, phase consistent with the sun–earth–moon geometry as you'd see it tonight. Lunar texturing is real NASA / USGS imagery. The moon mesh is lit by the same directional light that lights Earth, so the phase emerges naturally — no painted-on shadow.
+    The moon is placed at its true geocentric position — 56 to 63 Earth radii away, phase consistent with the sun–Earth–moon geometry as you'd see it tonight. It's lit by the same directional light that lights Earth, so the phase emerges naturally from geometry rather than being painted on.
   </p>
 
-  <h3>The stars behind everything</h3>
+  <h3>The stars</h3>
   <p>
-    A real photographic equirectangular star map (from Solar System Scope, derived from extensive deep-sky imagery) wraps the scene at the far horizon. The Milky Way band visible behind Earth is in approximately the right celestial orientation.
+    A real photographic star map (Solar System Scope, derived from deep-sky imagery) wraps the scene at the far horizon. The Milky Way band is in approximately the right celestial orientation.
   </p>
 
-  <figure class="fig">
-    <img src="/screenshots/07-earth-clock-nightlights.png" alt="Earth's night side — city lights overlay glowing against the dark hemisphere">
-    <figcaption>The night side, with city lights rendered as an additive emission overlay. The boundary between lit and unlit hemisphere is the same per-pixel sun-direction calculation that drives the day texture's shading — there's no painted-on shadow.</figcaption>
-  </figure>
+  <div class="note">
+    <strong>Going further:</strong> once you've got your bearings, try clicking <strong>Find moon</strong> in the Astro row. The camera flies to the moon's current position and turns back toward Earth — an Apollo 8 <em>Earthrise</em> rendered live from first principles, with the real clouds and the real terminator exactly where they are right now.
+  </div>
 </section>
 
 <section id="geography">
