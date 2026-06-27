@@ -46,17 +46,23 @@ function rdp(pts, tol) {
 // ---- Get UTC standard offset for a timezone name ----
 function utcOffset(tzid) {
   try {
-    // Use January to get standard time offset (DST not active in N hemisphere winter)
+    // Use January 15 noon UTC — standard time in N hemisphere (no DST).
+    // Capture full y/m/d/h/min so midnight-crossings don't break the arithmetic
+    // (naive hour-only diff wraps UTC+12/+13/+14 to negative values).
     const d = new Date("2024-01-15T12:00:00Z");
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: tzid, hour: "numeric", minute: "2-digit", hour12: false,
-    }).formatToParts(d);
-    const h = parseInt(parts.find(p => p.type === "hour")?.value ?? "0") % 24;
-    const m = parseInt(parts.find(p => p.type === "minute")?.value ?? "0");
-    let diff = (h * 60 + m) - 12 * 60;
-    if (diff > 840)  diff -= 1440;
-    if (diff < -840) diff += 1440;
-    return diff / 60;
+    const raw = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: tzid,
+        year: "numeric", month: "numeric", day: "numeric",
+        hour: "numeric", minute: "numeric", hour12: false,
+      }).formatToParts(d)
+        .filter(p => p.type !== "literal")
+        .map(p => [p.type, parseInt(p.value)]),
+    );
+    const h = raw.hour === 24 ? 0 : raw.hour;
+    const fakeUtc = Date.UTC(raw.year, raw.month - 1, raw.day, h, raw.minute ?? 0);
+    // Round to nearest 15 min (quarter-hour offsets: Nepal +5:45, Chatham +12:45 …)
+    return Math.round((fakeUtc - d.getTime()) / (15 * 60_000)) / 4;
   } catch {
     return 0;
   }

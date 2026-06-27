@@ -144,18 +144,22 @@ function zoneTime(
   if (zone.ianaName) {
     try {
       const date = new Date(simulatedMs);
-      const fmt  = new Intl.DateTimeFormat("en-US", {
-        timeZone: zone.ianaName,
-        hour: "2-digit", minute: "2-digit", hour12: false,
-      });
-      const parts = fmt.formatToParts(date);
-      const h = parseInt(parts.find(p => p.type === "hour")!.value)   % 24;
-      const m = parseInt(parts.find(p => p.type === "minute")!.value);
-      // Derive effective UTC offset from local vs UTC
-      let diff = (h * 60 + m) - (date.getUTCHours() * 60 + date.getUTCMinutes());
-      if (diff > 840)  diff -= 1440;
-      if (diff < -840) diff += 1440;
-      return { h, m, effectiveOffsetH: diff / 60 };
+      // Capture full y/m/d/h/min in the target timezone, then reassemble as a fake
+      // UTC timestamp. Diffing against the real epoch gives the true offset —
+      // correct even for UTC+12/+13/+14 where naive hour arithmetic wraps midnight.
+      const raw = Object.fromEntries(
+        new Intl.DateTimeFormat("en-US", {
+          timeZone: zone.ianaName,
+          year: "numeric", month: "numeric", day: "numeric",
+          hour: "numeric", minute: "numeric", hour12: false,
+        }).formatToParts(date)
+          .filter(p => p.type !== "literal")
+          .map(p => [p.type, parseInt(p.value)]),
+      );
+      const h = raw.hour === 24 ? 0 : raw.hour;   // some impls return 24 for midnight
+      const m = raw.minute;
+      const fakeUtc = Date.UTC(raw.year, raw.month - 1, raw.day, h, m);
+      return { h, m, effectiveOffsetH: (fakeUtc - date.getTime()) / 3_600_000 };
     } catch {
       // Unknown IANA name — fall through to UTC arithmetic
     }
