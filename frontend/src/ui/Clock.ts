@@ -344,6 +344,32 @@ function injectStyles() {
       user-select: none;
     }
     #orrery-clock.hidden { display: none; }
+
+    /* ── Mobile: slim full-width top bar ── */
+    @media (max-width: 600px) {
+      #orrery-clock {
+        top: 0; left: 0; right: 0;
+        padding: 8px 14px;
+        padding-top: max(8px, env(safe-area-inset-top));
+        background: rgba(5, 10, 30, 0.82);
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+        display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px;
+        pointer-events: all; /* capture full bar — prevents canvas input bleeding */
+      }
+      .orrery-clock-click {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px;
+        flex: 1;
+      }
+      .orrery-clock-time { font-size: 22px; }
+      .orrery-clock-meta { margin-top: 0; font-size: 11px; }
+      .orrery-clock-controls { margin-top: 0; gap: 4px; }
+      .orrery-clock-btn {
+        min-width: 44px; min-height: 44px;
+        font-size: 16px; padding: 10px;
+      }
+      .orrery-clock-close { display: none; } /* Menu toggle is the way on mobile */
+      .orrery-clock-stale { width: 100%; font-size: 10px; margin-top: 2px; }
+    }
     .orrery-clock-click {
       pointer-events: all;
       cursor: pointer;

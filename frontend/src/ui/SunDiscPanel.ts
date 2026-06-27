@@ -401,6 +401,18 @@ function injectStyles() {
       user-select: text;
     }
     #orrery-sundisc.hidden { display: none; }
+
+    @media (max-width: 600px) {
+      #orrery-sundisc {
+        top: 56px; left: 8px; right: 8px;
+        max-height: calc(100vh - 130px);
+        overflow-y: auto;
+      }
+      .orrery-sundisc-scrub-btn {
+        width: 44px; height: 44px;
+        font-size: 18px;
+      }
+    }
     .orrery-sundisc-title {
       display: flex; align-items: baseline; gap: 6px;
       margin-bottom: 6px;
@@ -470,6 +482,7 @@ function injectStyles() {
       accent-color: #e2b42e;
       cursor: pointer;
       background: transparent;
+      touch-action: none; /* prevent OrbitControls stealing the drag gesture */
     }
     .orrery-sundisc-scrub-marker {
       position: absolute;

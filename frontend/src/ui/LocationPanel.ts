@@ -270,6 +270,15 @@ function injectStyles() {
       user-select: text;
     }
     #orrery-location.hidden { display: none; }
+
+    @media (max-width: 600px) {
+      #orrery-location {
+        left: 8px; right: 8px;
+        min-width: 0; max-width: none;
+        bottom: 56px; /* sit above the bottom-sheet handle bar */
+        bottom: calc(56px + env(safe-area-inset-bottom));
+      }
+    }
     .orrery-loc-titlerow {
       display: flex; justify-content: space-between; align-items: baseline;
       margin-bottom: 6px;

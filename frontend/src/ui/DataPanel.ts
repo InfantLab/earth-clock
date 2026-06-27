@@ -166,6 +166,22 @@ function injectStyles() {
       user-select: text;
     }
     #orrery-data.hidden { display: none; }
+
+    @media (max-width: 600px) {
+      #orrery-data {
+        top: 56px; left: 8px; right: 8px;
+        max-width: none;
+        max-height: calc(100vh - 130px);
+        font-size: 11px;
+      }
+      /* Collapse to three columns: status | name | age — source and detail hidden */
+      .orrery-data-row {
+        grid-template-columns: 1.4em 1fr auto;
+        gap: 0.4em;
+      }
+      .orrery-data-source { display: none; }
+      .orrery-data-detail { display: none; }
+    }
     /* Title bar: section name on the left, close-X on the right. Same pattern as
        LocationPanel so all info panels read the same. */
     .orrery-data-titlebar {

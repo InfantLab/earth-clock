@@ -268,6 +268,15 @@ function injectStyles() {
       user-select: text;
     }
     #orrery-eclipse.hidden { display: none; }
+
+    @media (max-width: 600px) {
+      #orrery-eclipse {
+        top: 56px; left: 8px; right: 8px;
+        min-width: 0; max-width: none;
+        max-height: calc(60vh - 56px);
+        overflow-y: auto;
+      }
+    }
     .orrery-ecl-row {
       display: flex; justify-content: space-between; align-items: baseline;
       margin-bottom: 6px;

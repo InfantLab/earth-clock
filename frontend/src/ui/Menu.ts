@@ -87,6 +87,10 @@ type LayerKey =
   // dots are paired and controlled by the Beams toggle. "Find moon" sits at the
   // end of the row as a non-toggling action button (reposition the camera).
   | "terminator" | "atmosphere" | "hands" | "eclipse"
+  // Astro² row — additional astronomical display options.
+  // `skyboxHi` upgrades the starfield from 2K (default, fast) to NASA's 8K Deep
+  // Star Map (~1.9 MB). Loaded on demand via Skybox.tryLoadSkybox("hi").
+  | "skyboxHi"
   // View row.
   | "map" | "orbit" | "clock" | "data" | "location";
 
@@ -122,9 +126,29 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   coastlines: true, nightLights: true,
   // Astro
   terminator: true, atmosphere: true, hands: true, eclipse: false,
+  // Astro² — hi-res sky off by default so first paint stays on the 250 KB 2K texture.
+  skyboxHi: false,
   // View
   map: false, orbit: false, clock: true, data: false, location: false,
 };
+
+// On narrow/touch devices, shed the WebSocket-heavy and GPU-hungry layers on
+// first visit. Returning users keep their own saved state — this only applies
+// when localStorage has no prior orrery.menu.v1 entry.
+const MOBILE_DEFAULT_OVERRIDES: Partial<Record<LayerKey, boolean>> = {
+  aurora: false,      // WebSocket + GPU particle overlay
+  fires: false,       // NASA FIRMS fetch + particle mesh
+  lightning: false,   // Blitzortung WebSocket
+  tracks: false,      // NHC KMZ fetch; hurricanes pin stays on (cheap dots)
+  nightLights: false, // Extra texture layer
+};
+
+function resolveDefaults(): Record<LayerKey, boolean> {
+  const isMobile = typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 600px)").matches;
+  if (isMobile) return { ...DEFAULTS, ...MOBILE_DEFAULT_OVERRIDES };
+  return { ...DEFAULTS };
+}
 
 const LABELS: Record<LayerKey, string> = {
   fires: "Fires", lightning: "Lightning",
@@ -139,6 +163,7 @@ const LABELS: Record<LayerKey, string> = {
   tpw: "Moisture", tcw: "Cloud water",
   coastlines: "Coastlines", nightLights: "Night lights",
   terminator: "Day/night", atmosphere: "Atmosphere", hands: "Beams", eclipse: "Eclipse",
+  skyboxHi: "Hi-res sky",
   map: "Flat map", orbit: "Auto-spin",
   clock: "Clock", data: "Data", location: "Location",
 };
@@ -180,6 +205,8 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
   hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
+  // Astro²
+  skyboxHi:    "Upgrade the starfield to NASA's 8K Deep Star Map (~1.9 MB). Sharper Milky Way detail when zoomed out; takes a couple of seconds to load. Default is 2K (~250 KB) for fast first paint.",
   // View
   map:         "Equirectangular flat-map view — drag to pan, wheel to zoom (centred on cursor), double-click to reset",
   orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
@@ -226,6 +253,13 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
     // See the actions block in the constructor.
   },
   {
+    // Astro² — overflow row for additional astronomical display options. Today
+    // it just holds the hi-res sky toggle; future homes for skybox-source
+    // pickers, constellation lines, hour/ecliptic rings, analemma trace etc.
+    label: "Astro²",
+    keys: ["skyboxHi"],
+  },
+  {
     label: "View",
     keys: ["map", "orbit", "clock", "data", "location"],
   },
@@ -241,11 +275,12 @@ export class Menu {
   private overlayChangeHandler: ((active: LayerKey | null) => void) | null = null;
   private cloudsChangeHandler: ((active: CloudSourceKey | null) => void) | null = null;
   private findMoonHandler: (() => void) | null = null;
+  private skyboxHiResHandler: ((hires: boolean) => void) | null = null;
 
   constructor(parent: HTMLElement, layers: MenuLayers, panels: MenuPanels = {}) {
     this.layers = layers;
     this.panels = panels;
-    this.state = { ...DEFAULTS, ...loadState() };
+    this.state = { ...resolveDefaults(), ...loadState() };
     this.open = loadOpen();
 
     injectStyles();
@@ -363,6 +398,12 @@ export class Menu {
     return this.state.orbit;
   }
 
+  /** Persisted hi-res skybox preference. main.ts reads this at startup to pick
+   *  which equirectangular candidate Skybox.tryLoadSkybox should try first. */
+  isSkyboxHiRes(): boolean {
+    return this.state.skyboxHi;
+  }
+
   /**
    * Currently active overlay key, or null if all are off. Useful for main.ts to know
    * which variable to fetch/cache without subscribing to every toggle event.
@@ -402,6 +443,16 @@ export class Menu {
    */
   onFindMoon(fn: () => void) {
     this.findMoonHandler = fn;
+  }
+
+  /**
+   * Hook for the Astro² "Hi-res sky" toggle. main.ts re-loads the skybox at the
+   * requested quality and swaps `scene.background`. Fires only on user toggle —
+   * not on initial applyAll() — so the boot path stays in charge of the first
+   * load (it reads `isSkyboxHiRes()` once before kicking off tryLoadSkybox).
+   */
+  onSkyboxHiResChange(fn: (hires: boolean) => void) {
+    this.skyboxHiResHandler = fn;
   }
 
   /**
@@ -472,6 +523,9 @@ export class Menu {
     }
     if (CLOUD_KEYS.includes(key)) {
       this.cloudsChangeHandler?.(this.activeCloudSource());
+    }
+    if (key === "skyboxHi") {
+      this.skyboxHiResHandler?.(this.state.skyboxHi);
     }
   }
 
@@ -611,6 +665,7 @@ export class Menu {
         if (active) trails.setIntensity(WIND_INTENSITY_LEVEL[active]);
         break;
       }
+      case "skyboxHi":    /* consumed by main.ts via isSkyboxHiRes() / onSkyboxHiResChange() */ break;
       case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
       case "orbit":       /* consumed by main loop via isAutoOrbit() → controls.autoRotate */ break;
       case "clock":       this.panels.clock?.setVisible(on); break;
@@ -754,6 +809,57 @@ function injectStyles() {
     .orrery-meta a { color: #7c869a; text-decoration: none; }
     .orrery-meta a:hover { color: #fff; }
 
+    /* ── Mobile: full-width bottom sheet ── */
+    @media (max-width: 600px) {
+      #orrery-ui {
+        left: 0; right: 0; bottom: 0;
+        display: flex; flex-direction: column-reverse;
+        /* column-reverse: first DOM child (brand-row) renders at bottom as the handle,
+           second DOM child (menu) renders above it as the sheet content */
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      .orrery-brand-row {
+        background: rgba(5, 10, 30, 0.9);
+        border-top: 1px solid rgba(255,255,255,0.1);
+        padding: 0;
+        gap: 0;
+        justify-content: center;
+        pointer-events: all;
+      }
+      .orrery-brand {
+        font-size: 18px; padding: 14px 20px;
+        background: transparent; border-radius: 0;
+        flex: 1; text-align: center;
+      }
+      .orrery-version {
+        font-size: 10px; opacity: 0.45;
+        margin-left: auto; padding-right: 14px;
+        align-self: center;
+      }
+      .orrery-menu {
+        max-width: none; margin-top: 0;
+        border-radius: 12px 12px 0 0;
+        padding-left: 0; padding-right: 0;
+        max-height: 65vh;
+      }
+      .orrery-menu.collapsed {
+        max-height: 0; margin-top: 0;
+      }
+      .orrery-menu p {
+        min-height: 48px; display: flex; align-items: center;
+        margin: 0; padding: 0 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+      }
+      .orrery-meta {
+        margin-top: 0 !important; font-size: 11px;
+      }
+      /* Larger tap targets for toggle buttons */
+      .orrery-tb {
+        display: inline-flex; align-items: center;
+        min-height: 44px; padding: 0 4px;
+      }
+    }
+
     /* First-visit onboarding hint — small amber callout above the wordmark.
        Fades in over 500 ms, holds for ~5 s, fades out over 500 ms. The
        wordmark's own click handler dismisses it early if the user discovers
@@ -793,6 +899,9 @@ function injectStyles() {
     @keyframes orrery-onboarding-fadeout {
       from { opacity: 1; }
       to   { opacity: 0; transform: translateY(-4px); }
+    }
+    @media (max-width: 600px) {
+      .orrery-onboarding-hint { display: none; }
     }
     @keyframes orrery-onboarding-bounce {
       0%, 100% { transform: translateY(0); }

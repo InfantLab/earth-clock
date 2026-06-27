@@ -23,11 +23,27 @@ Forward-looking engineering tracker. Shipped work lives in
 - ⬜ Not started
 - ❌ Blocked
 
-Current shipped version: **v0.2.1** (2026-06-26). See [CHANGELOG.md](CHANGELOG.md).
+Current shipped version: **v0.2.2** (2026-06-27). See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## Next up
+
+### 🔄 Mobile experience — v2 polish
+
+Basic mobile layout landed in v0.2.2 (compact clock bar, two-snap bottom sheet,
+full-width panels, 44 px touch targets, lighter defaults). Outstanding items:
+
+- **Real-device QA** — walk the UI on iOS Safari + Android Chrome at 360 / 414
+  px wide, portrait + landscape. Flag anything that broke or still feels wrong.
+- **Draggable bottom sheet** — upgrade the two-snap (collapsed/65 vh) sheet to
+  free drag with momentum snap. ~50 lines of pointer-event logic; deferred to
+  keep v0.2.2 simple.
+- **Pinned-location + sub-solar markers** — still go sub-pixel on very small
+  screens; needs a minimum marker size clamp in the scene layer.
+- **First-paint asset budget** — measure on mid-range Android; skybox + globe
+  textures + 700 KB JS is the main risk. Defer textures behind a loading state
+  if it's visibly slow.
 
 ### ⬜ Lunar eclipses — v2 polish
 

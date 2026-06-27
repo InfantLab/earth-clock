@@ -9,6 +9,28 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.2.2 — 2026-06-27 — Mobile-friendly layout
+
+First mobile pass: all panels repositioned and resized for narrow screens. Desktop layout is unchanged.
+
+**Clock** — on ≤600 px screens the clock becomes a slim full-width bar pinned at the top (`top: 0; left: 0; right: 0`) with a dark background so the globe doesn't bleed through. Font shrinks from 32 px → 22 px; date + zone go inline; time-control buttons grow to 44 × 44 px touch targets. The redundant close ✕ is hidden on mobile (the Menu toggle is the escape). The bar captures pointer events so dragging near the clock doesn't spin the globe.
+
+**Menu — two-snap bottom sheet** — on mobile `#orrery-ui` spans full viewport width at `bottom: 0` and uses `flex-direction: column-reverse` so the brand-row handle sits at the bottom and the layer panel slides up above it. Collapsed = only the handle visible (≈52 px). Expanded = sheet rises to 65 vh, scrollable. Each row gets `min-height: 48 px` and all toggle buttons grow to `min-height: 44 px` inline-flex targets. Desktop retains the existing bottom-left floating panel. Onboarding hint suppressed on mobile (wrong position for the new layout).
+
+**Lighter first-visit defaults on mobile** — `resolveDefaults()` detects narrow screens at mount time and turns off aurora (WebSocket + GPU), fires (FIRMS fetch + particles), lightning (Blitzortung WebSocket), storm tracks, and night lights. Wind (subtle), clouds (VIIRS), day/night, coastlines, and atmosphere stay on. Returning users keep their saved state; only affects first visit.
+
+**DataPanel** — full-width at `top: 56 px` on mobile; collapses the five-column grid to three (status + name + age), hiding source and detail columns that don't fit.
+
+**EclipsePanel + SunDiscPanel** — both repositioned to `top: 56 px; left: 8 px; right: 8 px` on mobile, spanning near-full width. SunDiscPanel scrub `<input type=range>` gains `touch-action: none` to stop OrbitControls stealing the drag; scrub play/pause buttons grow to 44 × 44 px.
+
+**LocationPanel** — full-width on mobile, `bottom: 56 px` so it clears the sheet handle bar; respects `env(safe-area-inset-bottom)` for notched phones.
+
+**Viewport** — added `viewport-fit=cover` to `index.html` so `env(safe-area-inset-*)` values are populated on iOS.
+
+**Roadmap** — freely-draggable bottom sheet (snap-to-two-heights upgraded to free drag + momentum) noted as the v2 follow-up; real-device QA (iOS Safari + Android Chrome) remains outstanding.
+
+---
+
 ## v0.2.1 — 2026-06-26 — Lunar eclipses + eclipse-experience polish
 
 Multi-part release tying the v0.2.0 launch together: lunar eclipses join the
