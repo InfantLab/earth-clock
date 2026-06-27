@@ -98,7 +98,7 @@
       margin: 0;
     }
 
-    /* ---- TOC ---- */
+    /* ---- TOC (mobile) ---- */
     nav.toc {
       max-width: var(--max-width);
       margin: 32px auto 0;
@@ -112,11 +112,62 @@
     nav.toc a { color: var(--fg); border: none; margin-right: 1.2em; display: inline-block; padding: 2px 0; }
     nav.toc a:hover { color: var(--accent); }
 
+    /* ---- Sidebar layout (wide) ---- */
+    .page-wrap {
+      display: flex;
+      align-items: flex-start;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    aside.sidenav { display: none; }
+
+    @media (min-width: 860px) {
+      nav.toc { display: none; }
+      aside.sidenav {
+        display: block;
+        flex-shrink: 0;
+        width: 152px;
+        margin-right: 36px;
+      }
+      .sidenav-inner {
+        position: sticky;
+        top: 60px;
+        padding-top: 56px;
+        font-size: 12.5px;
+        line-height: 1.7;
+      }
+      .sidenav-inner strong {
+        display: block;
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--fg-dim);
+        margin-bottom: 10px;
+      }
+      .sidenav-inner a {
+        display: block;
+        color: var(--fg-mute);
+        border: none;
+        padding: 2px 0;
+        transition: color 120ms;
+      }
+      .sidenav-inner a:hover { color: var(--link-hover); border: none; }
+      .sidenav-inner a.active { color: var(--accent); }
+      .sidenav-inner .sub { padding-left: 10px; font-size: 11.5px; color: var(--fg-dim); }
+      .sidenav-inner .sub.active { color: var(--accent); }
+    }
+
     /* ---- Sections ---- */
     main {
+      flex: 1;
+      min-width: 0;
       max-width: var(--max-width);
       margin: 0 auto;
-      padding: 0 24px 96px;
+      padding: 0 0 96px;
+    }
+    @media (max-width: 859px) {
+      main { padding: 0 24px 96px; }
     }
     section {
       padding-top: 56px;
@@ -252,6 +303,7 @@
   <strong>jump to</strong>
   <a href="#what">What you see</a>
   <a href="#feeds">Live data</a>
+  <a href="#geography">Geography</a>
   <a href="#astronomy">Astronomy</a>
   <a href="#eclipse">Eclipses</a>
   <a href="#philosophy">Why this exists</a>
@@ -259,6 +311,22 @@
   <a href="#tech">How it's built</a>
   <a href="#credits">Credits</a>
 </nav>
+
+<div class="page-wrap">
+<aside class="sidenav">
+  <div class="sidenav-inner">
+    <strong>Contents</strong>
+    <a href="#what">What you see</a>
+    <a href="#feeds">Live data</a>
+    <a href="#geography">Geography</a>
+    <a href="#astronomy">Astronomy</a>
+    <a href="#eclipse">Eclipses</a>
+    <a href="#philosophy">Why this exists</a>
+    <a href="#lineage">Lineage</a>
+    <a href="#tech">How it's built</a>
+    <a href="#credits">Credits</a>
+  </div>
+</aside>
 
 <main>
 
@@ -294,6 +362,40 @@
     <img src="/screenshots/07-earth-clock-nightlights.png" alt="Earth's night side — city lights overlay glowing against the dark hemisphere">
     <figcaption>The night side, with city lights rendered as an additive emission overlay. The boundary between lit and unlit hemisphere is the same per-pixel sun-direction calculation that drives the day texture's shading — there's no painted-on shadow.</figcaption>
   </figure>
+</section>
+
+<section id="geography">
+  <h2>Geography &amp; time zones</h2>
+
+  <p>
+    The <strong>Geography</strong> row in the menu covers the coastline overlay and a time-zone overlay that ships in three modes: <strong>Meridians</strong>, <strong>Time Zones</strong>, and <strong>Relative</strong>.
+  </p>
+
+  <h3>Meridians</h3>
+  <p>
+    Twenty-four lines at the <em>centres</em> of each nominal UTC hour band — 0° (prime meridian), ±15°, ±30° … ±165°, and the antimeridian at ±180°. These are the lines dividing the world the way a simple geometry would: one hour = 15°, no exceptions. Each is labelled with the current local time and UTC offset.
+  </p>
+
+  <h3>Time Zones — political boundaries</h3>
+  <p>
+    Real IANA timezone polygon boundaries from the <a href="https://github.com/evansiroky/timezone-boundary-builder">timezone-boundary-builder</a> project (2026b release, derived from OpenStreetMap). The raw data covers 364 named IANA zones; on the globe these reduce to 31 unique UTC offsets for labelling — one floating pill per offset, placed at the centroid of the geographically most representative zone for that offset (closest to the ideal longitude of <em>offset × 15°</em>). Boundaries are simplified at 0.4° RDP tolerance (~44 km at the equator) to keep the file compact without losing the political shape.
+  </p>
+  <p>
+    Labels are <strong>DST-aware</strong>: each pill uses <code>Intl.DateTimeFormat</code> with the representative zone's IANA name to derive the <em>current effective offset</em> — so UTC+1 (Central European Time) automatically reads UTC+2 during European summer, with no hardcoded transition dates.
+  </p>
+
+  <h3>The colour scheme — golden-angle hue rotation</h3>
+  <p>
+    Zone fills use a golden-angle hue rotation. The golden angle (~137.508°) is the same irrational angle that governs sunflower-seed packing — chosen because it distributes points most evenly around a circle without repeating. Applied to UTC offsets it means successive zones get hues spaced ~137° apart around the colour wheel, rather than the ~14° spacing a linear rainbow gives. Adjacent UTC bands end up looking obviously distinct; no two neighbouring zones share a similar colour even if their offsets differ by only 30 minutes.
+  </p>
+  <p>
+    The floating label pills use the same hue as the zone fill they represent — a teal pill corresponds to a teal band on the globe, a purple pill to a purple band — so the colour functions as a legend without needing a separate key.
+  </p>
+
+  <h3>Relative mode</h3>
+  <p>
+    Toggle <strong>Relative</strong> to label zones by their offset from <em>your</em> local clock rather than UTC. If you are in UTC+1, the UTC+3 zone shows <code>+2:00</code> and UTC−5 shows <code>−6:00</code>. The time shown inside the pill switches to the actual local clock time for that zone. Useful for reading off scheduling differences at a glance.
+  </p>
 </section>
 
 <section id="feeds">
@@ -559,6 +661,7 @@
 </section>
 
 </main>
+</div><!-- /.page-wrap -->
 
 <footer>
   <p>
@@ -567,9 +670,24 @@
     MIT licensed
   </p>
   <p>
-    Last updated for v0.1.2 — Eclipse-panel catalogue browser, Location-panel redesign, pin/beam alignment fix.
+    Last updated for v0.2.2 — Timezone overlay (Meridians / Time Zones / Relative), mobile layout, bottom sheet.
   </p>
 </footer>
 
+<script>
+  // Highlight the active sidebar link as the user scrolls.
+  const links = document.querySelectorAll('.sidenav-inner a[href^="#"]');
+  if (links.length) {
+    const obs = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          links.forEach(a => a.classList.toggle('active',
+            a.getAttribute('href') === '#' + e.target.id));
+        }
+      });
+    }, { rootMargin: '-8% 0px -88% 0px' });
+    document.querySelectorAll('section[id]').forEach(s => obs.observe(s));
+  }
+</script>
 </body>
 </html>

@@ -11,6 +11,10 @@ const APP_VERSION = pkg.version;
 // GFS weather files the legacy earth.js uses, without copying them or running the legacy server.
 const classicDataDir = resolve(__dirname, "../public/data");
 
+// Root of the production static tree — mirrors what CapRover serves as docroot.
+// Used by the serve-public-subdirs plugin below to make /about/, /screenshots/, etc. work in dev.
+const publicStaticDir = resolve(__dirname, "../public");
+
 // Build output goes into ../public/frontend/ by default — useful for testing the sub-path
 // build without overwriting the live site. The cutover already happened in v0.1.0 so
 // BUILD_AS_ROOT=1 is what production uses; that targets ../public directly. See
@@ -83,6 +87,41 @@ export default defineConfig({
           } else {
             next();
           }
+        });
+      },
+    },
+    {
+      // Serve /about/, /screenshots/, /textures/, /classic/ from ../public/ in dev,
+      // mirroring the production server which treats ../public/ as its docroot.
+      name: "serve-public-subdirs",
+      configureServer(server) {
+        const PREFIXES = ["/about", "/screenshots", "/textures", "/classic"];
+        const MIME: Record<string, string> = {
+          html: "text/html; charset=utf-8", css: "text/css",
+          js: "application/javascript",    json: "application/json",
+          png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+          svg: "image/svg+xml", woff2: "font/woff2", webp: "image/webp",
+        };
+        server.middlewares.use((req, res, next) => {
+          const url = (req.url ?? "").split("?")[0];
+          if (!PREFIXES.some(p => url === p || url.startsWith(p + "/"))) return next();
+          const candidates = [
+            join(publicStaticDir, url),
+            join(publicStaticDir, url.replace(/\/?$/, "/index.html")),
+          ];
+          for (const fp of candidates) {
+            if (!fp.startsWith(publicStaticDir)) continue;
+            try {
+              if (statSync(fp).isFile()) {
+                const ext = (fp.split(".").pop() ?? "").toLowerCase();
+                res.setHeader("Content-Type", MIME[ext] ?? "application/octet-stream");
+                res.setHeader("Cache-Control", "no-cache");
+                createReadStream(fp).pipe(res);
+                return;
+              }
+            } catch { /* not found */ }
+          }
+          next();
         });
       },
     },
