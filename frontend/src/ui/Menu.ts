@@ -307,7 +307,7 @@ export class Menu {
       <div class="orrery-menu${this.open ? "" : " collapsed"}" id="orrery-menu">
         <div id="orrery-menu-categories"></div>
         <p class="orrery-meta">
-          <a href="/about/">about</a> · <a href="/about/kids/">about for kids</a> · <a href="/blog/">blog</a> · <a href="https://github.com/infantlab/earth-clock" target="_blank" rel="noopener">source code</a>
+          <a href="/about/">about</a> · <a href="/about/kids/">about for kids</a> · <a href="https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/" target="_blank" rel="noopener">blog</a> · <a href="https://github.com/infantlab/earth-clock" target="_blank" rel="noopener">source code</a>
         </p>
       </div>
     `;
