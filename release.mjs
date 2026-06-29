@@ -40,7 +40,7 @@ function trackedBundleFiles() {
 
 function diskBundleFiles() {
   if (!existsSync(ASSETS)) return [];
-  return readdirSync(ASSETS).filter(f => /^index-[A-Za-z0-9]+\.js(\.map)?$/.test(f));
+  return readdirSync(ASSETS).filter(f => /^index-[A-Za-z0-9_-]+\.js(\.map)?$/.test(f));
 }
 
 // ---- 1. Record old bundle (from git, not disk) ----
