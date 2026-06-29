@@ -655,7 +655,9 @@ export class TimezoneLayer {
     const newSig = effectiveSigParts.join(",");
     if (newSig !== this.lastEffectiveSig) {
       this.lastEffectiveSig = newSig;
-      if (this.politicalData) this.buildColorOverlay(this.politicalData, simulatedMs);
+      if (this.politicalData && this.displayMode === "political") {
+        this.buildColorOverlay(this.politicalData, simulatedMs);
+      }
     }
   }
 
