@@ -161,7 +161,7 @@ function resolveDefaults(): Record<LayerKey, boolean> {
 const LABELS: Record<LayerKey, string> = {
   // Clock row
   clock: "Time", clockLocal: "UTC/Local",
-  tzNominal: "Meridians", tzPolitical: "Time Zones", tzRelative: "Relative",
+  tzNominal: "Meridians", tzPolitical: "Time Zones", tzRelative: "±Hours",
   // Weather
   fires: "Fires", lightning: "Lightning",
   hurricanes: "Hurricanes", tracks: "Storm tracks", aurora: "Aurora",
