@@ -34,7 +34,7 @@ The idea comes from watching a total solar eclipse and realising that the univer
 - Physically-based directional lighting — shadows, terminator, twilight band
 - Atmospheric rim glow that shifts colour at sunrise and sunset
 - Real-photograph skybox (NASA Deep Star Maps 2020, 2K default / 8K opt-in)
-- Meeus ELP-2000-82B lunar model (~5 arcsec accuracy)
+- Meeus ELP-2000-82B lunar model (~5 arcsec accuracy) — Jean Meeus, *Astronomical Algorithms* (1998)
 
 **Eclipse experience**
 - Solar eclipse catalogue 2026–2030 with path of totality + live umbra/penumbra disc

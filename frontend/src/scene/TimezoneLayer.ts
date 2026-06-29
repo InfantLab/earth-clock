@@ -218,6 +218,19 @@ function drawPill(
   ctx.fillText(main, W / 2, H - pad - Math.round(H * 0.10));
 }
 
+/** Ray-casting point-in-polygon for timezone lookup. ring is [[lon, lat], …]. */
+function pointInRing(lon: number, lat: number, ring: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 // ---- Main class ----
 
 /**
@@ -629,6 +642,41 @@ export class TimezoneLayer {
     if (on === this.relativeMode) return;
     this.relativeMode = on;
     this.lastMinute = -1;
+  }
+
+  // ---- Zone lookup (public) ----
+
+  /** True once political zone polygon data has been fetched and parsed. */
+  get dataLoaded(): boolean { return this.politicalLoaded; }
+
+  /**
+   * Trigger a background load of political zone data for use by findZoneAt().
+   * No-op if already loaded or loading. Safe to call every time a pin drops.
+   */
+  loadForLookup(): void {
+    if (!this.politicalLoaded) this.loadPoliticalData();
+  }
+
+  /**
+   * Return the IANA timezone and UTC offset for a geographic point.
+   * Uses loaded political polygon data when available; falls back to the
+   * nearest nominal UTC hour (longitude / 15, rounded) if not yet loaded.
+   * The nominal fallback is correct for most of the world but will be wrong
+   * during DST transitions for zones that don't align to 15° boundaries.
+   */
+  findZoneAt(latDeg: number, lonDeg: number): { ianaName: string; utcOffset: number } {
+    if (this.politicalData) {
+      for (const zone of this.politicalData.zones) {
+        for (const ring of zone.rings) {
+          if (pointInRing(lonDeg, latDeg, ring)) {
+            return { ianaName: zone.tzid, utcOffset: zone.utcOffset };
+          }
+        }
+      }
+    }
+    // Nominal fallback: nearest whole UTC hour from longitude.
+    const utcOffset = Math.max(-12, Math.min(14, Math.round(lonDeg / 15)));
+    return { ianaName: "", utcOffset };
   }
 
   // ---- Political-mode data loading ----

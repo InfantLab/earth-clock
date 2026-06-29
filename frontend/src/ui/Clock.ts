@@ -281,15 +281,17 @@ function dayName(n: number): string {
 }
 
 /**
- * Best-effort short label for the browser's local zone. Modern browsers expose IANA names
- * via Intl.DateTimeFormat().resolvedOptions().timeZone (e.g. "Europe/London"); we strip
- * the prefix for a tighter display.
+ * Short label for the browser's local zone: city name + DST-aware abbreviation.
+ * E.g. "London BST" in summer, "London GMT" in winter; "New York EST" / "New York EDT".
+ * The abbreviation makes the UTC offset tangible without showing a raw number.
  */
-function localZoneLabel(_now: Date): string {
+function localZoneLabel(now: Date): string {
   try {
     const iana = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (iana && iana.includes("/")) return iana.split("/").slice(-1)[0]!.replace(/_/g, " ");
-    return iana || "local";
+    const city = iana?.includes("/") ? iana.split("/").slice(-1)[0]!.replace(/_/g, " ") : (iana || "local");
+    const parts = new Intl.DateTimeFormat([], { timeZone: iana, timeZoneName: "short" }).formatToParts(now);
+    const abbrev = parts.find(p => p.type === "timeZoneName")?.value ?? "";
+    return abbrev ? `${city} ${abbrev}` : city;
   } catch {
     return "local";
   }

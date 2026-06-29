@@ -27,6 +27,8 @@ export class LocationPanel {
   private readonly root: HTMLElement;
   private readonly placeEl: HTMLElement;
   private readonly coordsEl: HTMLElement;
+  private readonly localRowEl: HTMLElement;
+  private readonly localEl: HTMLElement;
   private readonly solarEl: HTMLElement;
   private readonly currentRowEl: HTMLElement;
   private readonly sunRowEl: HTMLElement;
@@ -38,12 +40,16 @@ export class LocationPanel {
   private lat: number | null = null;
   private lon: number | null = null;
   private source: PinSource | null = null;
+  private pinnedIanaName: string | null = null;
+  private pinnedUtcOffset = 0;
   private clearHandler: (() => void) | null = null;
   private geoHandler: ((lat: number, lon: number) => void) | null = null;
   private sunBeamHandler: (() => void) | null = null;
   private moonBeamHandler: (() => void) | null = null;
   private lastSunStr = "";
   private lastMoonStr = "";
+  private lastLocalStr = "";
+  private lastSolarStr = "";
 
   constructor(parent: HTMLElement) {
     injectStyles();
@@ -67,8 +73,12 @@ export class LocationPanel {
         <div class="orrery-loc-line2">
           <span class="orrery-loc-coords" id="orrery-loc-coords">—</span>
         </div>
+        <div class="orrery-loc-line3 hidden" id="orrery-loc-row-local">
+          <span class="orrery-loc-local-label">local time</span>
+          <span class="orrery-loc-local-value" id="orrery-loc-local">—</span>
+        </div>
         <div class="orrery-loc-line3">
-          <span class="orrery-loc-solar-label">true solar time</span>
+          <span class="orrery-loc-solar-label">solar time</span>
           <span class="orrery-loc-solar-value" id="orrery-loc-solar">—</span>
         </div>
       </div>
@@ -104,9 +114,11 @@ export class LocationPanel {
     `;
     parent.appendChild(this.root);
 
-    this.placeEl     = this.root.querySelector("#orrery-loc-place")  as HTMLElement;
-    this.coordsEl    = this.root.querySelector("#orrery-loc-coords") as HTMLElement;
-    this.solarEl     = this.root.querySelector("#orrery-loc-solar")  as HTMLElement;
+    this.placeEl     = this.root.querySelector("#orrery-loc-place")     as HTMLElement;
+    this.coordsEl    = this.root.querySelector("#orrery-loc-coords")    as HTMLElement;
+    this.localRowEl  = this.root.querySelector("#orrery-loc-row-local") as HTMLElement;
+    this.localEl     = this.root.querySelector("#orrery-loc-local")     as HTMLElement;
+    this.solarEl     = this.root.querySelector("#orrery-loc-solar")     as HTMLElement;
     this.currentRowEl = this.root.querySelector("#orrery-loc-row-current") as HTMLElement;
     this.sunRowEl    = this.root.querySelector("#orrery-loc-row-sun")  as HTMLElement;
     this.moonRowEl   = this.root.querySelector("#orrery-loc-row-moon") as HTMLElement;
@@ -176,32 +188,85 @@ export class LocationPanel {
   }
 
   /**
-   * Update the "true solar time at pin" string. Called from the animate loop;
-   * throttled internally via cached string comparison. True solar time = UTC +
-   * longitude / 15 — wall-clock time at the local meridian, independent of
-   * political timezone boundaries.
+   * Set the IANA timezone for the pinned location so `setNow()` can show the
+   * political local time. Called from main.ts after a point-in-polygon lookup
+   * in TimezoneLayer. Pass null to clear (falls back to solar-only display).
+   */
+  setPinnedZone(ianaName: string | null, utcOffset = 0): void {
+    this.pinnedIanaName = ianaName || null;
+    this.pinnedUtcOffset = utcOffset;
+    this.localRowEl.classList.toggle("hidden", this.lat === null);
+    this.lastLocalStr = ""; // force redraw
+  }
+
+  /**
+   * Update the time displays. Called every frame from the animate loop.
+   *
+   * Shows two times:
+   *   - **local time** — political timezone time at the pin (DST-aware via Intl when an
+   *     IANA name is known; UTC-offset arithmetic otherwise). This is what people expect.
+   *   - **solar time** — the astronomical clock: UTC + longitude/15°. Correct regardless
+   *     of political borders; useful for understanding where the sun actually is.
    */
   setNow(now: Date) {
     if (this.lat === null || this.lon === null) return;
+
+    // ---- Local (political) time ----
+    let localStr = "";
+    if (this.pinnedIanaName) {
+      try {
+        const parts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: this.pinnedIanaName,
+          hour: "2-digit", minute: "2-digit", second: "2-digit",
+          hour12: false,
+        }).formatToParts(now);
+        const t = Object.fromEntries(parts.filter(p => p.type !== "literal").map(p => [p.type, p.value]));
+        const tzParts = new Intl.DateTimeFormat([], {
+          timeZone: this.pinnedIanaName, timeZoneName: "short",
+        }).formatToParts(now);
+        const abbrev = tzParts.find(p => p.type === "timeZoneName")?.value ?? "";
+        localStr = `${t.hour}:${t.minute}:${t.second}${abbrev ? `  ${abbrev}` : ""}`;
+      } catch { /* fall through */ }
+    }
+    if (!localStr) {
+      // Nominal fallback: UTC offset arithmetic (no DST correction)
+      const localMs = now.getTime() + this.pinnedUtcOffset * 3_600_000;
+      const d = new Date(localMs);
+      localStr = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+    }
+    if (localStr !== this.lastLocalStr) {
+      this.localEl.textContent = localStr;
+      this.lastLocalStr = localStr;
+    }
+
+    // ---- Solar time (astronomical) ----
     const solarHours = (now.getUTCHours()
       + now.getUTCMinutes() / 60
       + now.getUTCSeconds() / 3600
       + this.lon / 15
       + 24) % 24;
-    const h = Math.floor(solarHours);
-    const m = Math.floor((solarHours - h) * 60);
-    const s = Math.floor((((solarHours - h) * 60) - m) * 60);
-    const next = `${pad(h)}:${pad(m)}:${pad(s)}`;
-    if (this.solarEl.textContent !== next) this.solarEl.textContent = next;
+    const sh = Math.floor(solarHours);
+    const sm = Math.floor((solarHours - sh) * 60);
+    const ss = Math.floor((((solarHours - sh) * 60) - sm) * 60);
+    const solarStr = `${pad(sh)}:${pad(sm)}:${pad(ss)}`;
+    if (solarStr !== this.lastSolarStr) {
+      this.solarEl.textContent = solarStr;
+      this.lastSolarStr = solarStr;
+    }
   }
 
   /** Reset to the "click the globe" state — used by main.ts after onClear. */
   reset() {
     this.lat = this.lon = null;
     this.source = null;
+    this.pinnedIanaName = null;
     this.placeEl.textContent  = "click the globe to drop a pin";
     this.coordsEl.textContent = "—";
+    this.localEl.textContent  = "—";
     this.solarEl.textContent  = "—";
+    this.localRowEl.classList.add("hidden");
+    this.lastLocalStr = "";
+    this.lastSolarStr = "";
     if (this.geoStatus) this.geoStatus.textContent = "";
     this.refreshSelection();
   }
@@ -351,8 +416,10 @@ function injectStyles() {
       margin-top: 2px; padding-left: 22px;
       display: flex; gap: 8px; align-items: baseline;
     }
+    .orrery-loc-local-label { color: #6e7a90; font-size: 10px; letter-spacing: 0.04em; }
+    .orrery-loc-local-value { color: #e2c96a; font-size: 11px; font-weight: 600; }
     .orrery-loc-solar-label { color: #6e7a90; font-size: 10px; letter-spacing: 0.04em; }
-    .orrery-loc-solar-value { color: #cfd6e4; font-size: 11px; }
+    .orrery-loc-solar-value { color: #8a93a7; font-size: 11px; }
 
     .orrery-loc-geo {
       display: block; width: 100%;

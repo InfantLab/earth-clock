@@ -536,6 +536,11 @@ function pinLocation(lat: number, lon: number, source: PinSource) {
   pinnedLocation.lat = lat;
   pinnedLocation.lon = lon;
   pinnedLocation.visible = true;
+  // Timezone lookup: trigger political data load (no-op if already loaded),
+  // then immediately set the best-available zone (nominal fallback until data lands).
+  timezoneLayer.loadForLookup();
+  const zone = timezoneLayer.findZoneAt(lat, lon);
+  locationPanel.setPinnedZone(zone.ianaName || null, zone.utcOffset);
   sunDiscPanel.setPlaceName(`${lat.toFixed(2)}°, ${lon.toFixed(2)}°`); // coord fallback until geocode resolves
   console.log(`[earth-clock] pinned via ${source}: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
   // Reverse-geocode in the background. The geocoder routes through `/proxy/geocode/`
@@ -1219,6 +1224,7 @@ let activeLunarEclipse: LunarEclipseEvent | null = null;
 const LIVE_DATA_HIDE_MS = 24 * 3600 * 1000;
 const LIVE_DATA_SHOW_MS = 22 * 3600 * 1000;
 let liveDataInRange = true;
+let lastTzDataLoaded = false;
 
 // State for the camera-follows-Earth-spin lock (see the animate-loop comment
 // next to the rotation maths). prevEarthY is null on the very first frame so
@@ -1639,6 +1645,15 @@ function animate(t: number) {
   const now = new Date(simulatedTime);
   updateAstro();
   clock.setTime(now);
+  // If political timezone data just finished loading, re-query the pinned location
+  // so we upgrade from the nominal fallback to an accurate DST-aware zone name.
+  if (timezoneLayer.dataLoaded !== lastTzDataLoaded) {
+    lastTzDataLoaded = timezoneLayer.dataLoaded;
+    if (pinnedLocation.visible) {
+      const zone = timezoneLayer.findZoneAt(pinnedLocation.lat, pinnedLocation.lon);
+      locationPanel.setPinnedZone(zone.ianaName || null, zone.utcOffset);
+    }
+  }
   locationPanel.setNow(now);
 
   // Live-data freshness. When the user warps far from wall-clock now (catalogued
