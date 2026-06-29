@@ -70,6 +70,8 @@ export interface MenuPanels {
 }
 
 type LayerKey =
+  // Clock row — visibility + UTC/Local toggle + timezone overlays
+  | "clock" | "clockLocal" | "tzNominal" | "tzPolitical" | "tzRelative"
   // Weather row
   | "fires" | "lightning" | "hurricanes" | "tracks" | "aurora"
   // Wind row — mutex intensity picker (one selected at a time, or all off = wind hidden).
@@ -81,20 +83,16 @@ type LayerKey =
   | "cloudsViirs" | "cloudsGfs" | "cloudsGoes"
   // Overlay row — mutex (unchanged)
   | "mslp" | "temp" | "rh" | "tpw" | "tcw"
-  // Geography row — timezone display is a mutex pair (nominal vs political) plus a modifier
-  | "coastlines" | "nightLights" | "tzNominal" | "tzPolitical" | "tzRelative"
+  // Geography row — coastlines + night lights only; timezone items moved to Clock row
+  | "coastlines" | "nightLights"
   // Astro row. `eclipse` toggles both the 3D EclipseLayer mesh AND the top-left
   // Eclipse panel (catalogue browser + jump-to). The Moon toggle was removed in
   // v0.1.4 — the 3D moon mesh is always visible now, and the flat-map sun + moon
   // dots are paired and controlled by the Beams toggle. "Find moon" sits at the
   // end of the row as a non-toggling action button (reposition the camera).
   | "terminator" | "atmosphere" | "hands" | "eclipse"
-  // Astro² row — additional astronomical display options.
-  // `skyboxHi` upgrades the starfield from 2K (default, fast) to NASA's 8K Deep
-  // Star Map (~1.9 MB). Loaded on demand via Skybox.tryLoadSkybox("hi").
-  | "skyboxHi"
-  // View row.
-  | "map" | "orbit" | "clock" | "data" | "location";
+  // View row. `skyboxHi` moved here from the former Astro² row.
+  | "map" | "orbit" | "skyboxHi" | "data" | "location";
 
 /** Subset of LayerKey representing cloud-source picker entries (mutex). */
 export type CloudSourceKey = "cloudsViirs" | "cloudsGfs" | "cloudsGoes";
@@ -111,6 +109,9 @@ const WIND_INTENSITY_LEVEL: Record<WindIntensityKey, "subtle" | "standard" | "bo
 
 const STORAGE_KEY = "orrery.menu.v1";
 const DEFAULTS: Record<LayerKey, boolean> = {
+  // Clock row
+  clock: true, clockLocal: false,
+  tzNominal: false, tzPolitical: false, tzRelative: false,
   // Weather (binary toggles)
   fires: true, lightning: true, hurricanes: true, tracks: true, aurora: true,
   // Wind — default "subtle". Was bold-only by default until v0.1.3, which overwhelmed
@@ -124,15 +125,12 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   cloudsViirs: true, cloudsGfs: false, cloudsGoes: false,
   // Overlay
   mslp: false, temp: false, rh: false, tpw: false, tcw: false,
-  // Geography — timezone: both modes off by default; political falls back to nominal when data absent
+  // Geography
   coastlines: true, nightLights: true,
-  tzNominal: false, tzPolitical: false, tzRelative: false,
   // Astro
   terminator: true, atmosphere: true, hands: true, eclipse: false,
-  // Astro² — hi-res sky off by default so first paint stays on the 250 KB 2K texture.
-  skyboxHi: false,
-  // View
-  map: false, orbit: false, clock: true, data: false, location: false,
+  // View — hi-res sky off by default so first paint stays on the 250 KB 2K texture.
+  map: false, orbit: false, skyboxHi: false, data: false, location: false,
 };
 
 // On narrow/touch devices, shed the WebSocket-heavy and GPU-hungry layers on
@@ -149,11 +147,22 @@ const MOBILE_DEFAULT_OVERRIDES: Partial<Record<LayerKey, boolean>> = {
 function resolveDefaults(): Record<LayerKey, boolean> {
   const isMobile = typeof window !== "undefined" &&
     window.matchMedia("(max-width: 600px)").matches;
-  if (isMobile) return { ...DEFAULTS, ...MOBILE_DEFAULT_OVERRIDES };
-  return { ...DEFAULTS };
+  const base = isMobile ? { ...DEFAULTS, ...MOBILE_DEFAULT_OVERRIDES } : { ...DEFAULTS };
+  // Migrate UTC/Local preference from Clock's own storage key (orrery.clock.v1) so
+  // users who previously clicked the clock face to switch to local time keep that choice.
+  // orrery.menu.v1 takes priority once the user has interacted with the new toggle.
+  try {
+    const clockBlob = JSON.parse(localStorage.getItem("orrery.clock.v1") ?? "null");
+    if (clockBlob?.zone === "local") base.clockLocal = true;
+  } catch { /* */ }
+  return base;
 }
 
 const LABELS: Record<LayerKey, string> = {
+  // Clock row
+  clock: "Time", clockLocal: "UTC/Local",
+  tzNominal: "Meridians", tzPolitical: "Time Zones", tzRelative: "Relative",
+  // Weather
   fires: "Fires", lightning: "Lightning",
   hurricanes: "Hurricanes", tracks: "Storm tracks", aurora: "Aurora",
   // Wind row — intensity picker (mutex). Off is implicit (click active to turn off).
@@ -164,12 +173,12 @@ const LABELS: Record<LayerKey, string> = {
   // technical names + brief explanations are surfaced as tooltips below.
   mslp: "Pressure", temp: "Temperature", rh: "Humidity",
   tpw: "Moisture", tcw: "Cloud water",
+  // Geography
   coastlines: "Coastlines", nightLights: "Night lights",
-  tzNominal: "Meridians", tzPolitical: "Time Zones", tzRelative: "Relative",
+  // Astro
   terminator: "Day/night", atmosphere: "Atmosphere", hands: "Beams", eclipse: "Eclipse",
-  skyboxHi: "Hi-res sky",
-  map: "Flat map", orbit: "Auto-spin",
-  clock: "Clock", data: "Data", location: "Location",
+  // View
+  map: "Flat map", orbit: "Auto-spin", skyboxHi: "Hi-res sky", data: "Data", location: "Location",
 };
 
 /**
@@ -178,6 +187,12 @@ const LABELS: Record<LayerKey, string> = {
  * if relevant) so power-users aren't lost when they expect "MSLP" rather than "Pressure".
  */
 const TOOLTIPS: Partial<Record<LayerKey, string>> = {
+  // Clock row
+  clock:       "Show / hide the top-left time display and time-travel controls (⏱)",
+  clockLocal:  "Show the clock in your browser's local timezone instead of UTC",
+  tzNominal:   "Nominal UTC hour meridian boundaries (every 15°) — geometrically regular, no DST. Labels show current local time at each zone centre.",
+  tzPolitical: "Real political timezone boundaries from /data/timezone-bounds.json. DST-correct via IANA/Intl. Falls back to nominal if data absent.",
+  tzRelative:  "Swap labels from absolute HH:MM to hours offset relative to your local timezone (+2h, −3h…). Requires Meridians or Time Zones to be active.",
   // Weather
   aurora:      "Aurora oval probability (NOAA SWPC Ovation, refreshed 5 min)",
   fires:       "Active wildfires from satellite thermal detections (NASA FIRMS, last 24 h)",
@@ -185,41 +200,33 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   tracks:      "Past track + 5-day forecast track + uncertainty cone for each active storm",
   lightning:   "Real-time lightning strikes from the Blitzortung community network",
   // Wind intensity picker — mutually exclusive. Click the active level to turn wind off.
-  // Underlying simulation is the same NOAA GFS surface-wind particle system; the levels
-  // just dial fade rate + composite opacity. Subtle = present but unobtrusive; bold = the
-  // classic earth.nullschool look (dominates the visual).
   windSubtle:   "Wind — subtle: short streaks, dim composite. Doesn't compete with other layers.",
   windStandard: "Wind — standard: moderate streaks, mid brightness.",
   windBold:     "Wind — bold: long, bright streaks. The signature earth.nullschool look.",
   // Clouds source picker — mutually exclusive. Click the active source to turn clouds off.
   cloudsViirs: "VIIRS true-colour daily mosaic (NASA GIBS) — photographic, can have swath gaps on partial days",
-  cloudsGfs:   "GFS cloud cover (NOAA, 6 h refresh) — model forecast, no coverage gaps, animates with time-warp. Prefers TCDC; falls back to TCW until weather-service is re-run.",
+  cloudsGfs:   "GFS cloud cover (NOAA, 6 h refresh) — model forecast, no coverage gaps, animates with time-warp.",
   cloudsGoes:  "GOES + Himawari + MSG geostationary composite — coming soon",
-  // Overlays — each carries the GFS technical name in parentheses
+  // Overlays
   mslp:        "Mean sea level pressure (MSLP) — highs and lows drive weather systems",
   temp:        "2 m air temperature (Temp) — kelvin internally, displayed via colour ramp",
   rh:          "2 m relative humidity (RH) — 0 to 100 % of saturation",
   tpw:         "Total precipitable water (TPW, mm) — atmospheric water vapour column",
   tcw:         "Total cloud water (TCW, kg/m²) — liquid + ice in the atmospheric column",
   // Geography
-  coastlines:   "Natural Earth 50 m coastlines",
-  nightLights:  "City lights on the night side (Solar System Scope)",
-  tzNominal:    "Nominal UTC hour meridian boundaries (every 15°) — geometrically regular, no DST. Labels show current local time at each zone centre.",
-  tzPolitical:  "Real political timezone boundaries from /data/timezone-bounds.json — run scripts/build-timezone-bounds.mjs to generate. DST-correct via IANA/Intl. Falls back to nominal if data absent.",
-  tzRelative:   "Swap labels from absolute HH:MM to hours offset relative to your local timezone (+2h, −3h…). Requires UTC lines or Real zones to be active.",
+  coastlines:  "Natural Earth 50 m coastlines",
+  nightLights: "City lights on the night side (Solar System Scope)",
   // Astro
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
   hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
-  // Astro²
-  skyboxHi:    "Upgrade the starfield to NASA's 8K Deep Star Map (~1.9 MB). Sharper Milky Way detail when zoomed out; takes a couple of seconds to load. Default is 2K (~250 KB) for fast first paint.",
   // View
   map:         "Equirectangular flat-map view — drag to pan, wheel to zoom (centred on cursor), double-click to reset",
   orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
-  clock:       "Top-left clock readout. Click the zone label to flip UTC ⇄ local. ⏱ reveals time-warp controls.",
-  data:        "Top-right panel — every live data layer with its source, freshness, and refresh cadence. Click a source name to open the originating organisation's page.",
-  location:    "Click anywhere on the globe (or flat map) to pin a spot and read its coordinates, place name (geocoded), and true solar time. The bottom-right panel shows the result.",
+  skyboxHi:    "Upgrade the starfield to NASA's 8K Deep Star Map (~1.9 MB). Sharper Milky Way when zoomed out; takes a couple of seconds to load.",
+  data:        "Top-right panel — every live data layer with its source, freshness, and refresh cadence.",
+  location:    "Click anywhere on the globe (or flat map) to pin a spot and read its coordinates, place name, and true solar time.",
 };
 
 /**
@@ -235,6 +242,10 @@ const WIND_KEYS:    LayerKey[] = ["windSubtle", "windStandard", "windBold"];
 const TZ_MODE_KEYS: LayerKey[] = ["tzNominal", "tzPolitical"];
 
 const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
+  {
+    label: "Clock",
+    keys: ["clock", "clockLocal", "tzNominal", "tzPolitical", "tzRelative"],
+  },
   {
     label: "Weather",
     keys: ["fires", "lightning", "hurricanes", "tracks", "aurora"],
@@ -253,7 +264,7 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   },
   {
     label: "Geography",
-    keys: ["coastlines", "nightLights", "tzNominal", "tzPolitical", "tzRelative"],
+    keys: ["coastlines", "nightLights"],
   },
   {
     label: "Astro",
@@ -262,15 +273,8 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
     // See the actions block in the constructor.
   },
   {
-    // Astro² — overflow row for additional astronomical display options. Today
-    // it just holds the hi-res sky toggle; future homes for skybox-source
-    // pickers, constellation lines, hour/ecliptic rings, analemma trace etc.
-    label: "Astro²",
-    keys: ["skyboxHi"],
-  },
-  {
     label: "View",
-    keys: ["map", "orbit", "clock", "data", "location"],
+    keys: ["map", "orbit", "skyboxHi", "data", "location"],
   },
 ];
 
@@ -695,6 +699,7 @@ export class Menu {
         if (active) trails.setIntensity(WIND_INTENSITY_LEVEL[active]);
         break;
       }
+      case "clockLocal":  this.panels.clock?.setZone(on ? "local" : "utc"); break;
       case "skyboxHi":    /* consumed by main.ts via isSkyboxHiRes() / onSkyboxHiResChange() */ break;
       case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
       case "orbit":       /* consumed by main loop via isAutoOrbit() → controls.autoRotate */ break;
@@ -813,8 +818,8 @@ function injectStyles() {
     .orrery-menu p { margin: 4px 0; }
     .orrery-label {
       display: inline-block;
-      /* Wide enough for "Geography" (the longest current label) to fit on one line
-         without wrapping the trailing " | " separator onto a second line. */
+      /* Wide enough for "Geography" (longest label at 9 chars) to fit without
+         wrapping the trailing " | " separator onto a second line. */
       width: 6.5em;
       color: #6e7a90;
       white-space: nowrap;

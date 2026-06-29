@@ -51,7 +51,6 @@ export interface ClockCallbacks {
 
 export class Clock {
   private readonly root: HTMLElement;
-  private readonly clickArea: HTMLElement;
   private readonly timeEl: HTMLElement;
   private readonly dateEl: HTMLElement;
   private readonly zoneEl: HTMLElement;
@@ -83,7 +82,7 @@ export class Clock {
     this.root = document.createElement("div");
     this.root.id = "orrery-clock";
     this.root.innerHTML = `
-      <div class="orrery-clock-click" id="orrery-clock-click" title="Click to toggle UTC ⇄ Local">
+      <div class="orrery-clock-click" id="orrery-clock-click">
         <div class="orrery-clock-time" id="orrery-clock-time">--:--:--</div>
         <div class="orrery-clock-meta">
           <span class="orrery-clock-date" id="orrery-clock-date">—</span>
@@ -105,7 +104,6 @@ export class Clock {
     `;
     parent.appendChild(this.root);
 
-    this.clickArea     = this.root.querySelector("#orrery-clock-click")    as HTMLElement;
     this.timeEl        = this.root.querySelector("#orrery-clock-time")     as HTMLElement;
     this.dateEl        = this.root.querySelector("#orrery-clock-date")     as HTMLElement;
     this.zoneEl        = this.root.querySelector("#orrery-clock-zone")     as HTMLElement;
@@ -116,17 +114,7 @@ export class Clock {
     this.staleCaptionEl = this.root.querySelector("#orrery-clock-stale")        as HTMLElement;
     this.staleDateEl    = this.root.querySelector("#orrery-clock-stale-date")   as HTMLElement;
 
-    // The whole time block (not just the zone label) toggles zone. Catch clicks on the
-    // ⏱ icon or ✕ button so the click doesn't ALSO flip the zone — they live inside
-    // the click area for layout, not for behaviour.
     const closeBtn = this.root.querySelector("#orrery-clock-close") as HTMLElement;
-    this.clickArea.addEventListener("click", (ev) => {
-      if (ev.target === this.expandBtn) return;
-      if (ev.target === closeBtn) return;
-      this.zone = this.zone === "utc" ? "local" : "utc";
-      saveZone(this.zone);
-      this.lastTimeStr = this.lastDateStr = this.lastZoneStr = "";
-    });
 
     this.expandBtn.addEventListener("click", () => {
       this.expanded = !this.expanded;
@@ -176,6 +164,15 @@ export class Clock {
 
   setVisible(visible: boolean) {
     this.root.classList.toggle("hidden", !visible);
+  }
+
+  /** Switch the clock between UTC and browser-local time. Driven by the Clock row's
+   *  UTC/Local menu toggle; persists the choice in localStorage. */
+  setZone(zone: "utc" | "local") {
+    if (this.zone === zone) return;
+    this.zone = zone;
+    saveZone(zone);
+    this.lastTimeStr = this.lastDateStr = this.lastZoneStr = "";
   }
 
   /**
