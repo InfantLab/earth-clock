@@ -1,97 +1,161 @@
 earth-clock
 ===========
 
-![earth-clock — 2026-08-12 solar eclipse umbra over Spain](https://github.com/InfantLab/earth-clock/raw/master/public/screenshots/103-earth-clock-eclipse2.png)
+![earth-clock — 2026-08-12 solar eclipse umbra over Spain](https://github.com/InfantLab/earth-clock/raw/master/public/screenshots/01-earth-clock-eclipse1.png)
 
-**[earth-clock](https://earth-clock.onemonkey.org/)** is a real-time 3D visualisation of planet Earth — live wind, weather, clouds, auroras, fires, hurricanes, lightning, and the sun, moon, and stars in their true positions. It is a clock told by Earth's place in space.
+**[earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/)** — a real-time 3D globe that makes Earth's motion through space feel *present*. Not a map, not a dashboard — a clock told by where the planet actually is.
 
-The current experience is the spiritual successor to Cameron Beccario's [`earth`](https://github.com/cambecc/earth) — a ground-up rebuild for 2026 in native WebGL 3D. The original earth was a sophisticated D3.js renderer offering eight cartographic projections; that codebase is preserved at `/classic/` as an archival fallback.
+The idea comes from watching a total solar eclipse and realising that the universe is in constant, geometrically precise motion — and that most of us never feel it. Earth-clock tries to fix that. Live wind, weather, auroras, fires, hurricanes, the true-position sun and moon, solar and lunar eclipses with a time-warp scrubber, and a flat-map mode you can pin your location on. The goal is the astronaut's *overview effect* from your browser.
 
 | | |
 |---|---|
-| earth-clock (default)    | [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/) |
-| Classic archive          | [earth-clock.onemonkey.org/classic/](https://earth-clock.onemonkey.org/classic/) |
-| Roadmap                  | [ROADMAP.md](ROADMAP.md) |
-| Changelog                | [CHANGELOG.md](CHANGELOG.md) |
-| Credits & licences       | [frontend/CREDITS.md](frontend/CREDITS.md) |
+| Live site | [earth-clock.onemonkey.org](https://earth-clock.onemonkey.org/) |
+| Classic archive | [earth-clock.onemonkey.org/classic/](https://earth-clock.onemonkey.org/classic/) |
+| Founding essay | [Eclipses, Equinoxes, and Everyday Awe](https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/) |
+| Roadmap | [ROADMAP.md](ROADMAP.md) |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
+| Credits & licences | [frontend/CREDITS.md](frontend/CREDITS.md) |
 
-The current version is built on [Three.js](https://threejs.org/) with GPU wind particles, modern satellite feeds (NASA GIBS, NOAA SWPC, NASA FIRMS, NOAA NHC, NOAA SPC, Blitzortung), and physically-based lighting from a true-position sun. It includes a NASA-derived solar-eclipse renderer (path of totality + live umbra disc, targeting the 2026-08-12 Spain eclipse as a headline event), plus an equirectangular flat-map mode. The other classic projections are on the roadmap.
+---
 
-## What's in this repo
+## What it does right now
 
-- [`frontend/`](frontend/) — the rebuild (TypeScript + Three.js + Vite). This is what serves at `/`.
-- [`public/classic/`](public/classic/) — the classic earth-clock, preserved verbatim at `/classic/`. Fork of [`cambecc/earth`](https://github.com/cambecc/earth) with a real-time day/night terminator overlay and a clock display added on top of the original eight-projection renderer.
-- [`weather-service.js`](weather-service.js), [`lib/`](lib/) — the GFS weather backend that downloads GRIB2 from NOAA NOMADS and produces the JSON feeds in [`public/data/weather/current/`](public/data/weather/current/). Shared by every frontend.
-- [`screensaver/`](screensaver/) — a Windows .scr wrapper hosting the classic experience inside a WebView2 control. See [`DEPLOYMENT.md`](DEPLOYMENT.md).
-- [`wallpaper-engine/`](wallpaper-engine/) — a Wallpaper Engine output mode wrapping the classic codebase, with all eight projections available as a property.
+**Atmosphere and weather**
+- GPU wind particle field (GFS 1° global, 6 h refresh) — subtle / standard / bold intensity
+- Cloud cover — VIIRS true-colour daily mosaic (NASA GIBS) or GFS model
+- Aurora oval probability (NOAA SWPC Ovation, 5 min refresh)
+- Active wildfires (NASA FIRMS, last 24 h)
+- Tropical cyclones + 5-day forecast tracks (NOAA NHC, 15 min refresh)
+- Real-time lightning strikes (Blitzortung community network)
+- Scalar overlays: pressure, temperature, humidity, precipitable water, cloud water
 
-For day-to-day development of the current experience, work in the `frontend/` subdirectory — its own README has dev-server instructions, architecture notes, and the live development plan.
+**Astronomy**
+- Sun and moon in their true celestial positions, updated every frame
+- Physically-based directional lighting — shadows, terminator, twilight band
+- Atmospheric rim glow that shifts colour at sunrise and sunset
+- Real-photograph skybox (NASA Deep Star Maps 2020, 2K default / 8K opt-in)
+- Meeus ELP-2000-82B lunar model (~5 arcsec accuracy)
 
-## Original lineage
+**Eclipse experience**
+- Solar eclipse catalogue 2026–2030 with path of totality + live umbra/penumbra disc
+- Lunar eclipse catalogue with "blood moon" dimming + copper tint, scaled by umbral magnitude
+- Observer-perspective sun/moon inset (SunDiscPanel) with topocentric parallax
+- Time-warp scrubber: play any eclipse at any speed, scrub frame-by-frame
 
-This project began as a fork of Cameron Beccario's [`earth`](https://github.com/cambecc/earth) (the visualisation behind <https://earth.nullschool.net>, itself derived from the earlier [Tokyo Wind Map](https://github.com/cambecc/air)). The original earth was a canvas + SVG renderer that warped wind-particle paths through any of eight different cartographic projections; that codebase is preserved under [`/classic/`](https://earth-clock.onemonkey.org/classic/), with a day/night terminator overlay and a clock display added on top. All upstream credit retained per MIT.
+**Globe and flat map**
+- Equirectangular flat-map mode with pan + zoom (MapControls, cursor-centred)
+- Crisp terminator arc on the flat map (analytic great-circle, 361-point line)
+- Sub-solar and sub-lunar dots on the flat map (phase-aware moon disc)
+- Location pin — click anywhere, get coordinates, place name (reverse geocoder), and true solar time
+- Timezone overlay: nominal 15° meridians, real political boundaries (DST-correct via IANA), or ±Hours relative mode
+- Time zones, night lights, coastlines (Natural Earth 50 m)
+
+**Clock and time control**
+- Clock driven by `simulatedTime` — the same variable that rotates Earth, moves the sun and moon, and steps the eclipse
+- Speed presets from −10 080× (1 second = 1 week backwards) to +10 080×
+- Live-data freshness gating: weather layers hide when simulated time drifts >24 h from now
+- Mobile-first layout: compact clock bar, full-width bottom sheet menu, 44 px touch targets
+
+---
+
+## Architecture
+
+```
+earth-clock/
+├── frontend/          TypeScript + Three.js + Vite — what serves at /
+│   ├── src/astro/     Sun, moon, eclipse maths (Meeus ELP, observerView)
+│   ├── src/scene/     3D layers: Globe, Moon, Sun, clouds, aurora, fires…
+│   ├── src/ui/        Panels: Clock, Menu, EclipsePanel, SunDiscPanel…
+│   └── src/data/      Catalogues, loaders, geocoder, wind texture
+├── public/
+│   ├── assets/        Vite bundle (index-*.js)
+│   ├── classic/       Original D3 + canvas renderer (archival, unmodified)
+│   ├── data/          GFS JSON feeds written by weather-service.js
+│   ├── textures/      Globe, moon, skybox textures
+│   └── about/         Static about + kids pages
+├── weather-service.js Node daemon: NOAA NOMADS GRIB2 → JSON, runs every 6 h
+├── screensaver/       Windows .scr wrapper (WebView2, classic renderer)
+└── wallpaper-engine/  Wallpaper Engine output (classic renderer)
+```
+
+The `frontend/` directory is the only place most contributors need to touch. It has its own dev server (`npm run dev` → Vite on :5173), TypeScript strict mode, and HMR. The production build writes into `public/assets/` at the repo root.
+
+---
 
 ## Running locally
 
 ```bash
 git clone https://github.com/infantlab/earth-clock
+cd earth-clock/frontend
+npm install
+npm run dev         # → http://localhost:5173
+```
+
+That's it for the globe. Weather data is served from the live backend at `earth-clock.onemonkey.org` in dev (the Vite config proxies the relevant paths). To run the full weather backend locally:
+
+```bash
 cd earth-clock
+npm install
+npm run weather-service   # downloads GFS GRIB2 → writes public/data/weather/current/
 ```
 
-What you do next depends on which part you want to work on.
-
-### Develop the 3D experience (the current default)
+To build for production:
 
 ```bash
 cd frontend
-npm install
-npm run dev
+BUILD_AS_ROOT=1 npm run build   # writes public/index.html + public/assets/index-*.js
 ```
 
-Vite dev server at <http://localhost:5173>. Hot module reload, source maps, full TypeScript checking. The dev server also reverse-proxies `/proxy/nhc/*` to NHC's CORS-blocked feeds so hurricanes work in development. See [`frontend/README.md`](frontend/README.md) for architecture notes, [`ROADMAP.md`](ROADMAP.md) for the current development plan, and [`CHANGELOG.md`](CHANGELOG.md) for what has shipped.
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the CapRover + NGINX deploy, and [`frontend/docs/proxy.md`](frontend/docs/proxy.md) for the NHC and geocoder CORS proxy setup.
 
-### Run the classic archive locally
+---
 
-```bash
-npm install          # from the repo root
-npm start            # → node dev-server.js 8080 → serves public/ on :8080
-```
+## Contributing and forking
 
-Then open <http://localhost:8080/classic/>. The classic experience is preserved verbatim under `public/classic/` after the v0.1.0 cutover; you can still develop or debug it the way the original `earth` project was developed. The original implementation notes (terminator math, world rotation, moon-phase overlay, projection-distortion handling for the eight different cartographic projections) are at [`public/classic/docs/`](public/classic/docs/).
+This project is deliberately open-ended. The codebase is clean TypeScript, the layers are well-separated, and the [ROADMAP](ROADMAP.md) has many fully-specified items that a motivated person could pick up and ship independently. Some good entry points by interest:
 
-### Run the GFS weather backend
+**Astronomy / data nerd**
+- ISS position + ground track ([CelesTrak TLE, no auth](https://celestrak.org/SOCRATES/)) — ~1 day, dramatic
+- Population density overlay (NASA SEDAC Gridded Population of the World, free) — raster texture, same pipeline as clouds
+- Sea ice extent (NSIDC MASIE daily, GeoJSON) — seasonal, beautiful, important
+- Seasonal animation — sweep `simulatedTime` through one year at ~10 s/month to show Earth breathe
 
-```bash
-npm install
-npm run weather-service
-```
+**Three.js / WebGL dev**
+- Geology layer: tectonic plates (PB2002 GeoJSON → LineSegments, ~half a day), earthquakes (USGS GeoJSON feed), volcanoes (Smithsonian GVP static dataset)
+- Earth-shadow shader on the moon mesh for partial lunar eclipses (umbra disc creeping across the face)
+- Waterman butterfly projection for the flat map — visually striking, good intro to projection maths
+- Camera paths: ISS orbit, Earthrise (sub-lunar), L1 halo orbit
 
-This downloads current GFS data from NOAA NOMADS, decodes it from GRIB2 to JSON using pure JavaScript (no Java dependency), writes the JSONs to `public/data/weather/current/`, then sleeps for 6 hours and repeats. Both the 3D and classic frontends read those JSONs. Full architecture in [`WEATHER_SERVICE.md`](WEATHER_SERVICE.md).
+**Backend / ops**
+- GOES-East + Himawari + MSG 10-min live cloud stitch to replace the VIIRS daily mosaic
+- `eccodes-wasm` Cloudflare Worker for arbitrary GRIB2 fields (ECMWF AIFS, GraphCast)
+- Multi-altitude wind (250/500/700/850/925 hPa)
 
-### Build the frontend for production
+**Writers / educators**
+- "Upgrading earth-clock to WebGL" blog post (the 2026-08-12 Spain eclipse is the obvious anchor)
+- The [kids' about page](https://earth-clock.onemonkey.org/about/kids/) exists; more similar pages welcome
 
-```bash
-cd frontend
-BUILD_AS_ROOT=1 npm run build
-```
+**To fork it entirely:**
+The codebase is MIT. If you want your own themed earth-clock — focused on climate data, marine biology, aviation, geology, whatever — the scene layer system makes it straightforward to add or remove layers. The minimum viable fork is: clone the repo, delete the layers you don't want from `Menu.ts`, add your own in `frontend/src/scene/`, wire them up in `main.ts`. The wind/cloud/aurora pipeline gives you a working template for any gridded global dataset.
 
-Writes `public/index.html` + `public/assets/*` at the repo root (alongside the existing `public/classic/`, `public/data/`, `public/textures/`, `public/about/`). The `BUILD_AS_ROOT` env var flips Vite's `outDir` and disables `emptyOutDir` so the archived classic site and the shared data tree survive the rebuild. See [`frontend/docs/cutover.md`](frontend/docs/cutover.md) for the original cutover procedure and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the CapRover deployment.
+If you do build something interesting, open an issue or PR — there's a lot of obvious cross-pollination to be had.
 
-## Other components
+---
 
-- [`wallpaper-engine/`](wallpaper-engine/) — a Wallpaper Engine packaging of the classic experience (all eight projections selectable as a property). See its [README](wallpaper-engine/README.md) for installation and [MAINTENANCE.md](wallpaper-engine/MAINTENANCE.md) for sync/architecture.
-- [`screensaver/`](screensaver/) — a Windows `.scr` wrapper that hosts the wallpaper inside a WebView2 control. Built with C#/.NET; full build & install procedure in [`DEPLOYMENT.md`](DEPLOYMENT.md).
-- [`public/about/`](public/about/) — the detailed online about page, also linked from the in-app menu and reachable at <https://earth-clock.onemonkey.org/about/>.
+## Lineage
 
-## Inspirations
+This project began as a fork of Cameron Beccario's [`earth`](https://github.com/cambecc/earth) — the visualisation behind [earth.nullschool.net](https://earth.nullschool.net), itself descended from the [Tokyo Wind Map](https://github.com/cambecc/air). The original codebase was a canvas + SVG renderer with eight cartographic projections; it lives on at [`/classic/`](https://earth-clock.onemonkey.org/classic/) with a day/night terminator overlay and clock display added on top. All upstream credit retained per MIT.
 
-- The original [earth](https://github.com/cambecc/earth) project — Cameron Beccario's global weather visualisation that this whole codebase descends from.
-- [Tokyo Wind Map](https://github.com/cambecc/air) — Beccario's earlier per-city demonstration that animated wind particles could be a primary medium for atmospheric data.
-- [World Clock](https://www.worldclock.ws/index.html) — the early "what time is it where" project that motivated adding a clock readout to a wind visualisation in the first place.
-- [hint.fm wind map](http://hint.fm/wind/) — the spiritual predecessor to all browser-rendered wind visualisations.
-- [D3.js](http://d3js.org) — the projection library that powers the classic site's eight cartographic projections.
-- [Three.js](https://threejs.org/) — the WebGL renderer that powers the 3D rebuild.
+The 3D rebuild (everything in `frontend/`) started from scratch in Three.js in 2025, keeping the GFS wind pipeline and the philosophy but replacing the rendering engine entirely.
+
+**Inspirations**
+- [earth (cambecc)](https://github.com/cambecc/earth) — the wind-globe that started it all
+- [hint.fm wind map](http://hint.fm/wind/) — spiritual predecessor to all browser wind visualisations
+- [World Clock](https://www.worldclock.ws/) — the early "what time is it where" motivation for the clock layer
+- [Buckminster Fuller — Operating Manual for Spaceship Earth](https://en.wikipedia.org/wiki/Operating_Manual_for_Spaceship_Earth) — the framing for why this matters
+
+---
 
 ## Licence
 
-MIT, inherited from `cambecc/earth`. See [`LICENSE.md`](LICENSE.md). Per-asset and per-feed licences (CC-BY for Solar System Scope and OpenStreetMap derivatives, public-domain for NOAA/NASA imagery, MIT/Apache for libraries) are catalogued in [`frontend/CREDITS.md`](frontend/CREDITS.md).
+MIT, inherited from `cambecc/earth`. See [`LICENSE.md`](LICENSE.md). Per-asset licences (CC-BY for Solar System Scope and OSM derivatives, public-domain for NOAA/NASA imagery, MIT/Apache for libraries) are catalogued in [`frontend/CREDITS.md`](frontend/CREDITS.md).

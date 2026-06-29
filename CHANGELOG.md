@@ -9,6 +9,41 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.2.3 — 2026-06-29 — Quick wins: flat map, mobile, eclipse polish
+
+**FlatMap — terminator arc** — a crisp white `THREE.Line` now traces the
+day/night boundary directly on the equirectangular map. 361 points sampled via
+`lat = atan2(−cos(sunLat)·cos(λ−sunLon), sin(sunLat))`, updated every frame
+from the sun's geographic position. Three copies at world X = 0, ±2 give
+seamless continuity when the user pans past the antimeridian. Toggled by the
+existing "Day/night" button; hides automatically with the terminator shader.
+
+**FlatMap — 3D-only buttons greyed out in map mode** — Atmosphere, Auto-spin,
+and Hi-res sky have no effect in equirectangular mode. They now render at 30%
+opacity with `cursor: default` while flat-map is active so the user can see
+they're not available. State is preserved — switching back to the globe view
+restores whatever was on.
+
+**Mobile — flat-map marker size increase** — sub-solar, sub-lunar, and
+location-pin markers were sub-pixel at 360 px screen width / default zoom.
+`FLAT_DOT_RADIUS` bumped 0.025 → 0.036; location-pin flat ring from
+0.011/0.013 → 0.015/0.019 inner/outer; crosshair outer arm 0.017 → 0.025.
+
+**Lunar eclipse — penumbral dimming scales with umbral magnitude** —
+`Moon.setEclipseShadow(fraction, umbralMag)` now accepts the eclipse's umbral
+magnitude. Total eclipses (mag ≥ 1) get the full 82% "blood moon" dimming;
+partial eclipses scale proportionally; penumbral-only eclipses (mag < 0) cap at
+10% — barely perceptible, as in real life. Colour tint (white → copper-red)
+scales the same way.
+
+**±Hours bug fix** — the relative-offset labels were showing "+0:59" instead of
+"+1:00" because `(fakeUtc − date.getTime()) / 3_600_000` was minute-precise on
+the `fakeUtc` side but second-precise on `date.getTime()`. Fixed by rounding to
+the nearest 15 minutes (`Math.round(rawOffset * 4) / 4`) — the finest unit any
+real UTC offset uses — so the result always snaps to the exact offset.
+
+---
+
 ## v0.2.2 — 2026-06-27 — Mobile-friendly layout
 
 First mobile pass: all panels repositioned and resized for narrow screens. Desktop layout is unchanged.
