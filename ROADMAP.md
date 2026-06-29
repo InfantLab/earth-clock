@@ -137,6 +137,88 @@ Code-side work shipped; outstanding items need hands-on operational work:
 
 ---
 
+## Near-term — Geology layer (v0.3)
+
+Inspired by a primary-school class visit: kids instinctively want to see the
+*structure* of Earth, not just its weather. Tectonic plates, earthquakes, and
+volcanoes are the obvious first targets — deeply connected (most earthquakes and
+volcanoes sit on plate boundaries), spectacular on the globe, and backed by
+excellent free public data.
+
+### ⬜ Tectonic plates overlay
+
+**Data:** Peter Bird's PB2002 dataset via
+[fraxen/tectonicplates](https://github.com/fraxen/tectonicplates) — 52 plates
+as GeoJSON boundary lines. CORS-friendly static fetch; can be bundled alongside
+`earth-topo.json` or fetched once and cached. Updated May 2026; effectively
+static (plate boundaries don't change on human timescales).
+
+**Implementation:** Almost identical to the existing Coastlines layer
+(`frontend/src/scene/Globe.ts`). Fetch GeoJSON → build `LineSegments` geometry →
+rotate with Earth at `earthRotationY(now)`. Add as `Geography → Plates` menu
+entry. Use a warm amber/terracotta colour to distinguish from the cool-white
+coastlines. No backend work needed.
+
+**Effort:** ~half a day.
+
+### ⬜ Earthquake activity
+
+**Data:** USGS Earthquake Hazards Program real-time feeds
+(`https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/`). Available
+windows: past hour / day / week / month; magnitude thresholds: all / ≥1.0 /
+≥2.5 / ≥4.5 / significant. GeoJSON format, updated continuously. **No CORS
+headers** — needs backend proxy.
+
+**Implementation:**
+1. Add a `fetchEarthquakes()` job to `weather-service.js` — polls USGS
+   `all_week.geojson` (or `significant_month.geojson`) every 15 min and writes
+   `public/data/earthquakes/current.json`.
+2. New `EarthquakeLayer.ts` — renders each event as a pulsing disc or sprite:
+   radius ∝ magnitude (log scale), colour by depth (shallow = red, deep = blue),
+   opacity fades over time since the quake. Show past 7 days by default.
+3. `Weather → Earthquakes` menu entry, in the same row as Fires (both are
+   "natural hazard events").
+
+**Effort:** ~1–2 days (backend cron + frontend layer).
+
+### ⬜ Volcanoes
+
+Two sub-layers with different data characteristics:
+
+**Known volcano locations (static):**
+Smithsonian Global Volcanism Program database (~1,500 volcanoes, v5.3.6 May 2026)
+via their webservices API. Fetch once, bundle as static JSON. Render as small
+triangle or teardrop markers at each volcano's lat/lon — always visible when the
+layer is on, regardless of activity level.
+
+**Active eruptions (live):**
+Two approaches, pick the more reliable:
+- **FIRMS cross-reference** — we already fetch FIRMS fire detections. Compare
+  FIRMS thermal anomaly positions against the bundled volcano list (within ~20 km
+  radius). FIRMS dots near a known volcano get re-classified and styled as
+  eruption markers rather than wildfires. No extra backend work; happens in the
+  frontend.
+- **GVP weekly RSS** — Smithsonian publishes a weekly activity report every
+  Thursday (RSS/XML). Parse server-side in `weather-service.js`; write a JSON
+  summary of currently-erupting volcanoes. Fresher than FIRMS for slow-erupting
+  volcanoes that don't produce strong thermal signals.
+
+**Effort:** static layer ~half a day; active eruptions ~1 day on top.
+
+### Implementation order
+
+1. **Plates** first — pure frontend, zero backend, dramatic visual, one day.
+2. **Earthquakes** — add backend cron, then frontend layer. Two days.
+3. **Volcanoes (static)** — bundle dataset, add markers alongside plates.
+4. **Active eruptions (FIRMS cross-ref)** — quick win once static layer is in.
+5. **GVP weekly RSS** — optional enhancement; only needed if FIRMS cross-ref
+   misses too many events.
+
+All three fit naturally into a `Geography` row addition or a new `Geology` menu
+row between Geography and Astro.
+
+---
+
 ## Near-term (Phase A polish)
 
 ### ⬜ FlatMap v2 — remaining layer ports
