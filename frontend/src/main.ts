@@ -1599,7 +1599,7 @@ function updateAstro() {
   // the 3D moon and the panel inset stay visually in lockstep.
   if (activeLunarEclipse) {
     const f = lunarEclipseFraction(activeLunarEclipse, now);
-    moon.setEclipseShadow(f);
+    moon.setEclipseShadow(f, activeLunarEclipse.umbralMagnitude);
     sunDiscPanel.setLunarFraction(f);
     // Magnitude readout mirrors the solar version's shape. Status string maps
     // the fraction back to a human-readable phase: ≤0 outside the event,

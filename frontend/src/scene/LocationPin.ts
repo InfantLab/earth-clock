@@ -73,8 +73,8 @@ export class LocationPin {
     this.meshFlat = new THREE.Group();
     this.meshFlat.visible = false;
 
-    // Outer ring — modest size so it doesn't obscure a continent.
-    const flatRingGeom = new THREE.RingGeometry(0.011, 0.013, 32);
+    // Outer ring — sized for ~8 px on a 360 px wide mobile screen at default zoom.
+    const flatRingGeom = new THREE.RingGeometry(0.015, 0.019, 32);
     const flatRingMat  = new THREE.MeshBasicMaterial({ color: PIN_COLOR, transparent: true, opacity: 0.9 });
     const flatRing = new THREE.Mesh(flatRingGeom, flatRingMat);
     flatRing.position.z = 0.001;
@@ -83,8 +83,8 @@ export class LocationPin {
     // Crosshair — two short line segments through the centre, with a small gap so the
     // exact point reads as a "+" rather than a single bar. Lines extend just outside the
     // ring so the marker looks like a precision target.
-    const crosshairGap  = 0.003;
-    const crosshairOuter = 0.017;
+    const crosshairGap  = 0.004;
+    const crosshairOuter = 0.025;
     const lineGeom = new THREE.BufferGeometry();
     lineGeom.setAttribute(
       "position",

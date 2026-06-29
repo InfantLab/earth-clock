@@ -663,7 +663,7 @@ export class Menu {
       case "tzRelative":
         timezoneLayer.setRelativeMode(on);
         break;
-      case "atmosphere":  atmosphere.mesh.visible = on; break;
+      case "atmosphere":  atmosphere.mesh.visible = on && !this.state.map; break;
       case "hands":
         // Beams toggle controls the full beam system: the 3D sun beam, the 3D moon
         // beam, and the paired sun + moon dots on the flat map. As of v0.1.4 the
@@ -701,7 +701,18 @@ export class Menu {
       }
       case "clockLocal":  this.panels.clock?.setZone(on ? "local" : "utc"); break;
       case "skyboxHi":    /* consumed by main.ts via isSkyboxHiRes() / onSkyboxHiResChange() */ break;
-      case "map":         /* consumed by main loop via isMapMode() — render swap */ break;
+      case "map": {
+        // When entering flat-map mode, hide the atmosphere (3D globe only) and grey-out
+        // the buttons for layers that have no flat-map equivalent, so the user can see at
+        // a glance that they're not available in this mode. State is preserved — toggling
+        // back to globe view restores whatever was active.
+        atmosphere.mesh.visible = this.state.atmosphere && !on;
+        const mapOnlyKeys: LayerKey[] = ["atmosphere", "orbit", "skyboxHi"];
+        for (const k of mapOnlyKeys) {
+          this.buttons[k]?.classList.toggle("map-inactive", on);
+        }
+        break;
+      }
       case "orbit":       /* consumed by main loop via isAutoOrbit() → controls.autoRotate */ break;
       case "clock":       this.panels.clock?.setVisible(on); break;
       case "data":        this.panels.data?.setVisible(on); break;
@@ -832,6 +843,12 @@ function injectStyles() {
     }
     .orrery-tb:hover { color: #fff; }
     .orrery-tb.highlighted { color: #e2b42e; }
+    /* 3D-only buttons greyed out while flat-map mode is active. State is preserved;
+       clicking them still works and takes effect when the user returns to globe view. */
+    .orrery-tb.map-inactive {
+      opacity: 0.30;
+      cursor: default;
+    }
     /* Action buttons (e.g. "Find moon") don't toggle a persistent state. Style them
        in a slightly cooler shade than regular toggles to hint that they're a different
        kind of thing, but still part of the same row. */

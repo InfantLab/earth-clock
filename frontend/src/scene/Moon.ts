@@ -48,23 +48,26 @@ export class Moon {
   }
 
   /**
-   * Drive the lunar-eclipse darkening effect. `fraction` is 0 (no eclipse) → 1
-   * (peak), as returned by `lunarEclipseFraction()`. The moon is dimmed and
-   * tinted copper-red as the umbra encroaches — the iconic "blood moon" look
-   * from a deep total lunar eclipse. Skip-cheap when fraction is unchanged.
+   * Drive the lunar-eclipse darkening effect.
    *
-   * Implementation: lerp emissiveIntensity from default (~0.95) down to ~0.18
-   * at peak so the moon dims by ~80% but stays visible against the night sky;
-   * lerp emissive colour from neutral white toward the copper tint with the
-   * same fraction. Two-uniform tweak per frame, no shader changes needed.
+   * @param fraction  0 (no eclipse) → 1 (peak), as returned by `lunarEclipseFraction()`.
+   * @param umbralMag Umbral magnitude from the catalog: >1 = total, 0–1 = partial, <0 = penumbral-only.
+   *                  Defaults to 1.0 (full dimming) for backwards compatibility.
+   *
+   * The max dimming scales with `umbralMag` so penumbral-only eclipses show only
+   * a subtle 10% dim (barely perceptible, as in real life), partial eclipses dim
+   * proportionally, and total eclipses reach the full 82% blood-moon darkness.
+   * Colour tint (white → copper-red) likewise scales down for weaker eclipses.
    */
-  setEclipseShadow(fraction: number) {
+  setEclipseShadow(fraction: number, umbralMag = 1.0) {
     const f = Math.max(0, Math.min(1, fraction));
-    this.material.emissiveIntensity = DEFAULT_EMISSIVE_INTENSITY * (1 - 0.82 * f);
-    // Lerp white → copper tint as fraction climbs. material.emissive is the
-    // colour, multiplied by emissiveMap pixels per fragment, so this tints the
-    // moon's whole surface without us touching the texture.
-    this._scratchColor.copy(this.defaultEmissive).lerp(this.umbralTint, f);
+    // Scale max dimming: total (mag ≥ 1) → 82 %; partial → proportional; penumbral → 10 %.
+    const maxDim = umbralMag >= 1 ? 0.82
+                 : umbralMag > 0  ? 0.82 * umbralMag
+                 : 0.10;
+    this.material.emissiveIntensity = DEFAULT_EMISSIVE_INTENSITY * (1 - maxDim * f);
+    // Colour tint scales with maxDim so penumbral eclipses stay near white.
+    this._scratchColor.copy(this.defaultEmissive).lerp(this.umbralTint, maxDim * f);
     this.material.emissive.copy(this._scratchColor);
   }
 }

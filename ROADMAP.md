@@ -21,66 +21,34 @@ Forward-looking engineering tracker. Shipped work lives in
 
 - 🔄 In progress / partially landed
 - ⬜ Not started
+- ✅ Done
 - ❌ Blocked
 
-Current shipped version: **v0.2.2** (2026-06-27). See [CHANGELOG.md](CHANGELOG.md).
+Current shipped version: **v0.2.2** (2026-06-27); **v0.2.3 in progress**. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Next up
+## v0.2.3 — Quick wins sweep
 
-### 🔄 Mobile experience — v2 polish
+Small, self-contained improvements across mobile, lunar eclipse, flat map, and
+core UX. No new major feature branches; all items are half-a-day or less each.
 
-Basic mobile layout landed in v0.2.2 (compact clock bar, two-snap bottom sheet,
-full-width panels, 44 px touch targets, lighter defaults). Outstanding items:
-
-- **Real-device QA** — walk the UI on iOS Safari + Android Chrome at 360 / 414
-  px wide, portrait + landscape. Flag anything that broke or still feels wrong.
-- **Draggable bottom sheet** — upgrade the two-snap (collapsed/65 vh) sheet to
-  free drag with momentum snap. ~50 lines of pointer-event logic; deferred to
-  keep v0.2.2 simple.
-- **Pinned-location + sub-solar markers** — still go sub-pixel on very small
-  screens; needs a minimum marker size clamp in the scene layer.
-- **First-paint asset budget** — measure on mid-range Android; skybox + globe
-  textures + 700 KB JS is the main risk. Defer textures behind a loading state
-  if it's visibly slow.
-
-### ⬜ Lunar eclipses — v2 polish
-
-MVP shipped in v0.2.1 (catalogue + ☀/🌑 tabs + moon-mesh dimming/tint via
-`Moon.setEclipseShadow`). What's still on the table for a richer experience:
-
-- **MoonDiscPanel analogue** to the SunDiscPanel — small inset showing the
-  moon with Earth's penumbral and umbral shadows drawn on it, from the pinned
-  observer's perspective. Re-uses observerView geometry with Sun ↔ Earth ↔
-  Moon roles rotated.
-- **Earth-shadow shader on the moon mesh** for partial events — currently
-  the whole moon dims uniformly. A proper shader would let the umbra disc creep
-  across the moon's face, exactly as you'd see it through binoculars.
-- **Penumbral magnitude** in the dim curve — right now we drive intensity off
-  umbral magnitude alone; the penumbral phase before/after U1/U4 is invisible.
-- **Optional auto-pin** for lunar: pick a location with the moon high in the
-  sky at greatest, so the MoonDiscPanel has a meaningful default observer.
-
-### ⬜ Live-data freshness gating (weather + simulated time)
+### ✅ Live-data freshness gating
 
 The eclipse path tracks simulated time, but every other live layer (wind / clouds /
 aurora / fires / hurricanes / lightning / Kp / MSLP-Temp-RH overlays) renders
 **today's data on whatever date the clock says**. For a 2027 eclipse the user
 sees fake "wind on the day of the eclipse" — visually rich, factually wrong.
 
-**Policy (decided):** when simulated time is far from wall-clock now, hide all
-live-data layers rather than try to backfill historical archives (ERA5, GIBS
-back-catalogue, etc. — too much integration surface). Honesty over completeness.
+**Policy:** when simulated time is far from wall-clock now, hide all live-data
+layers. Honesty over completeness.
 
 **Threshold:** ±24 h around wall-clock now. Comfortably wider than any single
-eclipse window (≤6 h), so short eclipse jumps don't strip the globe; tighter
-than "any simulation", so far-future / far-past warps clearly mark themselves as
-astronomical-only.
+eclipse window (≤6 h), so short eclipse jumps don't strip the globe.
 
 **Affected layers (hide when out of range):**
 - Wind streamlines + trails buffer
-- Clouds (VIIRS daily mosaic — the date stamp on the imagery is wrong)
+- Clouds (VIIRS daily mosaic)
 - Aurora forecast
 - Active fires (FIRMS)
 - Hurricanes + storm tracks
@@ -88,75 +56,88 @@ astronomical-only.
 - MSLP / Temp / RH / TPW / TCW overlays
 - Kp index readout
 
-**Unaffected layers (stay on, they're astronomical-time-correct):**
+**Unaffected layers (astronomical-time-correct, stay on):**
 - Day / night map + terminator
-- Coastlines
 - Sun + moon + stars + skybox
 - Eclipse layer (umbra, penumbra, path of totality)
 - Location pin + sub-solar / sub-lunar markers
 
 **UX:** small caption beneath the Clock — *"live weather hidden · sim 2027-08-02"*
 in the same dim grey as the rest of the chrome, with a ↺ glyph that snaps back
-to wall-clock now (reuses the existing reset). The Data panel rows for hidden
-layers show *"(frozen — sim date out of range)"* in the source slot so the user
-can see why a toggle "does nothing". Menu toggles stay live (not disabled) so
-the user's preferences persist across the snap-back.
+to wall-clock now (reuses the existing reset). Data panel rows for hidden layers
+show *"(frozen — sim date out of range)"*. Menu toggles stay live so preferences
+persist across the snap-back. Add small hysteresis (hide at >24h, re-show at <22h)
+to avoid flicker at the boundary.
 
-**Edge cases worth thinking through:**
-- Eclipse playback usually stays inside ±24 h (e.g., jumping to the 2026-08-12
-  eclipse from today 2026-06-26 = +47 days → out of range → weather hidden, as
-  desired).
-- Real-time mode with a tiny clock-skew (sim drifts by seconds during
-  long-running sessions): well inside ±24 h, no flicker.
-- User scrubs simulated time over the ±24 h boundary: layers fade out / in at
-  the threshold. Add a small hysteresis (e.g., hide at >24h, re-show at <22h)
-  to avoid flicker at the boundary.
+**Implementation:** single `isLiveDataInRange(simulatedTime)` helper in main.ts;
+wire to per-layer `setLiveDataValid(bool)` (most can just toggle `mesh.visible`).
+~half day end-to-end.
 
-Implementation surface: single helper `isLiveDataInRange(simulatedTime)` in
-main.ts; wire its result to a per-layer `setLiveDataValid(bool)` on each
-affected layer (most can just toggle `mesh.visible`). The Clock panel grows
-the caption + snap-back hook. ~half day end-to-end.
+### ✅ FlatMap — terminator as a drawn arc
+
+The day/night boundary on the flat map is currently a per-pixel shader gradient,
+not a crisp drawn line. Add a `LineLoop` that traces the terminator great circle
+in equirectangular space (sample ~360 points, project to 2D), matching the
+coastline style. The shader gradient stays for the day/night shading; the line
+adds crispness.
+
+### ✅ FlatMap — 3D-only buttons greyed out in map mode
+
+When the user switches to flat map, Atmosphere and Sky/Stars are irrelevant and
+visually odd. Grey-out (disable, not remove) their menu toggles with a tooltip
+"Not available in flat-map mode", and restore when the user returns to globe.
+
+### ✅ Mobile — flat-map marker size increase
+
+Sub-solar, sub-lunar, and location-pin markers go sub-pixel on 360 px screens.
+Add a minimum `screenSize` clamp in the scene layer (probably a one-line change
+in RadiusVectors + LocationPin).
+
+### ⬜ Mobile — real-device QA pass
+
+Walk the UI on iOS Safari + Android Chrome at 360 / 414 px wide, portrait +
+landscape. Flag anything that broke or still feels wrong. No code changes
+assumed; this is a QA gate for the issues above.
+
+### ✅ Lunar eclipse — penumbral magnitude in dim curve
+
+The current umbral dim curve drives intensity off umbral magnitude alone; the
+penumbral phase before/after U1/U4 is invisible on the moon mesh. Extend the
+`setEclipseShadow` curve to include penumbral dimming (small, smooth onset).
+
+### ✅ Skybox quality toggle (2K ⇄ 8K)
+
+Both assets are already bundled. 2K (~250 KB) loads first; 8K (~1.9 MB) gives
+sharper Milky Way detail when zoomed out. Add a small toggle (View row or
+dedicated "View / quality" entry), persist in `localStorage`. Default 2K;
+user opts into 8K after everything has loaded.
+
+### ⬜ LocationIQ in production (operational)
+
+Sign up at <https://locationiq.com/> for a free API key. Paste the NGINX block
+from [DEPLOYMENT.md §5c](DEPLOYMENT.md) into the CapRover override. Verify with
+the curl test in the QA checklist. Removes the dependency on Nominatim's charity
+service.
 
 ---
 
-## In flight
-
-### 🔄 v0.2.0 launch — operational tail
-
-Code-side work shipped; outstanding items need hands-on operational work:
-
-1. **Browser-matrix QA pass** — walk through
-   [frontend/docs/qa-checklist.md](frontend/docs/qa-checklist.md)'s v0.2.0
-   section in Safari + Firefox + mobile in addition to Chrome/Edge. Flag
-   anything broken.
-2. **LocationIQ live in production** — sign up at <https://locationiq.com/> for
-   a free API key. Paste the NGINX block from
-   [DEPLOYMENT.md §5c](DEPLOYMENT.md) into the CapRover override with your
-   key. Verify with the curl test in the QA checklist. Site stops depending on
-   Nominatim's charity service.
-
----
-
-## Near-term — Geology layer (v0.3)
+## v0.3.0 — Geology layer
 
 Inspired by a primary-school class visit: kids instinctively want to see the
 *structure* of Earth, not just its weather. Tectonic plates, earthquakes, and
-volcanoes are the obvious first targets — deeply connected (most earthquakes and
-volcanoes sit on plate boundaries), spectacular on the globe, and backed by
-excellent free public data.
+volcanoes are deeply connected (most sit on plate boundaries), spectacular on
+the globe, and backed by excellent free public data.
 
 ### ⬜ Tectonic plates overlay
 
 **Data:** Peter Bird's PB2002 dataset via
 [fraxen/tectonicplates](https://github.com/fraxen/tectonicplates) — 52 plates
-as GeoJSON boundary lines. CORS-friendly static fetch; can be bundled alongside
-`earth-topo.json` or fetched once and cached. Updated May 2026; effectively
-static (plate boundaries don't change on human timescales).
+as GeoJSON boundary lines. Effectively static on human timescales.
 
 **Implementation:** Almost identical to the existing Coastlines layer
 (`frontend/src/scene/Globe.ts`). Fetch GeoJSON → build `LineSegments` geometry →
 rotate with Earth at `earthRotationY(now)`. Add as `Geography → Plates` menu
-entry. Use a warm amber/terracotta colour to distinguish from the cool-white
+entry. Use a warm amber/terracotta colour to distinguish from cool-white
 coastlines. No backend work needed.
 
 **Effort:** ~half a day.
@@ -171,202 +152,211 @@ headers** — needs backend proxy.
 
 **Implementation:**
 1. Add a `fetchEarthquakes()` job to `weather-service.js` — polls USGS
-   `all_week.geojson` (or `significant_month.geojson`) every 15 min and writes
-   `public/data/earthquakes/current.json`.
-2. New `EarthquakeLayer.ts` — renders each event as a pulsing disc or sprite:
-   radius ∝ magnitude (log scale), colour by depth (shallow = red, deep = blue),
-   opacity fades over time since the quake. Show past 7 days by default.
-3. `Weather → Earthquakes` menu entry, in the same row as Fires (both are
-   "natural hazard events").
+   `all_week.geojson` every 15 min and writes `public/data/earthquakes/current.json`.
+2. New `EarthquakeLayer.ts` — each event as a pulsing disc/sprite: radius ∝
+   magnitude (log scale), colour by depth (shallow = red, deep = blue), opacity
+   fades over time since the quake. Show past 7 days by default.
+3. `Weather → Earthquakes` menu entry, same row as Fires (both natural hazard events).
 
 **Effort:** ~1–2 days (backend cron + frontend layer).
 
 ### ⬜ Volcanoes
 
-Two sub-layers with different data characteristics:
+**Known locations (static):** Smithsonian Global Volcanism Program database
+(~1,500 volcanoes, v5.3.6 May 2026). Fetch once, bundle as static JSON. Small
+triangle or teardrop markers at each lat/lon — always visible when layer is on.
 
-**Known volcano locations (static):**
-Smithsonian Global Volcanism Program database (~1,500 volcanoes, v5.3.6 May 2026)
-via their webservices API. Fetch once, bundle as static JSON. Render as small
-triangle or teardrop markers at each volcano's lat/lon — always visible when the
-layer is on, regardless of activity level.
-
-**Active eruptions (live):**
-Two approaches, pick the more reliable:
-- **FIRMS cross-reference** — we already fetch FIRMS fire detections. Compare
-  FIRMS thermal anomaly positions against the bundled volcano list (within ~20 km
-  radius). FIRMS dots near a known volcano get re-classified and styled as
-  eruption markers rather than wildfires. No extra backend work; happens in the
-  frontend.
-- **GVP weekly RSS** — Smithsonian publishes a weekly activity report every
-  Thursday (RSS/XML). Parse server-side in `weather-service.js`; write a JSON
-  summary of currently-erupting volcanoes. Fresher than FIRMS for slow-erupting
-  volcanoes that don't produce strong thermal signals.
+**Active eruptions (live):** FIRMS cross-reference — compare FIRMS thermal
+anomaly positions against the bundled volcano list (within ~20 km). FIRMS dots
+near a known volcano get re-classified as eruption markers rather than wildfires.
+No extra backend work; happens in the frontend. Optionally supplement with GVP
+weekly RSS parsed in `weather-service.js`.
 
 **Effort:** static layer ~half a day; active eruptions ~1 day on top.
 
 ### Implementation order
 
-1. **Plates** first — pure frontend, zero backend, dramatic visual, one day.
-2. **Earthquakes** — add backend cron, then frontend layer. Two days.
+1. **Plates** — pure frontend, zero backend, dramatic visual, one day.
+2. **Earthquakes** — backend cron, then frontend layer. Two days.
 3. **Volcanoes (static)** — bundle dataset, add markers alongside plates.
 4. **Active eruptions (FIRMS cross-ref)** — quick win once static layer is in.
-5. **GVP weekly RSS** — optional enhancement; only needed if FIRMS cross-ref
-   misses too many events.
 
-All three fit naturally into a `Geography` row addition or a new `Geology` menu
-row between Geography and Astro.
+All three fit naturally into a new `Geology` menu row between Geography and Astro.
 
 ---
 
-## Near-term (Phase A polish)
+## v0.4.0 — Flat Map v2
 
-### ⬜ FlatMap v2 — remaining layer ports
+Comprehensive flat-map feature parity and new projections. Items in priority order.
 
-8 items, in priority order (detailed in
-[frontend/docs/PLAN-archive.md](frontend/docs/PLAN-archive.md#-equirectangular-flat-map-mode-)):
+### ⬜ Eclipse on flat map
 
-1. Sub-solar marker (small disc at the live (lat, lon))
-2. Sub-lunar marker (with phase-aware shading)
-3. Terminator line (drawn arc, not a straight line)
-4. Hide-in-map-mode list (grey out Atmosphere / Sky-stars when Map is on)
-5. ~~Pan & zoom~~ — landed in v0.1.9
-6. ~~Wrap-around~~ — landed in v0.1.9
-7. **Eclipse on flat map** — umbra/penumbra discs + path-of-totality polyline
-   ported from the 3D EclipseLayer to the equirectangular plane.
-8. Additional cartographic projections — restore parity with classic's 8
-   projections (Waterman butterfly + Atlantis are the visually striking ones
-   to land first).
+Port the umbra/penumbra discs + path-of-totality polyline from the 3D
+EclipseLayer to the equirectangular plane. The path-of-totality is already a
+lat/lon polyline; projecting it to the flat map is straightforward. The umbra
+disc needs a 2D oval approximation at the sub-solar eclipse point.
 
-### ⬜ Phase B feature parity — weather-service extension (Path A)
+### ⬜ Phase B weather overlays (MSLP / Temp / RH / TPW / TCW)
 
 Extend [weather-service.js](weather-service.js) to emit MSLP / Temp / RH / TPW /
 TCW companion JSON alongside the existing wind file. Restores classic
-earth-clock's overlay set. **Before going live** — these are user-visible parity
-items. ~1–2 days. Server-side GRIB2 decode proxy (Path B, eccodes-wasm) deferred
-behind this.
+earth-clock's full overlay set. ~1–2 days server-side, then wire into the
+existing OverlayLayer.
 
-### ⬜ Pressure map — verify post-v0.1.8
+### ⬜ Pressure map — verify post-v0.1.8 fix
 
-After the half-float → byte texture fix in v0.1.8, MSLP should now show clear
-high/low pressure systems. Verify on the next live data pass; if the rendering
-still looks unexpectedly uniform, hypotheses to check:
+After the half-float → byte texture fix in v0.1.8, MSLP should show clear
+high/low pressure systems. Verify on the next live data pass. If still uniform,
+check: wrong units (hPa vs Pa), poorly tuned palette, or server-side decode
+producing a constant field. Quick check: `window.__orrery.overlay.lastGrid?.values?.slice(0, 10)`.
 
-- Grid values are in the wrong units (e.g. hPa instead of Pa, off by ×100).
-- Palette function for `pressure` is poorly tuned (low contrast across
-  mid-range).
-- Server-side decode in `weather-service.js` is producing a constant or aliased
-  field.
+### ⬜ Additional cartographic projections
 
-Quick check: `console.log(window.__orrery.overlay.lastGrid?.values?.slice(0, 10))`
-from DevTools once MSLP is active.
+Restore parity with classic's 8 projections. Waterman butterfly + Atlantis are
+the visually striking ones to land first. Each projection is a vertex shader /
+geometry transform; the data layers (coastlines, plates, earthquake dots) need
+corresponding projection transforms.
 
-### ⬜ Skybox quality toggle (2K ⇄ 8K)
+### ⬜ Phase B — server-side GRIB2 decode (stretch)
 
-Both assets are bundled
-([frontend/src/scene/Skybox.ts](frontend/src/scene/Skybox.ts) HEAD-probes 2K → 8K).
-2K (~250 KB) loads first; 8K (~1.9 MB) is sharper Milky Way detail when zoomed
-out. Add a small UI control (Astro row or a new dedicated "View / quality"
-entry), persist choice in `localStorage` alongside `orrery.menu.v1`. Default 2K
-for first paint; user can opt in to 8K once everything else has loaded.
+| Item | Notes |
+|------|-------|
+| Path B — `eccodes-wasm` Cloudflare Worker | Unlocks ANY GRIB2 field (ECMWF AIFS, GraphCast). After Path A. |
+| Multi-altitude wind (250/500/700/850/925 hPa) | Falls out of Path A or B. |
+| OSCAR ocean surface currents (Earthdata) | Routed through CapRover proxy (same as NHC). |
 
 ---
 
-## Downstream surfaces
+## v0.5.0 — Lunar Eclipse v2 + Mobile Experience v2
 
-Earth-clock historically ships three surfaces: the website, a Windows
-screensaver ([screensaver/](screensaver/)), and a Wallpaper Engine output
-([wallpaper-engine/](wallpaper-engine/)). Both downstream surfaces currently
-target the **classic** D3 + canvas renderer and run against the legacy server's
-data feeds.
+Deeper treatment of the two areas where MVP shipped but richer experience
+is clearly possible.
 
-### ⬜ Screensaver + Wallpaper Engine — new-version investigation
+### ⬜ Lunar eclipses — v2
 
-Goal: figure out the right way to ship the WebGL frontend as a screensaver and
-as a Wallpaper Engine input, given that they're currently bound to the classic
-renderer.
+- **MoonDiscPanel analogue** to the SunDiscPanel — small inset showing the moon
+  with Earth's penumbral and umbral shadows from the pinned observer's perspective.
+  Re-uses observerView geometry with Sun ↔ Earth ↔ Moon roles rotated.
+- **Earth-shadow shader on the moon mesh** — proper umbra disc creeping across
+  the moon's face for partial events (currently the whole moon dims uniformly).
+- **Optional auto-pin** for lunar: pick a location with the moon high in the sky
+  at greatest eclipse so MoonDiscPanel has a meaningful default observer.
 
-Open questions to answer in a short design doc before implementing:
+### ⬜ Mobile experience — v2
 
-- **Screensaver host**: classic uses a small Windows wrapper around a packaged
-  build. For WebGL we likely need either (a) Electron / Tauri wrapping a
-  local-only build of the frontend, or (b) a `.scr` shim that spawns a
-  fullscreen Chromium window. Battery / GPU impact matters for screensaver
-  use; investigate idle CPU/GPU with the WebGL renderer at 30 fps cap, no
-  time-warp, no aurora wsockets.
-- **Wallpaper Engine input**: Wallpaper Engine ingests browser-based wallpapers
-  via its built-in Chromium. Should "just work" with a frontend build pinned
-  at `/` and the menu collapsed by default — but: how do we feed live weather
-  data when the user has Wallpaper Engine running offline (right now the
-  `BundledDataSource` stub in
-  [frontend/src/data/DataSource.ts](frontend/src/data/DataSource.ts) is empty)?
-  Two paths: (i) a "bundled snapshot" mode where the build includes a recent
-  wind/cloud capture, (ii) live fetches via the host's network if available.
-- **Renderer modes**: the existing menu state is over-rich for an ambient
-  wallpaper. Probably want a `?mode=ambient` query-string that disables all
-  panels, sets a gentle orbit, time-warp 1×, and a curated default layer set
-  (wind + clouds + night lights, nothing else).
-- **Asset budget**: screensaver / wallpaper need to start fast and run cool.
-  Audit what the frontend currently downloads at first paint (~700 KB JS +
-  textures); see what can be deferred behind the "ambient" mode.
-
-Effort: ~half-day for the design doc, then a few days to build whichever
-surface(s) we commit to. Reference: existing `wallpaper-engine/` +
-`screensaver/` directories + the classic wrapper code in
-`wallpaper-engine/source/`.
+- **Draggable bottom sheet** — upgrade the two-snap (collapsed/65 vh) sheet to
+  free drag with momentum snap. ~50 lines of pointer-event logic.
+- **First-paint asset budget** — measure on mid-range Android; skybox + globe
+  textures + 700 KB JS is the main risk. Defer textures behind a loading state
+  if it's visibly slow.
 
 ---
 
-## Communications & launch
+## v0.6.0 and beyond — Stretch goals
 
-### ⬜ "Upgrading earth-clock to WebGL" blog post
+### Downstream surfaces
 
-The cutover from classic → WebGL is the biggest project change since launch.
-Worth a public write-up:
+#### ⬜ Screensaver + Wallpaper Engine
 
-- **Audience**: existing earth-clock users, plus the WebGL / data-viz /
-  open-source weather community. Cross-post on onemonkey.org and link from the
-  in-app About page.
-- **Beats**: why rebuild (mobile + Three.js opportunity), what's new (live
-  aurora / fires / hurricanes / lightning / eclipse path of totality /
-  time-warp / location pin), what's preserved (classic still lives at
-  `/classic/`), what's coming (FlatMap v2, Phase B overlays, camera paths).
-- **Hero moment**: the 2026-08-12 Spain eclipse is the obvious anchor — show
-  off the umbra sweep with a screenshot + a paragraph about how the catalog +
-  NASA centerline + time-warp let you experience the eclipse in your browser.
-- **Production note**: build screenshots from a clean session (no test data,
-  no pinned location, default layer set). Capture both the 3D globe and the
-  flat map. Include the eclipse-panel UI clearly to highlight the headline
-  feature.
+Figure out the right way to ship the WebGL frontend as a screensaver and as a
+Wallpaper Engine input (currently both target the classic renderer).
+
+Open questions:
+- **Screensaver host**: Electron / Tauri wrapping a local build, or a `.scr` shim
+  spawning a fullscreen Chromium window. Measure idle CPU/GPU at 30 fps cap.
+- **Wallpaper Engine**: should "just work" with a frontend build — but how to
+  feed live weather data when offline? Bundled snapshot mode or live fetches.
+- **`?mode=ambient`** query-string: disables all panels, sets gentle orbit,
+  1× time-warp, curated layer set (wind + clouds + night lights).
+
+Effort: ~half-day design doc, then a few days to build.
+
+### Camera paths
+
+- Gentle orbit ✅
+- ISS / Sub-lunar (Earthrise) / Heliocentric / Geosync / L1 / Free-fly — all ⬜
+
+### Earth-clock branding
+
+- Hour rings ⬜
+- Equator + ecliptic rings ⬜
+- Analemma trace ⬜
+
+### Further sky + space layers
+
+- 10-min live cloud stitch (GOES-East + Himawari + Meteosat, replaces VIIRS daily mosaic) ⬜
+- Kp index → aurora intensity scaling (Kp already in DataPanel; wire to AuroraLayer opacity) ⬜
+- Real star skybox (Tycho-2 / Deepstar ≥100k stars) ⬜
+- Full solar system (planets, moons, ecliptic plane) ⬜
+- ISS position + track ⬜
+
+### Communications
+
+#### ⬜ "Upgrading earth-clock to WebGL" blog post
+
+- Audience: existing users + WebGL / data-viz / open-source weather community.
+- Beats: why rebuild (mobile + Three.js), what's new, what's preserved, what's coming.
+- Hero moment: the 2026-08-12 Spain eclipse.
 
 ---
 
-## Phase B — server-side GRIB2 decode
+## Vision check — overview effect blindspots
 
-| Item | Status | Notes |
-|------|--------|-------|
-| Path A — weather-service extension (recommended) | ⬜ | MSLP/Temp/RH/TPW/TCW JSON files. 1–2 days. |
-| Path B — `eccodes-wasm` Cloudflare Worker | ⬜ | Unlocks ANY GRIB2 field (ECMWF AIFS, GraphCast). After Path A. |
-| Multi-altitude wind (250/500/700/850/925 hPa) | ⬜ | Falls out of Path A or B. |
-| OSCAR ocean surface currents (Earthdata) | ⬜ | Routed through CapRover proxy (same as NHC). |
+The founding essay ([*Eclipses, Equinoxes, and Everyday Awe*](https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/))
+sets the north star: **"Earth-clock lets you experience the astronauts' overview
+effect from your browser."** Buckminster Fuller's *Spaceship Earth* framing —
+finite vessel, shared crew, daily temporal awareness.
 
----
+Auditing the roadmap against that intent reveals a few gaps worth keeping in mind
+as priorities get set:
 
-## Phase C — stretch goals
+### Where we're strong
 
-Full detail in the archive. Headline items:
+- **Time / rotation** — day/night terminator, timezone overlay, clock controls, time-warp. Core mission, well covered.
+- **Astronomy** — sun, moon, eclipses, stars. Good.
+- **Weather** — wind, clouds, aurora, fires, hurricanes, lightning. Live and compelling.
+- **Geology** — coming in v0.3. Connects Earth's interior to the surface the crew lives on.
 
-- **Camera paths through space** — gentle orbit ✅, ISS / Sub-lunar (Earthrise) /
-  Heliocentric / Geosync / L1 / Free-fly all ⬜.
-- **Earth-clock branding** — hour rings ⬜, equator + ecliptic rings ⬜,
-  analemma trace ⬜.
-- **10-min live cloud stitch** — GOES-East + Himawari + Meteosat, replaces
-  VIIRS daily mosaic.
-- **Kp index → aurora intensity scaling** — Kp row already in DataPanel; wire
-  it into the AuroraLayer's opacity.
-- **Real star skybox** (Tycho-2 / Deepstar ≥100k stars).
-- **Full solar system** — planets, moons, ecliptic plane.
-- **"About sources" panel** — friendly source listing alongside DataPanel.
+### Potential blindspots
+
+**1. The crew — human presence**
+The essay is explicitly about empathy: *"your morning is someone else's midnight."*
+But the globe currently shows no people. A **population density layer** (Gridded
+Population of the World, free from SEDAC) would make that abstract idea visceral —
+you can see exactly where the daylight is landing on the billion people waking up.
+Low implementation cost: static raster texture, same pipeline as the cloud overlay.
+
+**2. A living planet breathing through the year — seasonal animation**
+The essay explicitly mentions wanting a "year in a minute" animation loop. Nothing
+in the current roadmap delivers that. A time-lapse mode that sweeps `simulatedTime`
+through one calendar year at ~10 seconds/month would show the terminator's annual
+dance, the seasonal migration of storms, and the aurora's solar-cycle pulse. The
+time-warp infrastructure already exists; this is a UX feature on top of it.
+
+**3. The ocean — half of what astronauts see**
+Earth from orbit is mostly ocean. We have wind and clouds but nothing specifically
+about the ocean: no sea surface temperature, no ice extent, no currents beyond the
+Phase B OSCAR stretch goal. Sea ice (NSIDC) is particularly striking seasonally and
+free. Even a simple SST colour overlay would dramatically change the feeling of the
+globe.
+
+**4. ISS — the literal overview effect**
+The ISS is the source of the "overview effect" and orbits at 400 km in ~90 minutes.
+Its ground track is publicly available (TLE from CelesTrak, no auth needed). Showing
+the ISS position + orbital track gives the user an immediate, moving reminder of
+*who* is up there having the experience we're simulating. Small implementation cost;
+large conceptual payoff.
+
+**5. The living surface — vegetation**
+The essay's seasonal breathing is about axial tilt and weather, but Earth's visible
+*greening* is equally compelling. NASA MODIS NDVI (vegetation index) composites are
+free and beautiful. Swapping the day texture to a seasonal NDVI overlay — or
+blending NDVI with the base texture — would show the Sahel greening in the northern
+summer, the Amazon's dry-season browning, the boreal forest's annual pulse.
+
+These are not all equal priority — ISS and population density are the easiest wins
+with the highest conceptual return. The seasonal animation would make the time-warp
+feature feel intentional rather than incidental.
 
 ---
 
@@ -375,11 +365,12 @@ Full detail in the archive. Headline items:
 | Item | Status | Notes |
 |------|--------|-------|
 | `frontend/.env.local` (`VITE_FIRMS_MAP_KEY`) | ✅ | Excluded from git. |
-| Dev server | ✅ | `npm run dev` (`:8080` legacy server) or `cd frontend && npm run dev` (`:5173` Vite). |
+| Dev server | ✅ | `npm run dev` (`:8080`) or `cd frontend && npm run dev` (`:5173` Vite). |
 | Live site | ✅ | `earth-clock.onemonkey.org` (CapRover; see [DEPLOYMENT.md](DEPLOYMENT.md)). |
-| Production CORS proxy (NHC) | ✅ | NGINX `location /proxy/nhc/` in CapRover override. See [frontend/docs/proxy.md](frontend/docs/proxy.md). |
+| Production CORS proxy (NHC) | ✅ | NGINX `location /proxy/nhc/` in CapRover override. |
 | Wind JSON | ✅ | `public/data/weather/current/current-wind-surface-level-gfs-1.0.json`, refreshed 6 h. |
 | Coastlines | ✅ | `public/data/earth-topo.json`, Natural Earth 50 m. |
-| Cutover | ✅ | v0.1.0 — the WebGL frontend serves at `/`, classic moved to `/classic/`. |
-| Docs polish (web + about page) | 🔄 | `/about/` in-app About panel landed; broader web docs surface still TODO. |
-| Browser-matrix QA | ⬜ | Have only tested Chrome / Edge. Verify Safari, Firefox, mobile. |
+| WebGL cutover | ✅ | v0.1.0 — WebGL at `/`, classic at `/classic/`. |
+| Docs / about page | 🔄 | `/about/` panel landed; broader web docs still TODO. |
+| LocationIQ geocoder | ⬜ | API key + NGINX block — see v0.2.3 above. |
+| Browser-matrix QA | ⬜ | Tested Chrome / Edge only. Verify Safari, Firefox, mobile. |

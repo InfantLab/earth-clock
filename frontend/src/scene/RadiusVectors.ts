@@ -132,8 +132,9 @@ const BEAM_LENGTH = 0.6;
  *  rather than a pencil. */
 const BEAM_BASE_RADIUS = 0.018;
 const BEAM_TIP_RADIUS  = 0.006;
-/** Radius of the flat-map sun dot in plane units (the 2×1 plane is 2 wide × 1 tall). */
-const FLAT_DOT_RADIUS = 0.025;
+/** Radius of the flat-map sun dot in plane units (the 2×1 plane is 2 wide × 1 tall).
+ *  Sized for ~6 px on a 360 px wide mobile screen at default zoom; larger on desktop. */
+const FLAT_DOT_RADIUS = 0.036;
 
 function makeBeam(color: number, opacity: number): THREE.Mesh {
   // CylinderGeometry(radiusTop, radiusBottom, height, radialSegments). Base is at -Y/2,

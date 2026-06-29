@@ -37,6 +37,8 @@ export class FlatMap {
   readonly camera: THREE.OrthographicCamera;
   private readonly mainMesh: THREE.Mesh;
   private readonly material: THREE.ShaderMaterial;
+  private readonly terminatorGeom: THREE.BufferGeometry;
+  private readonly terminatorLines: THREE.Line[];
   private controls: MapControls | null = null;
   private baseFrustum = { left: -1, right: 1, top: 0.5, bottom: -0.5 };
 
@@ -160,6 +162,27 @@ export class FlatMap {
       m.position.x = dx;
       this.scene.add(m);
     }
+
+    // Terminator arc — crisp day/night boundary line in equirectangular space.
+    // At each longitude λ, the terminator latitude satisfies:
+    //   tanLat = −cos(sunLat)·cos(λ − sunLon) / sin(sunLat)
+    // The 361-point curve spans −180° → +180° (continuous, no closing segment).
+    // Three copies at x = 0, −2, +2 provide wrap-around continuity when panning.
+    const TERM_N = 361;
+    const termPos = new Float32Array(TERM_N * 3);
+    this.terminatorGeom = new THREE.BufferGeometry();
+    this.terminatorGeom.setAttribute("position", new THREE.BufferAttribute(termPos, 3));
+    const termMat = new THREE.LineBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.40, depthWrite: false,
+    });
+    this.terminatorLines = [0, -2, 2].map(dx => {
+      const line = new THREE.Line(this.terminatorGeom, termMat);
+      line.position.x = dx;
+      line.renderOrder = 2;
+      line.frustumCulled = false;
+      this.scene.add(line);
+      return line;
+    });
   }
 
   /** Adjust ortho frustum so the 2:1 map fits the viewport (letterbox or pillarbox).
@@ -265,6 +288,7 @@ export class FlatMap {
    * Update the geographic-frame sub-solar direction. lat/lon in **degrees**.
    * Used by the shader's per-pixel day/night calculation — no axial-tilt or daily-rotation
    * uniforms needed because the flat map is rendered directly in the geographic frame.
+   * Also rebuilds the terminator arc line geometry each call (called every frame).
    */
   setSubSolar(latDeg: number, lonDeg: number) {
     const lat = latDeg * Math.PI / 180;
@@ -275,6 +299,26 @@ export class FlatMap {
        Math.sin(lat),
       -cosLat * Math.sin(lon),
     );
+    this._updateTerminatorLine(lat, lon);
+  }
+
+  private _updateTerminatorLine(sunLatRad: number, sunLonRad: number) {
+    const pos = this.terminatorGeom.attributes.position as THREE.BufferAttribute;
+    const arr = pos.array as Float32Array;
+    const N = 361;
+    const sinLat = Math.sin(sunLatRad);
+    const cosLat = Math.cos(sunLatRad);
+    for (let i = 0; i < N; i++) {
+      const lonDeg = -180 + 360 * i / (N - 1);
+      const lonRad = lonDeg * Math.PI / 180;
+      // Terminator latitude: surface normal dot sun-direction = 0, solved for lat.
+      const termLatRad = Math.atan2(-cosLat * Math.cos(lonRad - sunLonRad), sinLat);
+      arr[i * 3]     = lonDeg / 180;       // x: [-1, +1] = lon / 180°
+      arr[i * 3 + 1] = termLatRad / Math.PI; // y: [-0.5, +0.5] = latDeg / 180
+      arr[i * 3 + 2] = 0.005;              // z: above clouds/coastlines, below sun·moon dots
+    }
+    pos.needsUpdate = true;
+    this.terminatorGeom.computeBoundingSphere();
   }
 
   /** Swap in a new equirectangular cloud texture (same one the 3D CloudLayer uses). */
@@ -285,6 +329,7 @@ export class FlatMap {
 
   setTerminatorEnabled(b: boolean) {
     this.material.uniforms.uShowTerminator.value = b ? 1.0 : 0.0;
+    for (const line of this.terminatorLines) line.visible = b;
   }
   setNightLightsVisible(b: boolean) {
     this.material.uniforms.uShowNightLights.value = b ? 1.0 : 0.0;
