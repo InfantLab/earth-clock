@@ -510,6 +510,7 @@ if (menu.isSkyboxHiRes()) applySkybox("hi");
 // unhelpful: every click on the globe resets the pin already, so a dedicated "clear" had
 // no use. Pin geometry is left in place so re-opening the panel restores the previous mark.
 locationPanel.onClear(() => {
+  timezoneLayer.setReferenceZone(null); // revert ±Hours to browser timezone
   menu.setLayer("location", false);
 });
 
@@ -541,6 +542,8 @@ function pinLocation(lat: number, lon: number, source: PinSource) {
   timezoneLayer.loadForLookup();
   const zone = timezoneLayer.findZoneAt(lat, lon);
   locationPanel.setPinnedZone(zone.ianaName || null, zone.utcOffset);
+  // Drive ±Hours relative to the pinned location so "+0:00" means "same time as here".
+  timezoneLayer.setReferenceZone(zone.ianaName || null);
   sunDiscPanel.setPlaceName(`${lat.toFixed(2)}°, ${lon.toFixed(2)}°`); // coord fallback until geocode resolves
   console.log(`[earth-clock] pinned via ${source}: ${lat.toFixed(2)}, ${lon.toFixed(2)}`);
   // Reverse-geocode in the background. The geocoder routes through `/proxy/geocode/`
@@ -1652,6 +1655,7 @@ function animate(t: number) {
     if (pinnedLocation.visible) {
       const zone = timezoneLayer.findZoneAt(pinnedLocation.lat, pinnedLocation.lon);
       locationPanel.setPinnedZone(zone.ianaName || null, zone.utcOffset);
+      timezoneLayer.setReferenceZone(zone.ianaName || null);
     }
   }
   locationPanel.setNow(now);

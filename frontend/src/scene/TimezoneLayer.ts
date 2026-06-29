@@ -272,11 +272,15 @@ export class TimezoneLayer {
   private labelZones: ZoneEntry[]   = NOMINAL_ZONES.slice(); // zones used for label sprites
   private displayMode: TzDisplayMode = "nominal";
   private relativeMode                = false;
+  // IANA name of the user's reference location for ±Hours mode. null = browser timezone.
+  private _referenceIana: string | null = null;
 
   // Throttle: redraw canvases only when the simulated minute changes, max ≈12×/s
   private lastMinute    = -1;
   private lastUpdateWall = 0;
   private static readonly MIN_UPDATE_MS = 80;
+  // DST-change detection: rebuild the colour overlay when any zone's effective offset shifts.
+  private lastEffectiveSig = "";
 
   // Coloured fill overlay — political mode only
   private overlayCanvas: HTMLCanvasElement | null = null;
@@ -396,7 +400,7 @@ export class TimezoneLayer {
    * Called once after political data loads; the overlay meshes stay in the scene and are
    * shown/hidden with mesh.visible alongside the rest of the layer.
    */
-  private buildColorOverlay(data: TzBoundsFile): void {
+  private buildColorOverlay(data: TzBoundsFile, simulatedMs?: number): void {
     const W = 2048, H = 1024;
     if (!this.overlayCanvas) {
       this.overlayCanvas = document.createElement("canvas");
@@ -407,7 +411,18 @@ export class TimezoneLayer {
     ctx.clearRect(0, 0, W, H);
 
     for (const zone of data.zones) {
-      ctx.fillStyle = offsetToFillColor(zone.utcOffset);
+      // Use the current DST-aware effective offset so same-coloured regions always
+      // show the same clock time. Falls back to the standard offset if Intl fails.
+      let fillOffset = zone.utcOffset;
+      if (simulatedMs !== undefined && zone.tzid) {
+        try {
+          fillOffset = zoneTime(
+            { ianaName: zone.tzid, utcOffset: zone.utcOffset, centerLon: zone.centLon, centerLat: 0 },
+            simulatedMs,
+          ).effectiveOffsetH;
+        } catch { /* keep standard offset */ }
+      }
+      ctx.fillStyle = offsetToFillColor(fillOffset);
       for (const ring of zone.rings) {
         if (ring.length < 3) continue;
         // Equirectangular canvas coordinates:
@@ -582,16 +597,32 @@ export class TimezoneLayer {
     this.lastMinute     = utcMin;
     this.lastUpdateWall = wallNow;
 
-    // User's current UTC offset including DST, from the real wall clock
-    const userOffsetH = -new Date().getTimezoneOffset() / 60;
+    // Reference offset for ±Hours: use the pinned location's DST-aware offset when set,
+    // otherwise fall back to the browser's OS timezone. Using the pinned zone means
+    // "+0:00" is "same time as my pin" rather than "same time as UTC" when the browser
+    // is set to UTC.
+    let userOffsetH: number;
+    if (this._referenceIana) {
+      const ref = zoneTime(
+        { ianaName: this._referenceIana, utcOffset: 0, centerLon: 0, centerLat: 0 },
+        simulatedMs,
+      );
+      userOffsetH = ref.effectiveOffsetH;
+    } else {
+      userOffsetH = -new Date().getTimezoneOffset() / 60;
+    }
 
     const W3 = TimezoneLayer.LW3, H3 = TimezoneLayer.LH3;
     const WF = TimezoneLayer.LWF, HF = TimezoneLayer.LHF;
 
+    const effectiveSigParts: number[] = [];
+
     this.labelZones.forEach((zone, i) => {
       const { h, m, effectiveOffsetH } = zoneTime(zone, simulatedMs);
       const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-      const hue = offsetToHue(zone.utcOffset);
+      // Use current effective offset (DST-aware) for hue so pill colour matches the overlay.
+      const hue = offsetToHue(effectiveOffsetH);
+      effectiveSigParts.push(Math.round(effectiveOffsetH * 4)); // 15-min resolution
 
       let caption: string;
       let main: string;
@@ -618,6 +649,14 @@ export class TimezoneLayer {
         this.texturesFlat[i].needsUpdate = true;
       }
     });
+
+    // Rebuild the colour overlay when any zone's effective offset changes (DST transition).
+    // Comparing representative label zones is sufficient — they cover every UTC offset group.
+    const newSig = effectiveSigParts.join(",");
+    if (newSig !== this.lastEffectiveSig) {
+      this.lastEffectiveSig = newSig;
+      if (this.politicalData) this.buildColorOverlay(this.politicalData, simulatedMs);
+    }
   }
 
   /** Keep 3D meridians + labels glued to Earth's geographic frame as it rotates daily. */
@@ -642,6 +681,17 @@ export class TimezoneLayer {
     if (on === this.relativeMode) return;
     this.relativeMode = on;
     this.lastMinute = -1;
+  }
+
+  /**
+   * Set the IANA timezone to use as the "me" reference in ±Hours mode.
+   * Pass the pinned location's IANA name so "+0:00" means "same time as my pin".
+   * Pass null to fall back to the browser's OS timezone.
+   */
+  setReferenceZone(ianaName: string | null): void {
+    if (ianaName === this._referenceIana) return;
+    this._referenceIana = ianaName;
+    this.lastMinute = -1; // force label redraw
   }
 
   // ---- Zone lookup (public) ----
@@ -742,7 +792,7 @@ export class TimezoneLayer {
     this.politicalLoaded = true;
     this.zones = this.politicalZones;
     this.buildPoliticalGeometry(data);
-    this.buildColorOverlay(data);
+    this.buildColorOverlay(data, Date.now()); // use current wall time for initial DST-aware colours
     // One label per UTC standard offset (not one per IANA name) — keeps it to ~30 labels.
     this.buildSprites(groupByOffset(this.politicalZones));
   }
