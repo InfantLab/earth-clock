@@ -33,7 +33,7 @@ function trackedBundleFiles() {
   try {
     return execSync("git ls-files public/assets/", { cwd: ROOT, encoding: "utf8" })
       .trim().split("\n")
-      .filter(f => /index-[A-Za-z0-9]+\.js(\.map)?$/.test(f))
+      .filter(f => /index-[A-Za-z0-9_-]+\.js(\.map)?$/.test(f))
       .map(f => f.replace("public/assets/", ""));
   } catch { return []; }
 }
