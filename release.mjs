@@ -53,7 +53,9 @@ run("npm run build", { cwd: join(ROOT, "frontend"), env: { ...process.env, BUILD
 // ---- 3. Find new bundle ----
 const newFiles = diskBundleFiles();
 const added    = newFiles.filter(f => !oldFiles.includes(f));
-const removed  = oldFiles.filter(f => !newFiles.includes(f));
+// Remove ALL previously tracked bundles when a new one lands — Vite leaves old
+// hash files on disk, so filtering by "not on disk" misses them.
+const removed  = added.length ? oldFiles : oldFiles.filter(f => !newFiles.includes(f));
 
 if (!added.length) {
   // Build output hash unchanged — source changes don't affect the bundle
