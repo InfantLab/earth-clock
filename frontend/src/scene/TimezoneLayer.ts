@@ -159,7 +159,11 @@ function zoneTime(
       const h = raw.hour === 24 ? 0 : raw.hour;   // some impls return 24 for midnight
       const m = raw.minute;
       const fakeUtc = Date.UTC(raw.year, raw.month - 1, raw.day, h, m);
-      return { h, m, effectiveOffsetH: (fakeUtc - date.getTime()) / 3_600_000 };
+      // fakeUtc is minute-precise; date.getTime() includes seconds, causing a
+      // sub-minute drift (e.g. 0.9836h instead of 1.0h). Round to the nearest
+      // 15 min — the smallest real UTC offset unit — to snap to the exact offset.
+      const rawOffset = (fakeUtc - date.getTime()) / 3_600_000;
+      return { h, m, effectiveOffsetH: Math.round(rawOffset * 4) / 4 };
     } catch {
       // Unknown IANA name — fall through to UTC arithmetic
     }
