@@ -18,6 +18,9 @@ public/data/weather/current/current-*.json
 # Claude Code workspace dir (chat history, scratch files) — never belongs in a commit
 .claude/
 
+# NGINX override with real API keys — commit only the .conf template with placeholders
+infra/nginx-caprover-override.local.conf
+
 # Orrery dev build output. Vite writes here when BUILD_AS_ROOT is unset; the production
 # cutover writes to ../public/ directly. Either way it's a build artefact, not source.
 public/orrery/

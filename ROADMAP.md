@@ -24,100 +24,29 @@ Forward-looking engineering tracker. Shipped work lives in
 - ✅ Done
 - ❌ Blocked
 
-Current shipped version: **v0.2.2** (2026-06-27); **v0.2.3 in progress**. See [CHANGELOG.md](CHANGELOG.md).
+Current shipped version: **v0.2.3** (2026-06-29); **v0.2.4 in progress**. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## v0.2.3 — Quick wins sweep
+## v0.2.4 — Feedback link + operational polish
 
-Small, self-contained improvements across mobile, lunar eclipse, flat map, and
-core UX. No new major feature branches; all items are half-a-day or less each.
+### ✅ Feedback link in menu and about page
 
-### ✅ Live-data freshness gating
-
-The eclipse path tracks simulated time, but every other live layer (wind / clouds /
-aurora / fires / hurricanes / lightning / Kp / MSLP-Temp-RH overlays) renders
-**today's data on whatever date the clock says**. For a 2027 eclipse the user
-sees fake "wind on the day of the eclipse" — visually rich, factually wrong.
-
-**Policy:** when simulated time is far from wall-clock now, hide all live-data
-layers. Honesty over completeness.
-
-**Threshold:** ±24 h around wall-clock now. Comfortably wider than any single
-eclipse window (≤6 h), so short eclipse jumps don't strip the globe.
-
-**Affected layers (hide when out of range):**
-- Wind streamlines + trails buffer
-- Clouds (VIIRS daily mosaic)
-- Aurora forecast
-- Active fires (FIRMS)
-- Hurricanes + storm tracks
-- Lightning (live WebSocket — also stop the socket to save bandwidth)
-- MSLP / Temp / RH / TPW / TCW overlays
-- Kp index readout
-
-**Unaffected layers (astronomical-time-correct, stay on):**
-- Day / night map + terminator
-- Sun + moon + stars + skybox
-- Eclipse layer (umbra, penumbra, path of totality)
-- Location pin + sub-solar / sub-lunar markers
-
-**UX:** small caption beneath the Clock — *"live weather hidden · sim 2027-08-02"*
-in the same dim grey as the rest of the chrome, with a ↺ glyph that snaps back
-to wall-clock now (reuses the existing reset). Data panel rows for hidden layers
-show *"(frozen — sim date out of range)"*. Menu toggles stay live so preferences
-persist across the snap-back. Add small hysteresis (hide at >24h, re-show at <22h)
-to avoid flicker at the boundary.
-
-**Implementation:** single `isLiveDataInRange(simulatedTime)` helper in main.ts;
-wire to per-layer `setLiveDataValid(bool)` (most can just toggle `mesh.visible`).
-~half day end-to-end.
-
-### ✅ FlatMap — terminator as a drawn arc
-
-The day/night boundary on the flat map is currently a per-pixel shader gradient,
-not a crisp drawn line. Add a `LineLoop` that traces the terminator great circle
-in equirectangular space (sample ~360 points, project to 2D), matching the
-coastline style. The shader gradient stays for the day/night shading; the line
-adds crispness.
-
-### ✅ FlatMap — 3D-only buttons greyed out in map mode
-
-When the user switches to flat map, Atmosphere and Sky/Stars are irrelevant and
-visually odd. Grey-out (disable, not remove) their menu toggles with a tooltip
-"Not available in flat-map mode", and restore when the user returns to globe.
-
-### ✅ Mobile — flat-map marker size increase
-
-Sub-solar, sub-lunar, and location-pin markers go sub-pixel on 360 px screens.
-Add a minimum `screenSize` clamp in the scene layer (probably a one-line change
-in RadiusVectors + LocationPin).
+Added `· feedback` mailto link to the bottom meta line of the main menu
+(`caspar@onemonkey.org`), and a prominent contact callout in the about page
+with name and email displayed plainly.
 
 ### ⬜ Mobile — real-device QA pass
 
 Walk the UI on iOS Safari + Android Chrome at 360 / 414 px wide, portrait +
-landscape. Flag anything that broke or still feels wrong. No code changes
-assumed; this is a QA gate for the issues above.
+landscape. Flag anything that broke or still feels wrong. Carried from v0.2.3.
 
-### ✅ Lunar eclipse — penumbral magnitude in dim curve
+### ✅ LocationIQ in production
 
-The current umbral dim curve drives intensity off umbral magnitude alone; the
-penumbral phase before/after U1/U4 is invisible on the moon mesh. Extend the
-`setEclipseShadow` curve to include penumbral dimming (small, smooth onset).
-
-### ✅ Skybox quality toggle (2K ⇄ 8K)
-
-Both assets are already bundled. 2K (~250 KB) loads first; 8K (~1.9 MB) gives
-sharper Milky Way detail when zoomed out. Add a small toggle (View row or
-dedicated "View / quality" entry), persist in `localStorage`. Default 2K;
-user opts into 8K after everything has loaded.
-
-### ⬜ LocationIQ in production (operational)
-
-Sign up at <https://locationiq.com/> for a free API key. Paste the NGINX block
-from [DEPLOYMENT.md §5c](DEPLOYMENT.md) into the CapRover override. Verify with
-the curl test in the QA checklist. Removes the dependency on Nominatim's charity
-service.
+API key obtained. NGINX geocode block added to `infra/nginx-caprover-override.conf`
+(template) and `nginx-caprover-override.local.conf` (live, gitignored). Paste
+local file into CapRover to activate. DEPLOYMENT.md updated to reflect LocationIQ
+as the active geocoder.
 
 ---
 

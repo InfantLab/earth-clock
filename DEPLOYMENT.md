@@ -17,7 +17,8 @@ The frontends that share this `public/` tree:
 | `/about/` | The detailed about page | `public/about/index.html` |
 | `/data/*` | Shared GFS weather + OSCAR ocean-currents JSON | `public/data/*` (refreshed by weather-service) |
 | `/textures/*` | frontend 3D assets (earth, moon, starmap) | `public/textures/*` |
-| `/proxy/nhc/*` | Reverse-proxy to NHC for CORS-unfriendly tropical-cyclone feeds | NGINX override on the CapRover app, see below |
+| `/proxy/nhc/*` | Reverse-proxy to NHC for CORS-unfriendly tropical-cyclone feeds | NGINX override on the CapRover app, see §5 |
+| `/proxy/geocode/*` | Reverse-proxy to LocationIQ reverse geocoder (click-to-pin) | NGINX override, see §5b |
 
 ## Repository layout
 
@@ -38,6 +39,9 @@ earth-clock/
 ├── server.js               # production Node static server
 ├── weather-service.js      # background GFS data refresher
 ├── lib/                    # supporting modules for weather-service
+├── infra/                  # infrastructure config
+│   ├── nginx-caprover-override.conf       # CapRover NGINX template (placeholder key, committed)
+│   └── nginx-caprover-override.local.conf # same with real key (gitignored)
 ├── Dockerfile              # CapRover build target
 ├── captain-definition      # CapRover entry
 ├── wallpaper-engine/       # standalone Wallpaper Engine version
@@ -68,11 +72,15 @@ CapRover injects `PORT` automatically. `server.js` reads it.
 - Force HTTPS: on
 - WebSocket: not required for the frontend itself, but the Blitzortung lightning feed connects directly from the browser to `wss://ws*.blitzortung.org/`; ensure CapRover's NGINX doesn't strip `Upgrade`/`Connection` headers if you ever proxy that too.
 
-### 5. NGINX override — the `/proxy/nhc/` rule
+### 5. NGINX override — proxy rules
 
-The NOAA NHC tropical-cyclone feed (`CurrentStorms.json` and the per-storm KMZ track files) does not ship `Access-Control-Allow-Origin`, so the browser can't fetch it directly. We route it through the CapRover NGINX in a same-origin reverse proxy.
+The live config is kept in [`infra/nginx-caprover-override.conf`](infra/nginx-caprover-override.conf) (placeholder key) and `infra/nginx-caprover-override.local.conf` (real key, gitignored). Paste the contents of the local file into CapRover → app settings → HTTP Settings → "Edit Default NGINX Configurations".
 
-In CapRover → app settings → HTTP Settings → "Edit Default NGINX Configurations", inside the **port-443 server block** (the one that has `proxy_pass $upstream;` for `location /`), add:
+**Important gotcha**: both location blocks MUST go in the port-443 server (the one with `proxy_pass $upstream;` for `location /`), not the port-80 forceSsl redirect stub. Putting them in the wrong server block is silently invisible because browsers always reach the site over HTTPS.
+
+#### 5a. `/proxy/nhc/` — NHC tropical-cyclone feed
+
+The NOAA NHC feed does not ship `Access-Control-Allow-Origin`; the browser can't fetch it directly. Snippet from the infra file:
 
 ```nginx
 # Reverse-proxy for NHC tropical cyclone feed (no CORS upstream).
@@ -90,107 +98,44 @@ location /proxy/nhc/ {
 }
 ```
 
-**Important gotcha**: this block MUST go in the port-443 server (the one that actually serves the site to browsers), not the port-80 `forceSsl` redirect stub. Putting it in the wrong server block is silently invisible because browsers always reach the site over HTTPS. Background and the full investigation of options vs. Cloudflare Workers: [frontend/docs/proxy.md](frontend/docs/proxy.md).
-
 After saving, verify with:
 ```bash
 curl -i https://earth-clock.onemonkey.org/proxy/nhc/CurrentStorms.json
 ```
-Expected: `200 OK` + `Access-Control-Allow-Origin: *` + a JSON body (e.g. `{"activeStorms": []}` off-season).
+Expected: `200 OK` + `Access-Control-Allow-Origin: *` + a JSON body (e.g. `{"activeStorms": []}` off-season). Background: [frontend/docs/proxy.md](frontend/docs/proxy.md).
 
-### 5b. NGINX override — the `/proxy/geocode/` rule
+#### 5b. `/proxy/geocode/` — reverse geocoder (LocationIQ)
 
-Reverse geocoding for the click-to-pin Location panel. The browser hits
-`/proxy/geocode/reverse?lat=…&lon=…` (a same-origin URL), NGINX forwards to the
-upstream geocoder. Same shape as the NHC block above. Two reasons it goes through
-the proxy instead of hitting the upstream directly:
+The browser hits `/proxy/geocode/reverse?lat=…&lon=…`; NGINX forwards to LocationIQ
+and injects the API key. Two reasons to proxy rather than hit the upstream directly:
 
-1. The server can set a proper `User-Agent` identifying earth-clock, which the
-   upstream geocoder asks for in its usage policy. Browsers don't let JS override UA.
-2. We can swap upstreams (Nominatim → LocationIQ → self-host) by changing one
-   line here, no client rebuild needed. Nominatim's public service is run as a
-   charity and periodically returns 503 under load; LocationIQ is a paid mirror
-   of the same API surface with a free tier (5,000 requests / day) and dedicated
-   infra. See **5c** below for the swap.
+1. Sets a proper `User-Agent` identifying earth-clock (geocoders ask for this in their usage policy; browsers don't let JS override UA).
+2. Upstream can be swapped (Nominatim → LocationIQ → self-host) by changing one line, no client rebuild.
 
-Default block — proxies to Nominatim:
+**Active config uses LocationIQ** — same Nominatim-compatible API surface, dedicated infra, free tier covers 5 000 req/day. The API key is a `pk.`-prefix publishable client key (LocationIQ's docs explicitly say these can be exposed to clients). To rotate: update `nginx-caprover-override.local.conf` and re-paste into CapRover.
+
+Snippet (see `infra/nginx-caprover-override.local.conf` for the full block with key filled in):
 
 ```nginx
-# Reverse-proxy for the geocoder (Nominatim default; swap to LocationIQ when ready).
-location /proxy/geocode/ {
-    proxy_pass         https://nominatim.openstreetmap.org/;
-    proxy_ssl_server_name on;
-    proxy_set_header   Host nominatim.openstreetmap.org;
-    proxy_set_header   User-Agent "earth-clock (earth-clock.onemonkey.org)";
-    proxy_hide_header  Set-Cookie;
-    add_header Access-Control-Allow-Origin *  always;
-    add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
-    proxy_intercept_errors on;
-    # Cache successful responses for 12 hours — anyone re-pinning a place they
-    # (or another visitor) clicked recently gets an instant response without
-    # touching the upstream. Requires a `proxy_cache_path` directive at the
-    # http {} level; CapRover's default config has one named `default` you can
-    # use, or add `proxy_cache_path /tmp/nginx_cache levels=1:2 keys_zone=geocode:10m max_size=100m;`.
-    proxy_cache geocode;
-    proxy_cache_valid 200 12h;
-    proxy_cache_valid 404 1h;
-}
-```
-
-Same port-443 gotcha as the NHC block.
-
-Verify:
-```bash
-curl -i "https://earth-clock.onemonkey.org/proxy/geocode/reverse?format=jsonv2&lat=43.26&lon=-2.93"
-```
-Expected: `200 OK` + JSON containing `"display_name"` field starting with "Bilbao".
-
-### 5c. Swap to LocationIQ — recommended
-
-Nominatim's public instance periodically 503s under load (it's run as a charity
-by the OSMF). For production we use **[LocationIQ](https://locationiq.com/)**:
-same Nominatim-compatible API surface, dedicated infrastructure, free tier
-covers 5 000 requests / day which is plenty for a typical day on this site.
-
-**Replace the `5b` NGINX block** with this one. The key below is earth-clock's
-LocationIQ publishable key — LocationIQ's `pk.`-prefix keys are designed to be
-visible to clients (their docs say so explicitly; that's why the prefix
-distinguishes them from `sk.` server-only secrets), so committing it here is
-fine. Rotate by replacing in this block + the curl test below.
-
-```nginx
-location /proxy/geocode/ {
-    # Strip /proxy/geocode/ and pass through to LocationIQ's reverse-geocode
-    # endpoint, injecting our API key. $is_args expands to "?" if any query
-    # args were present, "" otherwise — so the &key= is correctly appended.
-    proxy_pass         https://us1.locationiq.com/v1/reverse$is_args$args&key=pk.4fe14b2bb708d093c52fa1f37206ead4;
+# Exact match — prevents NGINX appending "reverse" to the proxy_pass URI path.
+location = /proxy/geocode/reverse {
+    proxy_pass         https://us1.locationiq.com/v1/reverse$is_args$args&key=YOUR_LOCATIONIQ_KEY;
     proxy_ssl_server_name on;
     proxy_set_header   Host us1.locationiq.com;
     proxy_hide_header  Set-Cookie;
     add_header Access-Control-Allow-Origin *  always;
     add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
     proxy_intercept_errors on;
-    # 12-hour cache of successful results; 1-hour cache of 404s.
-    proxy_cache geocode;
-    proxy_cache_valid 200 12h;
-    proxy_cache_valid 404 1h;
 }
 ```
-
-Save the override. The client doesn't change — same `/proxy/geocode/reverse`
-URL contract.
 
 Verify:
 ```bash
 curl -i "https://earth-clock.onemonkey.org/proxy/geocode/reverse?format=jsonv2&lat=43.26&lon=-2.93"
 ```
-Expected: `200 OK` + JSON with `"display_name":"Bilbao, …"`. (Our actual
-verification at v0.2.0 from a dev machine: LocationIQ returned `place_id`
-289723926 for Bilbao with the full Basque-Country / Spain hierarchy.)
+Expected: `200 OK` + JSON with `"display_name":"Bilbao, …"`.
 
-LocationIQ's response shape is Nominatim-compatible (they fork Nominatim and add
-their own infra), so the client parser in [geocoder.ts](frontend/src/data/geocoder.ts)
-works unchanged.
+The client parser in [geocoder.ts](frontend/src/data/geocoder.ts) works unchanged — LocationIQ's response shape is Nominatim-compatible.
 
 ### 6. Updating
 
