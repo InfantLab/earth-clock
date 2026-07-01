@@ -137,13 +137,6 @@ export class EclipsePanel {
     return this.activeTab;
   }
 
-  /** On narrow/touch screens, hide the picker after a selection so the eclipse
-   *  plays out on the visible globe without the panel blocking the view.
-   *  The Eclipse layer stays active — only the catalogue panel is hidden. */
-  private collapseIfMobile() {
-    if (window.matchMedia("(max-width: 600px)").matches) this.setVisible(false);
-  }
-
   private setActiveTab(tab: TabKey) {
     if (this.activeTab === tab) return;
     this.activeTab = tab;
@@ -183,12 +176,11 @@ export class EclipsePanel {
         </div>
         <div class="orrery-ecl-line3">${escapeHtml(e.region)}</div>
       `;
-      row.addEventListener("click",   () => { this.callbacks.onJumpSolar?.(e); this.collapseIfMobile(); });
+      row.addEventListener("click",   () => this.callbacks.onJumpSolar?.(e));
       row.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
           this.callbacks.onJumpSolar?.(e);
-          this.collapseIfMobile();
         }
       });
       this.solarListEl.appendChild(row);
@@ -231,12 +223,11 @@ export class EclipsePanel {
         </div>
         <div class="orrery-ecl-line3">${escapeHtml(e.region)}</div>
       `;
-      row.addEventListener("click",   () => { this.callbacks.onJumpLunar?.(e); this.collapseIfMobile(); });
+      row.addEventListener("click",   () => this.callbacks.onJumpLunar?.(e));
       row.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
           this.callbacks.onJumpLunar?.(e);
-          this.collapseIfMobile();
         }
       });
       this.lunarListEl.appendChild(row);

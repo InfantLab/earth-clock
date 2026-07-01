@@ -467,8 +467,22 @@ const pinnedLocation: { lat: number; lon: number; visible: boolean } = { lat: 0,
 // bundled eclipse event with a one-click "jump to peak". Toggled by the Astro row's
 // "Eclipse" entry — same toggle drives the 3D EclipseLayer.mesh visibility.
 const eclipsePanel = new EclipsePanel(document.body, {
-  onJumpSolar: (event) => jumpToEclipseEvent(event),
-  onJumpLunar: (event) => jumpToLunarEclipseEvent(event),
+  onJumpSolar: (event) => {
+    jumpToEclipseEvent(event);
+    // On mobile the picker blocks the globe. Hide it after the jump so the
+    // eclipse plays out on the full screen. Use setTimeout so this runs after
+    // all synchronous state changes in jumpToEclipseEvent (including any
+    // menu.setLayer → apply → setVisible(true) that would re-show the panel).
+    if (window.matchMedia("(max-width: 600px)").matches) {
+      setTimeout(() => eclipsePanel.setVisible(false), 0);
+    }
+  },
+  onJumpLunar: (event) => {
+    jumpToLunarEclipseEvent(event);
+    if (window.matchMedia("(max-width: 600px)").matches) {
+      setTimeout(() => eclipsePanel.setVisible(false), 0);
+    }
+  },
   // Tab change — clear the OTHER eclipse kind so its visuals stop. Without
   // this, switching to 🌑 Lunar would leave the previously-loaded solar
   // umbra disc + path-of-totality polyline still drawn on Earth (and vice

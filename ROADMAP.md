@@ -57,10 +57,12 @@ resolved the "Invalid Request" error. Geocoder now returns place names correctly
 - SunDiscPanel capped at 180 px wide on mobile; SVG disc shrunk 201 px → 96 px so it
   sits compactly in the corner rather than blocking the view.
 
-### ⬜ Mobile — real-device QA pass
+### ✅ Mobile — real-device QA pass
 
-Walk the UI on iOS Safari + Android Chrome at 360 / 414 px wide, portrait +
-landscape. Flag anything that broke or still feels wrong. Carried from v0.2.3.
+Tested on iPhone (iOS Safari). Issues found and fixed: menu auto-collapse after
+toggle, eclipse picker auto-hide after row selection (fixed in main.ts with
+setTimeout to guarantee ordering after all synchronous state changes), compact
+SunDiscPanel. No outstanding items.
 
 ---
 
