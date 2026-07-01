@@ -309,5 +309,5 @@ feature feel intentional rather than incidental.
 | Coastlines | ✅ | `public/data/earth-topo.json`, Natural Earth 50 m. |
 | WebGL cutover | ✅ | v0.1.0 — WebGL at `/`, classic at `/classic/`. |
 | Docs / about page | 🔄 | `/about/` panel landed; broader web docs still TODO. |
-| LocationIQ geocoder | ⬜ | API key + NGINX block — see v0.2.3 above. |
+| LocationIQ geocoder | ✅ | API key + NGINX block active; use `format=json` (not `jsonv2`) — LocationIQ doesn't support Nominatim's extended format. |
 | Browser-matrix QA | ⬜ | Tested Chrome / Edge only. Verify Safari, Firefox, mobile. |

@@ -69,7 +69,9 @@
       font-size: 22px;
       letter-spacing: 0.06em;
       color: var(--fg);
+      border-bottom: none;
     }
+    .brand:hover { color: var(--accent-warm); border-bottom: none; }
     .brand-tag { color: var(--fg-dim); margin-left: 0.4em; font-size: 0.82em; }
     .back {
       font-size: 13px;
@@ -283,7 +285,7 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <span class="brand">earth-clock <span class="brand-tag">/about</span></span>
+    <a href="/" class="brand">earth-clock <span class="brand-tag">/about</span></a>
     <a class="back" href="/about/kids/">👋 For kids</a>
     <a class="back" href="/">← back to the globe</a>
   </div>

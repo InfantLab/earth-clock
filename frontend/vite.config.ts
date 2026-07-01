@@ -52,11 +52,9 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/proxy\/nhc/, ""),
       },
       // Reverse-geocoder proxy. Same URL contract in dev + prod (the production
-      // NGINX block at /proxy/geocode/ has the matching rule — see DEPLOYMENT.md
-      // §5c). Both dev + prod target LocationIQ, which has a Nominatim-compatible
-      // API surface, dedicated infra (no public-service 503s), and a 5k-req/day
-      // free tier. `pk.`-prefix keys are intended to be visible — see DEPLOYMENT.md
-      // for the rationale.
+      // NGINX block at /proxy/geocode/ has the matching rule — see DEPLOYMENT.md §5b).
+      // Dev + prod target LocationIQ (Nominatim-compatible API, 5k req/day free tier).
+      // Use format=json — LocationIQ does not support Nominatim's jsonv2 extension.
       "/proxy/geocode": {
         target: "https://us1.locationiq.com",
         changeOrigin: true,

@@ -75,7 +75,7 @@ export async function reverseGeocode(lat: number, lon: number): Promise<GeocodeR
   lastRequest = now;
 
   const params = new URLSearchParams({
-    format: "jsonv2",
+    format: "json",
     lat: lat.toFixed(5),
     lon: lon.toFixed(5),
     zoom: "10",       // ≈ city-sized features. Higher = more specific, lower = more general.
