@@ -82,11 +82,67 @@
       margin: 0;
     }
 
+    /* TOC (mobile) */
+    nav.toc {
+      max-width: var(--max-width);
+      margin: 32px auto 0;
+      padding: 16px 24px;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      font-size: 13px;
+      color: var(--fg-mute);
+    }
+    nav.toc strong { color: var(--fg-mute); font-weight: normal; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 1em; }
+    nav.toc a { color: var(--fg); border: none; margin-right: 1.2em; display: inline-block; padding: 2px 0; }
+    nav.toc a:hover { color: var(--accent); }
+
+    /* Sidebar layout (wide) */
+    .page-wrap {
+      display: flex;
+      align-items: flex-start;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    aside.sidenav { display: none; }
+
     /* Main content */
     main {
-      max-width: var(--max-width);
-      margin: 0 auto;
-      padding: 0 24px 96px;
+      margin: 0;
+      padding: 0 0 96px;
+    }
+
+    @media (min-width: 860px) {
+      nav.toc { display: none; }
+      aside.sidenav {
+        display: block;
+        flex-shrink: 0;
+        width: 152px;
+        margin-right: 36px;
+      }
+      .sidenav-inner {
+        position: sticky;
+        top: 60px;
+        padding-top: 56px;
+        font-size: 12.5px;
+        line-height: 1.7;
+      }
+      .sidenav-inner strong {
+        display: block;
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--fg-dim);
+        margin-bottom: 10px;
+      }
+      .sidenav-inner a {
+        display: block;
+        color: var(--fg-mute);
+        border: none;
+        padding: 2px 0;
+        transition: color 120ms;
+      }
+      .sidenav-inner a:hover { color: var(--link-hover); border: none; }
     }
     section { padding-top: 52px; scroll-margin-top: 72px; }
     section > h2 {
@@ -164,6 +220,43 @@
     This isn't a picture. It's a live 3D model of our planet showing exactly what Earth looks like at this very moment — real clouds, real weather, real time, real sun.
   </p>
 </div>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <a href="#globe">The globe</a>
+  <a href="#howto">Using it</a>
+  <a href="#time">Why a clock?</a>
+  <a href="#weather">Weather</a>
+  <a href="#sun-moon">Sun &amp; moon</a>
+  <a href="#timezones">Time zones</a>
+  <a href="#aurora">Auroras</a>
+  <a href="#eclipse">Eclipses</a>
+  <a href="#data">The data</a>
+  <a href="#location">Click to pin</a>
+  <a href="#buttons">All buttons</a>
+  <a href="#trythis">Try this</a>
+  <a href="#contact">Say hello</a>
+</nav>
+
+<div class="page-wrap">
+<aside class="sidenav">
+  <div class="sidenav-inner">
+    <strong>Contents</strong>
+    <a href="#globe">The globe</a>
+    <a href="#howto">Using it</a>
+    <a href="#time">Why a clock?</a>
+    <a href="#weather">Weather</a>
+    <a href="#sun-moon">Sun &amp; moon</a>
+    <a href="#timezones">Time zones</a>
+    <a href="#aurora">Auroras</a>
+    <a href="#eclipse">Eclipses</a>
+    <a href="#data">The data</a>
+    <a href="#location">Click to pin</a>
+    <a href="#buttons">All buttons</a>
+    <a href="#trythis">Try this</a>
+    <a href="#contact">Say hello</a>
+  </div>
+</aside>
 
 <main>
 
@@ -493,7 +586,7 @@
 </section>
 
 
-<section>
+<section id="contact">
   <h2>Say hello</h2>
   <p>
     earth-clock was made by <strong>Caspar Addyman</strong>. If you have a question,
@@ -506,6 +599,7 @@
 </section>
 
 </main>
+</div><!-- /.page-wrap -->
 
 <footer>
   <p>
