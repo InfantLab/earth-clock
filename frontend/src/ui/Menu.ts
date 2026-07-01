@@ -358,7 +358,7 @@ export class Menu {
         btn.className = "orrery-tb orrery-action";
         btn.textContent = "Find moon";
         btn.title = "Reposition the camera along the moon's direction so both Earth and moon sit in frame";
-        btn.addEventListener("click", () => this.findMoonHandler?.());
+        btn.addEventListener("click", () => { this.findMoonHandler?.(); this.collapseIfMobile(); });
         buttonsHost.appendChild(btn);
       }
 
@@ -548,6 +548,19 @@ export class Menu {
     }
     if (key === "skyboxHi") {
       this.skyboxHiResHandler?.(this.state.skyboxHi);
+    }
+
+    // On narrow/touch screens the menu panel overlaps most of the globe. After
+    // any toggle, collapse it immediately so the effect is visible without a
+    // second tap. The user can re-open by tapping the "earth-clock" wordmark.
+    this.collapseIfMobile();
+  }
+
+  private collapseIfMobile() {
+    if (window.matchMedia("(max-width: 600px)").matches && this.open) {
+      this.open = false;
+      this.panel.classList.add("collapsed");
+      saveOpen(false);
     }
   }
 

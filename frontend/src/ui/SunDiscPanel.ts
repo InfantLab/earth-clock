@@ -404,9 +404,18 @@ function injectStyles() {
 
     @media (max-width: 600px) {
       #orrery-sundisc {
-        top: 56px; left: 8px; right: 8px;
+        top: 56px; left: 8px; right: auto;
+        max-width: 180px;
         max-height: calc(100vh - 130px);
         overflow-y: auto;
+      }
+      /* Scale the SVG disc down so it fits in the compact panel without
+         dominating the screen. The viewBox is unchanged so circle positions
+         remain correct — only the rendered size shrinks. */
+      #orrery-sundisc-svg-solar,
+      #orrery-sundisc-svg-lunar {
+        width: 96px !important;
+        height: 96px !important;
       }
       .orrery-sundisc-scrub-btn {
         width: 44px; height: 44px;
