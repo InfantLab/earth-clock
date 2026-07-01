@@ -9,6 +9,45 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.2.4 — 2026-07-01 — Feedback, about pages, mobile polish
+
+**Feedback links** — `· feedback` mailto link (`caspar@onemonkey.org`) added to the
+main menu meta line. Both about pages get a dedicated contact section with Caspar's name
+and email. The "earth-clock" brand wordmark in each about page header is now an `<a href="/">`
+link back to the live globe.
+
+**About pages — sticky sidebar TOC** — the main `/about/` page's sidebar was already
+sticky; this passes the same treatment to `/about/kids/`. Kids page now has 13 section
+links in a sticky sidebar (≥860 px) and a horizontal strip TOC on mobile, matching the
+main about page layout. Both pages gained a `#contact` anchor and "Say hello" heading for
+the contact section.
+
+**LocationIQ geocoder** — NGINX reverse-proxy block added in
+`infra/nginx-caprover-override.conf` (committed with placeholder key) and the gitignored
+`.local.conf` (live key injected). Root-cause fix: LocationIQ rejects Nominatim's
+`format=jsonv2` extension with an XML "Invalid Request" error; changed `geocoder.ts` to
+send `format=json`. Geocoder now returns place names correctly on click-to-pin.
+
+**infra/ directory** — `nginx-caprover-default.conf` (pristine copy of CapRover's default
+EJS template, never edited) and `nginx-caprover-override.conf` (our per-app additions:
+NHC CORS proxy + LocationIQ geocode proxy). Both committed; `.local.conf` variants with
+real keys are gitignored. `DEPLOYMENT.md` updated with the full two-section proxy guide.
+
+**Mobile — menu auto-collapse** — tapping any layer toggle on ≤600 px screens now
+collapses the menu panel immediately so the change is visible on the globe without a
+second tap. "Find moon" does the same.
+
+**Mobile — eclipse picker auto-hide** — tapping a solar or lunar eclipse row on mobile
+hides the catalogue list so the event plays out on the full visible globe. The Eclipse
+layer, umbra disc, and scrub controls remain active; the list can be re-opened via the
+menu's Eclipse toggle.
+
+**Mobile — compact SunDiscPanel** — on ≤600 px the panel is capped at 180 px wide (not
+full-width) and the SVG disc shrinks from 201 px → 96 px so it sits compactly in the
+top-left corner instead of blocking most of the screen.
+
+---
+
 ## v0.2.3 — 2026-06-29 — Quick wins: flat map, mobile, eclipse polish
 
 **FlatMap — terminator arc** — a crisp white `THREE.Line` now traces the

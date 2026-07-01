@@ -28,33 +28,39 @@ Current shipped version: **v0.2.3** (2026-06-29); **v0.2.4 in progress**. See [C
 
 ---
 
-## v0.2.4 — Feedback link + operational polish
+## v0.2.4 — Feedback + about pages + mobile polish
 
-### ✅ Feedback link in menu and about page
+### ✅ Feedback link in menu and about pages
 
-Added `· feedback` mailto link to the bottom meta line of the main menu
-(`caspar@onemonkey.org`), and a prominent contact callout in the about page
-with name and email displayed plainly.
+`· feedback` mailto link in the main menu meta line; prominent contact section
+in both about pages with name (`caspar@onemonkey.org`) displayed plainly.
+"earth-clock" brand wordmark in both about page headers is now a link back to `/`.
 
-### ⬜ About pages — table of contents + sticky sidebar
+### ✅ About pages — sticky sidebar TOC + kids page TOC
 
-- Add a table of contents section to the kids about page (currently has none).
-- Both about pages: make the existing sidebar TOC sticky so it stays visible as
-  the user scrolls (`position: sticky; top: 1rem` on the `aside.sidenav` inner
-  div). Currently it disappears off the top on long sections. Low effort, high
-  readability payoff.
+Both about pages have a sticky sidebar TOC on wide screens (≥860 px) and a
+horizontal strip TOC on mobile. The kids page previously had neither — now
+matches the main about page structure with 13 section links.
+
+### ✅ LocationIQ geocoder live
+
+API key, NGINX proxy block, deployment docs all in place. Root-cause fix: LocationIQ
+does not support Nominatim's `format=jsonv2` extension — changing to `format=json`
+resolved the "Invalid Request" error. Geocoder now returns place names correctly.
+
+### ✅ Mobile UX — menu auto-collapse + eclipse picker + compact sun disc
+
+- Menu auto-collapses after any layer toggle on ≤600 px so the effect is immediately
+  visible on the globe. "Find moon" also collapses.
+- Eclipse catalogue hides itself after selecting an event on mobile; eclipse layer and
+  scrub controls remain active so the event plays unobstructed.
+- SunDiscPanel capped at 180 px wide on mobile; SVG disc shrunk 201 px → 96 px so it
+  sits compactly in the corner rather than blocking the view.
 
 ### ⬜ Mobile — real-device QA pass
 
 Walk the UI on iOS Safari + Android Chrome at 360 / 414 px wide, portrait +
 landscape. Flag anything that broke or still feels wrong. Carried from v0.2.3.
-
-### ✅ LocationIQ in production
-
-API key obtained. NGINX geocode block added to `infra/nginx-caprover-override.conf`
-(template) and `nginx-caprover-override.local.conf` (live, gitignored). Paste
-local file into CapRover to activate. DEPLOYMENT.md updated to reflect LocationIQ
-as the active geocoder.
 
 ---
 
