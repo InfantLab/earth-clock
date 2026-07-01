@@ -36,6 +36,14 @@ Added `· feedback` mailto link to the bottom meta line of the main menu
 (`caspar@onemonkey.org`), and a prominent contact callout in the about page
 with name and email displayed plainly.
 
+### ⬜ About pages — table of contents + sticky sidebar
+
+- Add a table of contents section to the kids about page (currently has none).
+- Both about pages: make the existing sidebar TOC sticky so it stays visible as
+  the user scrolls (`position: sticky; top: 1rem` on the `aside.sidenav` inner
+  div). Currently it disappears off the top on long sections. Low effort, high
+  readability payoff.
+
 ### ⬜ Mobile — real-device QA pass
 
 Walk the UI on iOS Safari + Android Chrome at 360 / 414 px wide, portrait +
