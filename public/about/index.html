@@ -117,7 +117,12 @@
     /* ---- Sidebar layout (wide) ---- */
     .page-wrap {
       display: flex;
-      align-items: flex-start;
+      /* stretch (not flex-start) so aside.sidenav's box spans the same height as
+         <main> — position: sticky on .sidenav-inner needs that extra room within
+         its containing block to actually stick as the page scrolls. With
+         flex-start, aside shrinks to its own short content height and scrolls
+         away with everything else instead of floating. */
+      align-items: stretch;
       max-width: 980px;
       margin: 0 auto;
       padding: 0 24px;
