@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>About · earth-clock</title>
-  <meta name="description" content="A real-time 3D visualisation of planet Earth — live weather, clouds, auroras, fires, hurricanes, lightning, with the sun, moon, and stars in their true positions. Notes on the data, the astronomy, and how it's put together.">
+  <meta name="description" content="A real-time 3D visualisation of planet Earth — live weather, clouds, auroras, fires, hurricanes, lightning, earthquakes, and volcanoes, with the sun, moon, and stars in their true positions. Notes on the data, the astronomy, and how it's put together.">
   <meta property="og:title" content="About earth-clock">
   <meta property="og:description" content="A real-time 3D Earth visualisation — live data, real astronomy, NASA-derived eclipse paths. The nerdy details.">
   <meta property="og:url" content="https://earth-clock.onemonkey.org/about/">
@@ -294,7 +294,7 @@
 <div class="hero">
   <h1>A clock made of planet Earth</h1>
   <p class="lede">
-    What time is it? The honest answer is: look at where the sun is. earth-clock is a live 3D globe showing Earth exactly as it is right now — the sun in its true position, real satellite weather, live storms and fires, and the time in every timezone at a glance.
+    What time is it? The honest answer is: look at where the sun is. earth-clock is a live 3D globe showing Earth exactly as it is right now — the sun in its true position, real satellite weather, live storms and fires, this week's earthquakes and any volcanoes currently erupting, and the time in every timezone at a glance.
   </p>
   <figure class="fig hero">
     <img src="/screenshots/00-earthclock-v022.png" alt="earth-clock v0.2.2 — the globe showing North and South America with timezone labels, the menu, and the sun and moon pointer arms">
@@ -306,6 +306,7 @@
   <strong>jump to</strong>
   <a href="#what">What you see</a>
   <a href="#geography">Geography</a>
+  <a href="#geology">Geology</a>
   <a href="#feeds">Live data</a>
   <a href="#astronomy">Astronomy</a>
   <a href="#eclipse">Eclipses</a>
@@ -322,6 +323,7 @@
     <strong>Contents</strong>
     <a href="#what">What you see</a>
     <a href="#geography">Geography</a>
+    <a href="#geology">Geology</a>
     <a href="#feeds">Live data</a>
     <a href="#astronomy">Astronomy</a>
     <a href="#eclipse">Eclipses</a>
@@ -415,6 +417,31 @@
   <p>
     Toggle <strong>Relative</strong> to label zones by their offset from <em>your</em> local clock rather than UTC. If you are in UTC+1, the UTC+3 zone shows <code>+2:00</code> and UTC−5 shows <code>−6:00</code>. The time shown inside the pill switches to the actual local clock time for that zone. Useful for reading off scheduling differences at a glance.
   </p>
+</section>
+
+<section id="geology">
+  <h2>Geology</h2>
+  <p>
+    Added in v0.3.0, prompted by a primary-school class visit: kids instinctively want to see the <em>structure</em> of Earth, not just its weather. Tectonic plates, earthquakes, and volcanoes are deeply connected — most volcanoes and the overwhelming majority of earthquakes sit directly on plate boundaries — so all three live together in one <strong>Geology</strong> row in the menu, between Geography and Astro.
+  </p>
+
+  <h3>Tectonic plates</h3>
+  <p>
+    241 plate-boundary lines from Peter Bird's PB2002 model, drawn in warm amber/terracotta so they read distinctly from the cool-white coastlines. Effectively static on human timescales, so the data is bundled once rather than fetched live. Rendered with Three.js's "fat line" material rather than the default WebGL line — plain <code>LineBasicMaterial.linewidth</code> is silently capped at 1px on almost every desktop GPU driver, so a genuinely thicker stroke needs a purpose-built shader.
+  </p>
+  <p class="feed-src">Source: Peter Bird (2003), <em>An updated digital model of plate boundaries</em>, mirrored as GeoJSON by <a href="https://github.com/fraxen/tectonicplates">fraxen/tectonicplates</a>.</p>
+
+  <h3>Earthquakes</h3>
+  <p>
+    Every earthquake from the past 7 days, worldwide. Marker size scales with magnitude; colour encodes depth — shallow crustal quakes read red, deep subduction-zone events read blue. Events fade smoothly to nothing across the 7-day window, with a brief settling pulse on anything under a day old.
+  </p>
+  <p class="feed-src">Source: USGS Earthquake Hazards Program, refreshed every 15 min via a small server-side proxy (USGS doesn't send CORS headers, so the browser can't fetch it directly) · <a href="https://earthquake.usgs.gov/">earthquake.usgs.gov</a></p>
+
+  <h3>Volcanoes &amp; active eruptions</h3>
+  <p>
+    1,215 Holocene-era volcanoes from the Smithsonian's Global Volcanism Program, each a small triangular marker. Most sit quietly; any volcano within 20 km of a current NASA FIRMS thermal-anomaly detection — the same feed that drives the Active fires layer below — flips to a hot, pulsing colour. A live, approximate "this one's currently active" signal with no extra data feed of its own.
+  </p>
+  <p class="feed-src">Source: Smithsonian Institution, Global Volcanism Program · <a href="https://volcano.si.edu/">volcano.si.edu</a></p>
 </section>
 
 <section id="feeds">
@@ -660,6 +687,9 @@
     <li><strong>Cameron Beccario</strong> — the original <a href="https://github.com/cambecc/earth"><code>earth</code></a> codebase and design language that earth-clock descends from.</li>
     <li><strong>NASA</strong> — VIIRS imagery (GIBS), FIRMS fire detections, eclipse predictions (Goddard / Espenak / Meeus), public-domain texture derivatives.</li>
     <li><strong>NOAA</strong> — GFS weather model (NOMADS), tropical cyclones (NHC), space weather and aurora (SWPC).</li>
+    <li><strong>USGS</strong> — Earthquake Hazards Program real-time feed.</li>
+    <li><strong>Smithsonian Institution</strong> — Global Volcanism Program, Volcanoes of the World database.</li>
+    <li><strong>Peter Bird</strong> — PB2002 digital plate-boundary model, mirrored as GeoJSON by <a href="https://github.com/fraxen/tectonicplates">fraxen/tectonicplates</a>.</li>
     <li><strong>Blitzortung</strong> — community-volunteer-operated VLF lightning detection network.</li>
     <li><strong>Solar System Scope</strong> (INOVE s.r.o.) — Earth, moon, and starmap textures, CC-BY 4.0.</li>
     <li><strong>Natural Earth</strong> — public-domain coastline TopoJSON.</li>
@@ -703,7 +733,7 @@
     earth-clock · <a href="/">live view</a> · <a href="/about/">about</a> · <a href="/about/kids/">about for kids</a> · <a href="https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/" target="_blank" rel="noopener">blog</a> · <a href="https://github.com/infantlab/earth-clock">source code</a> · MIT licensed
   </p>
   <p>
-    Last updated for v0.2.4 — Feedback link + contact page; v0.2.3 quick wins (terminator arc, penumbral eclipse, skybox toggle, mobile markers, flat-map polish).
+    Last updated for v0.3.0 — Geology layer (tectonic plates, earthquakes, volcanoes, active-eruption cross-reference); v0.2.4 feedback link + contact page; v0.2.3 quick wins (terminator arc, penumbral eclipse, skybox toggle, mobile markers, flat-map polish).
   </p>
 </footer>
 
