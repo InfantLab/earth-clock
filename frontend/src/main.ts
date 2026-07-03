@@ -136,6 +136,7 @@ scene.add(volcanoes.mesh);
 // Timezone meridian overlay — nominal UTC-hour lines every 15° of longitude with floating
 // local-time labels at the equator. Default off (toggled via Geography row in the menu).
 const timezoneLayer = new TimezoneLayer();
+timezoneLayer.setResolution(window.innerWidth, window.innerHeight);
 scene.add(timezoneLayer.mesh);
 
 // Live cloud cover layer — translucent shell above the surface, textured with yesterday's
@@ -289,6 +290,7 @@ window.addEventListener("resize", () => {
   trails.resize(window.innerWidth, window.innerHeight);
   flatMap.resize(window.innerWidth, window.innerHeight);
   plates.setResolution(window.innerWidth, window.innerHeight);
+  timezoneLayer.setResolution(window.innerWidth, window.innerHeight);
 });
 
 // Reusable scratch vectors — avoid allocating each frame

@@ -53,9 +53,17 @@ data: correctly flagged Etna, Merapi, Semeru, Lewotobi, Lewotolok,
 Krasheninnikov, Santa Maria, and Erebus — all volcanoes GVP itself lists as
 erupting in 2026.
 
-v0.3.0 Geology layer is feature-complete in source. Still pending: a
-production rebuild + deploy (see CLAUDE.md release flow) and updating the
-public about pages to describe the new layers.
+**Geology layer visibility** — earthquakes and dormant volcanoes were easy to
+lose against brighter layers (Fires) or terrain colour at default zoom.
+`EarthquakeLayer` point-size floor raised 2px → 4px; `VolcanoLayer` dormant
+marker floor raised 5px → 7px and triangles gained a dark inset stroke so they
+read against any background instead of blending into brown/green land.
+Timezone meridian/boundary lines (`TimezoneLayer`) switched from
+`LineBasicMaterial` (silently capped at 1px on virtually every desktop GL
+driver) to the `LineSegments2`/`LineMaterial` fat-line technique already used
+by `Plates.ts` — 1.5px (globe) / 2px (flat map), with a resolution uniform
+kept in sync via the new `TimezoneLayer.setResolution()`, called on load and
+on every window resize (same pattern as `Plates.setResolution()`).
 
 ---
 

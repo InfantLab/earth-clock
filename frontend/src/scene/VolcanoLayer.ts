@@ -82,7 +82,9 @@ export class VolcanoLayer {
           vErupting = aErupting;
           vHash = aHash;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = mix(5.0, 10.0, aErupting);
+          // Floor raised from 5px — dormant markers were easy to lose against terrain
+          // texture at default zoom (see ROADMAP "exaggerating subtle live events").
+          gl_PointSize = mix(7.0, 12.0, aErupting);
         }
       `,
       fragmentShader: /* glsl */`
@@ -109,6 +111,12 @@ export class VolcanoLayer {
           vec3 hot     = vec3(1.0, 0.45, 0.1);
           float flicker = 0.8 + 0.2 * sin(uTime * 4.0 + vHash * 31.4);
           vec3 col = mix(dormant, hot * flicker, vErupting);
+
+          // Dark stroke near the triangle's edges — keeps markers legible against terrain
+          // colours close to the dormant fill (muted rock tones blend into brown/green land).
+          float edgeDist = min(d1, min(d2, d3));
+          float stroke = 1.0 - smoothstep(0.0, 0.05, edgeDist);
+          col = mix(col, vec3(0.05, 0.03, 0.02), stroke * 0.85);
 
           gl_FragColor = vec4(col, mix(0.7, 1.0, vErupting));
         }

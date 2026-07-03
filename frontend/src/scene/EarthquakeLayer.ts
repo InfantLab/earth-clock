@@ -99,7 +99,10 @@ export class EarthquakeLayer {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           // Magnitude is already log-scale (Richter/moment), so size scales linearly
           // with it rather than needing FireLayer's sqrt compression for raw-watt FRP.
-          float s = 2.0 + 10.0 * clamp((aMag - 1.0) / 7.0, 0.0, 1.0);
+          // Floor raised from 2px so the common M1-3 case doesn't disappear against
+          // brighter layers (Fires) sharing the globe — see ROADMAP "exaggerating
+          // subtle live events".
+          float s = 4.0 + 10.0 * clamp((aMag - 1.0) / 7.0, 0.0, 1.0);
           gl_PointSize = s;
         }
       `,

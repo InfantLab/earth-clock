@@ -1,4 +1,7 @@
 import * as THREE from "three";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 const AXIAL_TILT   = 23.44 * Math.PI / 180;
 const LINE_R       = 1.003;   // boundary lines hug the globe surface
@@ -295,6 +298,11 @@ export class TimezoneLayer {
   private static readonly LWF = 96;
   private static readonly LHF = 42;
 
+  // Screen-space linewidth for the fat-line boundary shader (see addLineSegments doc comment)
+  // needs the renderer's viewport size, cached here and kept current via setResolution().
+  private resolutionWidth  = typeof window !== "undefined" ? window.innerWidth  : 1;
+  private resolutionHeight = typeof window !== "undefined" ? window.innerHeight : 1;
+
   constructor() {
     this.mesh = new THREE.Group();
     this.mesh.rotation.z = AXIAL_TILT;
@@ -346,8 +354,8 @@ export class TimezoneLayer {
       }
     }
 
-    this.addLineSegments(this.linesHost3D,   pos3D,   0x6699cc, 0.38);
-    this.addLineSegments(this.linesHostFlat, posFlat, 0x6699cc, 0.55);
+    this.addLineSegments(this.linesHost3D,   pos3D,   0x6699cc, 0.5,  1.5);
+    this.addLineSegments(this.linesHostFlat, posFlat, 0x6699cc, 0.65, 2.0);
   }
 
   private buildPoliticalGeometry(data: TzBoundsFile): void {
@@ -372,22 +380,43 @@ export class TimezoneLayer {
       }
     }
 
-    this.addLineSegments(this.linesHost3D,   pos3D,   0x6699cc, 0.38);
-    this.addLineSegments(this.linesHostFlat, posFlat, 0x6699cc, 0.55);
+    this.addLineSegments(this.linesHost3D,   pos3D,   0x6699cc, 0.5,  1.5);
+    this.addLineSegments(this.linesHostFlat, posFlat, 0x6699cc, 0.65, 2.0);
   }
 
-  private addLineSegments(host: THREE.Group, positions: number[], color: number, opacity: number): void {
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
-    host.add(new THREE.LineSegments(geom, mat));
+  /** Fat-line boundary rendering (LineSegments2/LineMaterial) rather than plain
+   *  LineSegments/LineBasicMaterial — regular WebGL line rendering is capped at 1px on
+   *  virtually every desktop GL driver (LineBasicMaterial.linewidth is silently ignored),
+   *  so a fat-line material is the only way to get a genuinely thicker stroke (same
+   *  technique as Plates.ts). linewidth is in screen pixels, kept in sync with the
+   *  renderer's viewport via resolutionWidth/Height (see setResolution()). */
+  private addLineSegments(host: THREE.Group, positions: number[], color: number, opacity: number, linewidth: number): void {
+    const geom = new LineSegmentsGeometry();
+    geom.setPositions(positions);
+    const mat = new LineMaterial({ color, linewidth, transparent: true, opacity, depthWrite: false });
+    mat.resolution.set(this.resolutionWidth, this.resolutionHeight);
+    host.add(new LineSegments2(geom, mat));
   }
 
-  /** Remove and dispose only LineSegments children, leaving sub-groups (e.g. sprite groups) intact. */
+  /** Keep the fat-line shader's screen-space linewidth correct as the viewport changes.
+   *  Call once at startup with the renderer's initial size, and again on every resize. */
+  setResolution(width: number, height: number): void {
+    this.resolutionWidth  = width;
+    this.resolutionHeight = height;
+    for (const host of [this.linesHost3D, this.linesHostFlat]) {
+      for (const c of host.children) {
+        if (c instanceof LineSegments2) (c.material as LineMaterial).resolution.set(width, height);
+      }
+    }
+  }
+
+  /** Remove and dispose only line-segment children, leaving sub-groups (e.g. sprite groups) intact. */
   private clearLinesHost(group: THREE.Group): void {
-    const toRemove = group.children.filter(c => c instanceof THREE.LineSegments);
+    const toRemove = group.children.filter(c => c instanceof LineSegments2);
     for (const c of toRemove) {
-      (c as THREE.LineSegments).geometry?.dispose();
+      const seg = c as LineSegments2;
+      seg.geometry?.dispose();
+      (seg.material as LineMaterial)?.dispose();
       group.remove(c);
     }
   }
