@@ -14,7 +14,7 @@
  *   6. git push (if --push flag given)
  */
 
-import { execSync }                    from "child_process";
+import { execSync, execFileSync }      from "child_process";
 import { readdirSync, existsSync }     from "fs";
 import { join, dirname }               from "path";
 import { fileURLToPath }               from "url";
@@ -83,8 +83,13 @@ const { version } = JSON.parse(
 );
 
 // ---- 6. Commit ----
-const msg = `build: v${version} production bundle\n\nSwaps ${removed[0] ?? "(none)"} → ${added[0]}.`;
-execSync(`git commit -m ${JSON.stringify(msg)}`, { stdio: "inherit", cwd: ROOT });
+// execFileSync bypasses the shell entirely (no cmd.exe / bash argument re-parsing), so the
+// subject/body split below survives untouched on every platform. A single execSync string
+// with an embedded "\n\n" broke on Windows: execSync shells out via cmd.exe by default,
+// which doesn't interpret \n as a real newline, so git received the literal two characters.
+const subject = `build: v${version} production bundle`;
+const body    = `Swaps ${removed[0] ?? "(none)"} → ${added[0]}.`;
+execFileSync("git", ["commit", "-m", subject, "-m", body], { stdio: "inherit", cwd: ROOT });
 
 // ---- 7. Push (optional) ----
 if (PUSH) run("git push");
