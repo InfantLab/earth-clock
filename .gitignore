@@ -14,6 +14,7 @@ screensaver/**/Deploy/
 
 # Generated runtime data (refreshed by services)
 public/data/weather/current/current-*.json
+public/data/earthquakes/
 
 # Claude Code workspace dir (chat history, scratch files) — never belongs in a commit
 .claude/

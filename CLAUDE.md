@@ -22,6 +22,13 @@ git commit -m "build: vX.Y.Z production bundle"
 git push
 ```
 
+**PowerShell** (Caspar's primary shell) doesn't understand `VAR=1 cmd` — use:
+```powershell
+cd frontend
+$env:BUILD_AS_ROOT = "1"; npm run build
+cd ..
+```
+
 Skipping the rebuild leaves prod stuck on the previous version while git
 reports the new commit hash — confusing because *something* deployed, just not
 what changed. See DEPLOYMENT.md §6 for the canonical procedure.

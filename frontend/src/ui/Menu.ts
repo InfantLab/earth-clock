@@ -19,9 +19,12 @@ import type { Globe } from "../scene/Globe";
 import type { Atmosphere } from "../scene/Atmosphere";
 import type { Moon } from "../scene/Moon";
 import type { Coastlines } from "../scene/Coastlines";
+import type { Plates } from "../scene/Plates";
+import type { VolcanoLayer } from "../scene/VolcanoLayer";
 import type { CloudLayer } from "../scene/CloudLayer";
 import type { AuroraLayer } from "../scene/AuroraLayer";
 import type { FireLayer } from "../scene/FireLayer";
+import type { EarthquakeLayer } from "../scene/EarthquakeLayer";
 import type { HurricaneLayer } from "../scene/HurricaneLayer";
 import type { HurricaneTrackLayer } from "../scene/HurricaneTrackLayer";
 import type { LightningLayer } from "../scene/LightningLayer";
@@ -41,9 +44,12 @@ export interface MenuLayers {
   atmosphere: Atmosphere;
   moon: Moon;
   coastlines: Coastlines;
+  plates: Plates;
+  volcanoes: VolcanoLayer;
   clouds: CloudLayer;
   aurora: AuroraLayer;
   fires: FireLayer;
+  earthquakes: EarthquakeLayer;
   hurricanes: HurricaneLayer;
   hurricaneTracks: HurricaneTrackLayer;
   lightning: LightningLayer;
@@ -85,6 +91,9 @@ type LayerKey =
   | "mslp" | "temp" | "rh" | "tpw" | "tcw"
   // Geography row — coastlines + night lights only; timezone items moved to Clock row
   | "coastlines" | "nightLights"
+  // Geology row — Earth's structure (v0.3.0). Live-data hazard layers (earthquakes)
+  // sit alongside static ones (plates, volcanoes) as those land in later phases.
+  | "earthquakes" | "plates" | "volcanoes"
   // Astro row. `eclipse` toggles both the 3D EclipseLayer mesh AND the top-left
   // Eclipse panel (catalogue browser + jump-to). The Moon toggle was removed in
   // v0.1.4 — the 3D moon mesh is always visible now, and the flat-map sun + moon
@@ -127,6 +136,8 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   mslp: false, temp: false, rh: false, tpw: false, tcw: false,
   // Geography
   coastlines: true, nightLights: true,
+  // Geology
+  earthquakes: true, plates: true, volcanoes: true,
   // Astro
   terminator: true, atmosphere: true, hands: true, eclipse: false,
   // View — hi-res sky off by default so first paint stays on the 250 KB 2K texture.
@@ -175,6 +186,8 @@ const LABELS: Record<LayerKey, string> = {
   tpw: "Moisture", tcw: "Cloud water",
   // Geography
   coastlines: "Coastlines", nightLights: "Night lights",
+  // Geology
+  earthquakes: "Earthquakes", plates: "Plates", volcanoes: "Volcanoes",
   // Astro
   terminator: "Day/night", atmosphere: "Atmosphere", hands: "Beams", eclipse: "Eclipse",
   // View
@@ -216,6 +229,10 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   // Geography
   coastlines:  "Natural Earth 50 m coastlines",
   nightLights: "City lights on the night side (Solar System Scope)",
+  // Geology
+  earthquakes: "Earthquakes past 7 days (USGS, refreshed 15 min) — sized by magnitude, coloured by depth (shallow red → deep blue)",
+  plates:      "Tectonic plate boundaries (Peter Bird's PB2002 dataset) — static, effectively fixed on human timescales",
+  volcanoes:   "~1,200 Holocene volcanoes (Smithsonian Global Volcanism Program) — hot pulsing markers show ones currently cross-referenced against active FIRMS thermal detections",
   // Astro
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
@@ -265,6 +282,10 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
   {
     label: "Geography",
     keys: ["coastlines", "nightLights"],
+  },
+  {
+    label: "Geology",
+    keys: ["earthquakes", "plates", "volcanoes"],
   },
   {
     label: "Astro",
@@ -610,7 +631,7 @@ export class Menu {
   private apply(key: LayerKey) {
     const on = this.state[key];
     const fresh = this.liveFreshnessOk;
-    const { globe, atmosphere, coastlines, clouds, aurora, fires, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails, timezoneLayer } = this.layers;
+    const { globe, atmosphere, coastlines, plates, volcanoes, clouds, aurora, fires, earthquakes, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails, timezoneLayer } = this.layers;
     switch (key) {
       // Cloud source picker — visibility is "is any source active?" The actual texture/
       // scalar swap happens in main.ts via onCloudsChange. (CloudLayer doesn't know the
@@ -630,6 +651,10 @@ export class Menu {
       case "fires":
         fires.mesh.visible     = on && fresh;
         fires.flatMesh.visible = on && fresh;
+        break;
+      case "earthquakes":
+        earthquakes.mesh.visible     = on && fresh;
+        earthquakes.flatMesh.visible = on && fresh;
         break;
       case "hurricanes":
         hurricanes.mesh.visible     = on && fresh;
@@ -663,6 +688,14 @@ export class Menu {
       case "coastlines":
         coastlines.mesh.visible     = on;
         coastlines.flatMesh.visible = on;
+        break;
+      case "plates":
+        plates.mesh.visible     = on;
+        plates.flatMesh.visible = on;
+        break;
+      case "volcanoes":
+        volcanoes.mesh.visible     = on;
+        volcanoes.flatMesh.visible = on;
         break;
       case "tzNominal":
       case "tzPolitical": {

@@ -8,10 +8,13 @@ import { Sun } from "./scene/Sun";
 import { Particles } from "./scene/Particles";
 import { Trails } from "./scene/Trails";
 import { Coastlines } from "./scene/Coastlines";
+import { Plates } from "./scene/Plates";
+import { VolcanoLayer, type VolcanoRecord } from "./scene/VolcanoLayer";
 import { TimezoneLayer } from "./scene/TimezoneLayer";
 import { CloudLayer } from "./scene/CloudLayer";
 import { AuroraLayer } from "./scene/AuroraLayer";
 import { FireLayer } from "./scene/FireLayer";
+import { EarthquakeLayer } from "./scene/EarthquakeLayer";
 import { HurricaneLayer } from "./scene/HurricaneLayer";
 import { HurricaneTrackLayer } from "./scene/HurricaneTrackLayer";
 import type { StormGeometry } from "./scene/HurricaneTrackLayer";
@@ -35,7 +38,9 @@ import type { EclipseEvent } from "./data/eclipseCatalog";
 import { LiveDataSource } from "./data/DataSource";
 import { fetchAuroraGrid } from "./data/auroraLoader";
 import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoader";
-import { fetchFireDetections } from "./data/firmsLoader";
+import { fetchFireDetections, type FireDetection } from "./data/firmsLoader";
+import { crossReferenceEruptions } from "./data/eruptionCrossRef";
+import { fetchEarthquakes } from "./data/earthquakeLoader";
 import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { reverseGeocode } from "./data/geocoder";
@@ -117,6 +122,17 @@ scene.add(moon.mesh);
 const coastlines = new Coastlines();
 scene.add(coastlines.mesh);
 
+// Tectonic plate boundaries (Peter Bird's PB2002 dataset, bundled). Static, so no live-data
+// freshness gating — same treatment as coastlines.
+const plates = new Plates();
+plates.setResolution(window.innerWidth, window.innerHeight);
+scene.add(plates.mesh);
+
+// Known volcano locations (Smithsonian GVP, bundled). Static markers; erupting subset is
+// flagged live by cross-referencing FIRMS thermal detections (see below).
+const volcanoes = new VolcanoLayer();
+scene.add(volcanoes.mesh);
+
 // Timezone meridian overlay — nominal UTC-hour lines every 15° of longitude with floating
 // local-time labels at the equator. Default off (toggled via Geography row in the menu).
 const timezoneLayer = new TimezoneLayer();
@@ -136,6 +152,11 @@ scene.add(aurora.mesh);
 // Geographically fixed, so rotates with Earth. Refreshes every hour.
 const fires = new FireLayer();
 scene.add(fires.mesh);
+
+// Earthquakes — USGS past-week feed, additive points at r=1.0017 sized by magnitude and
+// coloured by depth. Geographically fixed, so rotates with Earth. Refreshes every 15 min.
+const earthquakes = new EarthquakeLayer();
+scene.add(earthquakes.mesh);
 
 // Active tropical cyclones — NHC CurrentStorms.json. Empty off-season; auto-activates when storms appear.
 // Pulsing animated swirl sprites at r=1.012. Refreshes every 15 min.
@@ -211,8 +232,11 @@ const locationPin = new LocationPin();
 globe.attachToEarth(locationPin.meshGlobe);
 flatMap.scene.add(locationPin.meshFlat);
 flatMap.scene.add(coastlines.flatMesh);
+flatMap.scene.add(plates.flatMesh);
+flatMap.scene.add(volcanoes.flatMesh);
 flatMap.scene.add(timezoneLayer.flatMesh);
 flatMap.scene.add(fires.flatMesh);
+flatMap.scene.add(earthquakes.flatMesh);
 flatMap.scene.add(hurricanes.flatMesh);
 flatMap.scene.add(lightning.flatMesh);
 flatMap.scene.add(aurora.flatMesh);
@@ -264,6 +288,7 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   trails.resize(window.innerWidth, window.innerHeight);
   flatMap.resize(window.innerWidth, window.innerHeight);
+  plates.setResolution(window.innerWidth, window.innerHeight);
 });
 
 // Reusable scratch vectors — avoid allocating each frame
@@ -295,9 +320,12 @@ declare global {
       atmosphere: Atmosphere;
       trails: Trails;
       coastlines: Coastlines;
+      plates: Plates;
+      volcanoes: VolcanoLayer;
       clouds: CloudLayer;
       aurora: AuroraLayer;
       fires: FireLayer;
+      earthquakes: EarthquakeLayer;
       hurricanes: HurricaneLayer;
       hurricaneTracks: HurricaneTrackLayer;
       lightning: LightningLayer;
@@ -322,7 +350,7 @@ declare global {
 // block is the small set of dev affordances that used to live in the retired Tools
 // panel (test-data fixtures, find-moon camera repositioning, jump-to-eclipse).
 window.__orrery = {
-  particles, globe, atmosphere, trails, coastlines, clouds, aurora, fires,
+  particles, globe, atmosphere, trails, coastlines, plates, volcanoes, clouds, aurora, fires, earthquakes,
   hurricanes, hurricaneTracks, lightning, overlay, eclipse: eclipseLayer, sun: sunBody,
   useTestData,
   useLiveData,
@@ -353,6 +381,8 @@ const DATA_ORDER = [
   "mslp", "temp", "rh", "tpw", "tcw",
   // Geography row
   "coastlines", "day map", "night map",
+  // Geology row
+  "earthquakes", "plates", "volcanoes",
   // Astro row
   "moon", "eclipse",
 ];
@@ -377,6 +407,7 @@ const debug = new Debug();
 const PENDING_SOURCES: Array<[string, string, string]> = [
   ["wind",       "NOAA GFS · surface wind",                 "fetching surface wind…"],
   ["fires",      "NASA FIRMS · VIIRS S-NPP NRT",            "fetching FIRMS detections…"],
+  ["earthquakes","USGS · earthquake feed (past week)",      "fetching earthquake feed…"],
   ["lightning",  "Blitzortung · community WebSocket",       "connecting to Blitzortung…"],
   ["hurricanes", "NHC · CurrentStorms.json",                "fetching active storms…"],
   ["aurora",     "NOAA SWPC · Ovation aurora forecast",     "fetching SWPC Ovation…"],
@@ -389,6 +420,8 @@ const PENDING_SOURCES: Array<[string, string, string]> = [
   ["tpw",        "NOAA GFS · total precipitable water",     "fetching TPW…"],
   ["tcw",        "NOAA GFS · total cloud water",            "fetching TCW…"],
   ["coastlines", "Natural Earth · 50 m physical",           "fetching coastlines…"],
+  ["plates",     "PB2002 (Bird 2003) · tectonicplates",     "fetching plate boundaries…"],
+  ["volcanoes",  "Smithsonian GVP · Volcanoes of the World","fetching volcano list…"],
 ];
 for (const [key, source, detail] of PENDING_SOURCES) {
   dataRegistry.report(key, { source, detail });
@@ -504,7 +537,7 @@ const eclipsePanel = new EclipsePanel(document.body, {
 // Layer-toggle menu (bottom-left). Inherits styling from the classic earth-clock menu;
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
-  { globe, atmosphere, moon, coastlines, timezoneLayer, clouds, aurora, fires, hurricanes,
+  { globe, atmosphere, moon, coastlines, plates, volcanoes, timezoneLayer, clouds, aurora, fires, earthquakes, hurricanes,
     hurricaneTracks, lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap, trails },
   { data: dataPanel, clock, location: locationPanel, eclipse: eclipsePanel },
 );
@@ -793,6 +826,7 @@ function useLiveData() {
   loadClouds();
   loadAurora();
   loadFires();
+  loadEarthquakes();
   loadHurricanes();
   if (preFixtureCloudSource && preFixtureCloudSource !== menu.activeCloudSource()) {
     menu.setLayer(preFixtureCloudSource, true);
@@ -1080,6 +1114,46 @@ fetch("/data/earth-topo.json")
     dataRegistry.report("coastlines", { source: "Natural Earth 50 m", error: String(err.message ?? err) });
   });
 
+// Load tectonic plate boundaries (PB2002, bundled). Renders empty until this resolves.
+fetch("/data/plates.json")
+  .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+  .then(data => {
+    plates.load(data);
+    debug.info("plates", `PB2002 loaded (${data.lines.length} boundary lines)`);
+    dataRegistry.report("plates", { source: "PB2002 (Bird 2003) · tectonicplates", bundled: true });
+  })
+  .catch(err => {
+    debug.warn("plates", `load failed: ${err.message ?? err}`);
+    dataRegistry.report("plates", { source: "PB2002 tectonic plates", error: String(err.message ?? err) });
+  });
+
+// Load known volcano locations (Smithsonian GVP, bundled). Renders empty until this resolves.
+// Populated once the volcano bundle loads; cross-referenced against FIRMS detections
+// (whichever of the two loads finishes second triggers the first cross-reference —
+// see updateErupting() below) to flag which known volcanoes are showing thermal activity.
+let volcanoRecords: VolcanoRecord[] = [];
+let latestFireDetections: FireDetection[] = [];
+function updateErupting() {
+  if (volcanoRecords.length === 0) return;
+  const erupting = crossReferenceEruptions(latestFireDetections, volcanoRecords);
+  volcanoes.setErupting(erupting);
+  debug.info("volcanoes", `${erupting.size} erupting (FIRMS cross-ref, ${volcanoRecords.length} known volcanoes)`);
+}
+
+fetch("/data/volcanoes.json")
+  .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+  .then(data => {
+    volcanoes.load(data);
+    volcanoRecords = data.volcanoes;
+    updateErupting();
+    debug.info("volcanoes", `GVP loaded (${data.volcanoes.length} volcanoes)`);
+    dataRegistry.report("volcanoes", { source: "Smithsonian GVP · Volcanoes of the World", bundled: true });
+  })
+  .catch(err => {
+    debug.warn("volcanoes", `load failed: ${err.message ?? err}`);
+    dataRegistry.report("volcanoes", { source: "Smithsonian GVP", error: String(err.message ?? err) });
+  });
+
 // Fetch NOAA SWPC aurora probability grid. CORS-clean, no auth, ~900 KB, refreshes every 5 min.
 function loadAurora() {
   fetchAuroraGrid()
@@ -1141,6 +1215,8 @@ function loadFires() {
   fetchFireDetections()
     .then(grid => {
       fires.update(grid);
+      latestFireDetections = grid.detections;
+      updateErupting();
       debug.info("fires", `${grid.detections.length} detections`);
       dataRegistry.report("fires", {
         source: "NASA FIRMS · VIIRS S-NPP NRT",
@@ -1156,6 +1232,28 @@ function loadFires() {
 }
 loadFires();
 setInterval(loadFires, 60 * 60 * 1000);
+
+// Fetch the USGS past-week earthquake feed (server-proxied by earthquake-service.js —
+// USGS sends no CORS headers). Matches the backend's own 15-min poll cadence.
+function loadEarthquakes() {
+  fetchEarthquakes()
+    .then(grid => {
+      earthquakes.update(grid);
+      debug.info("earthquakes", `${grid.events.length} events`);
+      dataRegistry.report("earthquakes", {
+        source: "USGS · earthquake feed (past week)",
+        fetched: new Date(),
+        detail: `${grid.events.length} events · last 7 days`,
+        refreshSeconds: 15 * 60,
+      });
+    })
+    .catch(err => {
+      debug.warn("earthquakes", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("earthquakes", { source: "USGS earthquake feed", error: String(err.message ?? err) });
+    });
+}
+loadEarthquakes();
+setInterval(loadEarthquakes, 15 * 60 * 1000);
 
 // Fetch NHC active tropical cyclones. CORS-clean. Empty array off-season — that's fine,
 // the layer just sits dormant and lights up automatically once NHC posts the first storm.
@@ -1545,11 +1643,14 @@ function updateAstro() {
   particles.setRotationY(earthY);
   trails.setRotationY(earthY);
   coastlines.setRotationY(earthY);
+  plates.setRotationY(earthY);
+  volcanoes.setRotationY(earthY);
   timezoneLayer.setRotationY(earthY);
   timezoneLayer.update(simulatedTime);
   clouds.setRotationY(earthY);
   clouds.setSunDirection(sunDir);
   fires.setRotationY(earthY);
+  earthquakes.setRotationY(earthY);
   hurricanes.setRotationY(earthY);
   hurricaneTracks.setRotationY(earthY);
   lightning.setRotationY(earthY);
@@ -1726,6 +1827,9 @@ function animate(t: number) {
   particles.update(dtMs / 1000, t / 1000);
   aurora.setTime(t / 1000);
   fires.setTime(t / 1000);
+  earthquakes.setTime(t / 1000);
+  earthquakes.setNow(Date.now());
+  volcanoes.setTime(t / 1000);
   hurricanes.setTime(t / 1000);
   lightning.setTime(t / 1000);
   // Camera-locks-to-Earth-surface when auto-orbit is off. Without this, time-warp

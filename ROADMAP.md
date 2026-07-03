@@ -24,109 +24,7 @@ Forward-looking engineering tracker. Shipped work lives in
 - ✅ Done
 - ❌ Blocked
 
-Current shipped version: **v0.2.3** (2026-06-29); **v0.2.4 in progress**. See [CHANGELOG.md](CHANGELOG.md).
-
----
-
-## v0.2.4 — Feedback + about pages + mobile polish
-
-### ✅ Feedback link in menu and about pages
-
-`· feedback` mailto link in the main menu meta line; prominent contact section
-in both about pages with name (`caspar@onemonkey.org`) displayed plainly.
-"earth-clock" brand wordmark in both about page headers is now a link back to `/`.
-
-### ✅ About pages — sticky sidebar TOC + kids page TOC
-
-Both about pages have a sticky sidebar TOC on wide screens (≥860 px) and a
-horizontal strip TOC on mobile. The kids page previously had neither — now
-matches the main about page structure with 13 section links.
-
-### ✅ LocationIQ geocoder live
-
-API key, NGINX proxy block, deployment docs all in place. Root-cause fix: LocationIQ
-does not support Nominatim's `format=jsonv2` extension — changing to `format=json`
-resolved the "Invalid Request" error. Geocoder now returns place names correctly.
-
-### ✅ Mobile UX — menu auto-collapse + eclipse picker + compact sun disc
-
-- Menu auto-collapses after any layer toggle on ≤600 px so the effect is immediately
-  visible on the globe. "Find moon" also collapses.
-- Eclipse catalogue hides itself after selecting an event on mobile; eclipse layer and
-  scrub controls remain active so the event plays unobstructed.
-- SunDiscPanel capped at 180 px wide on mobile; SVG disc shrunk 201 px → 96 px so it
-  sits compactly in the corner rather than blocking the view.
-
-### ✅ Mobile — real-device QA pass
-
-Tested on iPhone (iOS Safari). Issues found and fixed: menu auto-collapse after
-toggle, eclipse picker auto-hide after row selection (fixed in main.ts with
-setTimeout to guarantee ordering after all synchronous state changes), compact
-SunDiscPanel. No outstanding items.
-
----
-
-## v0.3.0 — Geology layer
-
-Inspired by a primary-school class visit: kids instinctively want to see the
-*structure* of Earth, not just its weather. Tectonic plates, earthquakes, and
-volcanoes are deeply connected (most sit on plate boundaries), spectacular on
-the globe, and backed by excellent free public data.
-
-### ⬜ Tectonic plates overlay
-
-**Data:** Peter Bird's PB2002 dataset via
-[fraxen/tectonicplates](https://github.com/fraxen/tectonicplates) — 52 plates
-as GeoJSON boundary lines. Effectively static on human timescales.
-
-**Implementation:** Almost identical to the existing Coastlines layer
-(`frontend/src/scene/Globe.ts`). Fetch GeoJSON → build `LineSegments` geometry →
-rotate with Earth at `earthRotationY(now)`. Add as `Geography → Plates` menu
-entry. Use a warm amber/terracotta colour to distinguish from cool-white
-coastlines. No backend work needed.
-
-**Effort:** ~half a day.
-
-### ⬜ Earthquake activity
-
-**Data:** USGS Earthquake Hazards Program real-time feeds
-(`https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/`). Available
-windows: past hour / day / week / month; magnitude thresholds: all / ≥1.0 /
-≥2.5 / ≥4.5 / significant. GeoJSON format, updated continuously. **No CORS
-headers** — needs backend proxy.
-
-**Implementation:**
-1. Add a `fetchEarthquakes()` job to `weather-service.js` — polls USGS
-   `all_week.geojson` every 15 min and writes `public/data/earthquakes/current.json`.
-2. New `EarthquakeLayer.ts` — each event as a pulsing disc/sprite: radius ∝
-   magnitude (log scale), colour by depth (shallow = red, deep = blue), opacity
-   fades over time since the quake. Show past 7 days by default.
-3. `Weather → Earthquakes` menu entry, same row as Fires (both natural hazard events).
-
-**Effort:** ~1–2 days (backend cron + frontend layer).
-
-### ⬜ Volcanoes
-
-**Known locations (static):** Smithsonian Global Volcanism Program database
-(~1,500 volcanoes, v5.3.6 May 2026). Fetch once, bundle as static JSON. Small
-triangle or teardrop markers at each lat/lon — always visible when layer is on.
-
-**Active eruptions (live):** FIRMS cross-reference — compare FIRMS thermal
-anomaly positions against the bundled volcano list (within ~20 km). FIRMS dots
-near a known volcano get re-classified as eruption markers rather than wildfires.
-No extra backend work; happens in the frontend. Optionally supplement with GVP
-weekly RSS parsed in `weather-service.js`.
-
-**Effort:** static layer ~half a day; active eruptions ~1 day on top.
-
-### Implementation order
-
-1. **Plates** — pure frontend, zero backend, dramatic visual, one day.
-2. **Earthquakes** — backend cron, then frontend layer. Two days.
-3. **Volcanoes (static)** — bundle dataset, add markers alongside plates.
-4. **Active eruptions (FIRMS cross-ref)** — quick win once static layer is in.
-
-All three fit naturally into a new `Geology` menu row between Geography and Astro.
+Current shipped version: **v0.3.0** (2026-07-03). See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -168,7 +66,7 @@ corresponding projection transforms.
 |------|-------|
 | Path B — `eccodes-wasm` Cloudflare Worker | Unlocks ANY GRIB2 field (ECMWF AIFS, GraphCast). After Path A. |
 | Multi-altitude wind (250/500/700/850/925 hPa) | Falls out of Path A or B. |
-| OSCAR ocean surface currents (Earthdata) | Routed through CapRover proxy (same as NHC). |
+| OSCAR ocean surface currents (Earthdata) | Backend already exists (`oscar-service.js` mirrors pre-generated OSCAR JSON layers, currently feeding only the classic `/classic/` renderer — see Infrastructure table). Only the WebGL frontend `OceanCurrentLayer` + menu entry are outstanding. |
 
 ---
 
@@ -305,6 +203,53 @@ feature feel intentional rather than incidental.
 
 ---
 
+## Design think — exaggerating subtle live events
+
+Prompted by v0.3.0: earthquakes are a good example of a layer that's *usually*
+almost invisible. Most weeks the globe shows a scatter of M1–3 dots nobody
+would notice; the one M6+ event that's actually newsworthy is a single bright
+spot among thousands. The same tension already exists for aurora (invisible
+below Kp 3 — see the QA checklist's own "may be invisible (correct
+behaviour)" note) and, to a lesser extent, hurricanes off-season or early in
+a storm's lifecycle. Real events have a huge dynamic range; rendering that
+range proportionally means the common case is "nothing to see here," which
+fights the app's actual job — being a globe worth looking at.
+
+**The tension:** scientifically honest (proportional to real magnitude) vs.
+worth looking at (something's usually happening somewhere). Both matter —
+this isn't purely a data-viz toy, and overselling routine activity as
+dramatic would cheapen the moments that really are dramatic.
+
+Rough candidate approaches, not mutually exclusive:
+
+1. **A single global "Exaggerate" toggle** — one View-row switch that scales
+   up size/brightness/pulse-amplitude across every subtle-event layer at
+   once (earthquakes, aurora, lightning, hurricanes). Simplest mental model,
+   one on/off, but not tunable per layer.
+2. **Reuse the Wind row's intensity-picker pattern** — subtle/standard/bold
+   mutex, already established UX language (see `WIND_KEYS` in Menu.ts).
+   More consistent with existing conventions, more menu surface.
+3. **Always-on compression, no toggle** — push magnitude/intensity mapping
+   further toward a visible floor (partly already true: FireLayer compresses
+   FRP by `sqrt`, EarthquakeLayer's depth/magnitude shading) so nothing is
+   ever fully absent, and let real intensity show through via colour/pulse
+   rate rather than presence vs. absence. Zero new UI, but risks the globe
+   always looking "eventful" even on a quiet day — loses the honesty of
+   genuinely calm periods, which is itself part of the story.
+4. **A curated "storyteller" preset**, bundled with the existing `?mode=ambient`
+   idea (v0.6.0 screensaver/wallpaper stretch goal) — visual exaggeration
+   lives in a separate cinematic mode, keeping the default view scientifically
+   literal.
+
+Leaning toward (1) as a first cut — cheapest to build, easiest to explain,
+and doesn't compromise the default "honest" view — with the Kp→aurora
+intensity item already on the stretch-goal list folding into whichever
+approach lands. Revisit once earthquakes have been live long enough to know
+whether "usually nothing dramatic" is actually a problem in practice, or
+whether the quiet days are part of what makes the dramatic ones land.
+
+---
+
 ## Infrastructure
 
 | Item | Status | Notes |
@@ -319,3 +264,5 @@ feature feel intentional rather than incidental.
 | Docs / about page | 🔄 | `/about/` panel landed; broader web docs still TODO. |
 | LocationIQ geocoder | ✅ | API key + NGINX block active; use `format=json` (not `jsonv2`) — LocationIQ doesn't support Nominatim's extended format. |
 | Browser-matrix QA | ⬜ | Tested Chrome / Edge only. Verify Safari, Firefox, mobile. |
+| OSCAR ocean currents service | 🔄 | `oscar-service.js` runs in production, mirrors OSCAR JSON layers into `public/data/oscar/`. Only feeds the classic `/classic/` renderer today — see v0.4.0 Phase B. |
+| Earthquake feed service | ✅ | `earthquake-service.js` polls USGS `all_week.geojson` every 15 min into `public/data/earthquakes/current.json`. Feeds the new WebGL `EarthquakeLayer`. |

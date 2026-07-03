@@ -9,6 +9,56 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.3.0 — 2026-07-02 — Geology layer
+
+**Earthquakes** — new `EarthquakeLayer.ts`: past-week USGS events as an additive
+point cloud, sized by magnitude (linear — Richter/moment magnitude is already
+log-scale), coloured by depth (shallow red → deep blue), opacity fading linearly
+across the 7-day feed window with a settling pulse on events under a day old.
+Backend `earthquake-service.js` (new, modeled on `oscar-service.js`) polls
+USGS's `all_week.geojson` every 15 min server-side (USGS sends no CORS headers)
+and writes a trimmed `public/data/earthquakes/current.json`. New dedicated
+**Geology** menu row between Geography and Astro; gated by the existing
+live-data freshness check (same treatment as Fires/Hurricanes) rather than
+tracking simulatedTime.
+
+**Tectonic plates** — new `Plates.ts`: boundary lines (3D globe + flat-map
+mirror) in a warm amber/terracotta colour, rotating with Earth. Data is Peter
+Bird's PB2002 dataset (241 boundary lines) via `fraxen/tectonicplates`,
+fetched once by the new `build-plates.mjs` and bundled as
+`public/data/plates.json` (107 KB) — static, no backend service, no freshness
+gating. Rendered with Three's `LineSegments2`/`LineMaterial` ("fat lines")
+rather than plain `LineSegments` — regular `LineBasicMaterial.linewidth` is
+silently ignored on virtually every desktop GL driver, capping boundary lines
+at a wispy 1px; the fat-line material gives a real, screen-space-pixel-width
+stroke instead. Needs its resolution uniform kept in sync with the viewport
+(`Plates.setResolution()`, called on load and on every window resize).
+
+**Volcanoes** — new `VolcanoLayer.ts`: 1,215 Holocene volcanoes (Smithsonian
+Global Volcanism Program) as small triangular "mountain" markers, drawn via a
+point-in-triangle test in the fragment shader rather than a texture. Data is
+fetched once from GVP's public GeoServer WFS by the new `build-volcanoes.mjs`
+and bundled as `public/data/volcanoes.json` (154 KB) — static, no freshness
+gating, same treatment as Plates. GVP does have a clean scriptable export
+after all (a live WFS endpoint), better than the manual-CSV fallback the
+roadmap had flagged as a risk.
+
+**Active eruptions** — new `frontend/src/data/eruptionCrossRef.ts`: every
+FIRMS thermal detection is checked against the bundled volcano list
+(equirectangular distance, 20 km threshold) whenever fires refresh; matches
+flip that volcano's marker to a hot pulsing orange via
+`VolcanoLayer.setErupting()`. No new backend or data feed — purely a
+geospatial join against data both layers already have. Verified against live
+data: correctly flagged Etna, Merapi, Semeru, Lewotobi, Lewotolok,
+Krasheninnikov, Santa Maria, and Erebus — all volcanoes GVP itself lists as
+erupting in 2026.
+
+v0.3.0 Geology layer is feature-complete in source. Still pending: a
+production rebuild + deploy (see CLAUDE.md release flow) and updating the
+public about pages to describe the new layers.
+
+---
+
 ## v0.2.4 — 2026-07-01 — Feedback, about pages, mobile polish
 
 **Feedback links** — `· feedback` mailto link (`caspar@onemonkey.org`) added to the

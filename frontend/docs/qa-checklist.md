@@ -1,5 +1,116 @@
 # Visual QA checklist
 
+## v0.3.0 — Geology layer verification round (2026-07-02)
+
+New this version: tectonic plates, earthquakes, volcanoes, and FIRMS-based
+active-eruption flagging, all in a new **Geology** menu row between Geography
+and Astro. Landed hardest-first (earthquakes → plates → volcanoes → eruption
+cross-ref) — see ROADMAP.md and CHANGELOG.md for the technical writeup.
+
+**Already verified via headless Chromium during development** (dev server,
+`frontend && npm run dev`): all four layers render on both the 3D globe and
+flat map with no console errors; earthquake positions/data match the live
+USGS feed; plate boundaries trace the Ring of Fire / Mid-Atlantic Ridge / East
+African Rift correctly; volcano positions match GVP source data to
+floating-point precision; the FIRMS cross-reference correctly flagged Etna,
+Merapi, Semeru, Lewotobi, Lewotolok, Krasheninnikov, Santa Maria, and Erebus —
+all volcanoes GVP itself lists as erupting in 2026. What's below is the
+**real-browser / real-device sweep** that automation can't cover — visual
+judgement calls (colour legibility, marker size at different zoom levels) and
+the actual production deploy.
+
+### Earthquakes
+- [ ] Menu → Geology → Earthquakes toggle shows/hides the layer
+- [ ] Markers cluster along real seismic zones (Ring of Fire, Mid-Atlantic
+      Ridge, Himalayan front) — not randomly scattered
+- [ ] Bigger markers for higher-magnitude events (compare a M6+ vs a M2 quake
+      if both are present in the current week's feed)
+- [ ] Colour reads shallow = red, deep = blue (Pacific subduction zones like
+      Indonesia/Japan should show more blue than continental rift quakes)
+- [ ] Events under ~24 h old visibly pulse; week-old events sit as a steady,
+      fainter dot
+- [ ] Time-warp forward or backward more than 24 h from now (`window.__orreryTimeWarp
+      = 3600*24*50` in console) — earthquakes hide, same as Fires/Hurricanes.
+      Return to near-now — they reappear.
+- [ ] Data panel (View → Data) shows an `earthquakes` row: source, event
+      count, "last 7 days"
+- [ ] **Production only**: confirm `earthquake-service.js` is running
+      server-side (check CapRover logs for "Earthquake Service Starting") and
+      `https://earth-clock.onemonkey.org/data/earthquakes/current.json`
+      returns fresh JSON (check the `generated` timestamp is within 15 min)
+
+### Tectonic plates
+- [ ] Menu → Geology → Plates toggle shows/hides the layer
+- [ ] Amber/terracotta lines trace real plate boundaries — visually distinct
+      from the cool-white coastlines even with both on
+- [ ] Time-warp far from now — plates stay visible (static layer, no
+      freshness gate, unlike earthquakes)
+- [ ] Flat map view: boundaries render correctly, no antimeridian seam
+      artifacts (check near the Aleutians/Kamchatka, ~180° longitude)
+
+### Volcanoes
+- [ ] Menu → Geology → Volcanoes toggle shows/hides the layer
+- [ ] Small triangular markers visible along volcanic arcs (Japan, Indonesia,
+      Andes, Mediterranean) — zoom in if they're too small to distinguish
+      from the surrounding terrain texture at default zoom
+- [ ] Dormant volcanoes render as a dim rock colour; check at least one known
+      currently-erupting volcano (Etna, Merapi, Semeru, or Stromboli are
+      reliably active) glows hot orange and pulses, distinct from dormant ones
+- [ ] Time-warp far from now — volcanoes stay visible (static, no freshness
+      gate)
+- [ ] Data panel shows a `volcanoes` row: source, volcano count, bundled
+
+### Active eruptions (FIRMS cross-reference)
+- [ ] With both Fires and Volcanoes toggled on, at least one hot volcano
+      marker sits near (not necessarily exactly on top of, given the 20 km
+      match radius) a cluster of orange fire dots
+- [ ] Toggle Fires off — erupting volcanoes keep their hot colour (the flag
+      persists on the volcano layer independent of fire-dot visibility)
+- [ ] Wait for an hourly fire refresh (or reload the page) — erupting set
+      updates; a volcano that stops showing thermal activity should
+      eventually revert to dormant colour
+
+### Regression — existing layers unaffected
+- [ ] Geography row still shows only Coastlines + Night lights (Geology is a
+      separate row, not merged into Geography)
+- [ ] Fires, Hurricanes, Lightning, Aurora all still behave exactly as before
+      (freshness gating, mobile auto-collapse, flicker/decay animations)
+- [ ] Menu label column width still fits "Geography"/"Geology" without
+      wrapping the " | " separator
+- [ ] Fresh `localStorage` (clear `orrery.menu.v1`): new Geology toggles
+      default to on, matching DEFAULTS
+- [ ] Mobile (≤600 px): toggling any Geology layer auto-collapses the menu,
+      same as every other row
+
+### Browser matrix
+- [ ] Chrome / Edge (Chromium) — primary; already covered by the automated
+      Playwright pass above, spot-check only
+- [ ] Firefox — new `ShaderMaterial`s in EarthquakeLayer/VolcanoLayer are the
+      risk surface (custom GLSL point-sprite shaders); confirm markers render
+      identically, no shader compile errors in console
+- [ ] Safari macOS — same shader risk as Firefox
+- [ ] Safari iOS / Chrome mobile — Geology row toggles are reachable and
+      tappable in the collapsed mobile menu; markers aren't so small as to be
+      invisible on a phone screen
+
+### Production deploy
+- [ ] `cd frontend && BUILD_AS_ROOT=1 npm run build` — clean build, no
+      TypeScript errors
+- [ ] New static assets present in the build output: `plates.json`,
+      `volcanoes.json` (verify these got copied from `public/data/` — they're
+      static files, not part of the Vite bundle, so confirm they're already
+      committed to `public/data/` before the build, not generated by it)
+- [ ] `earthquake-service.js` wired into the CapRover deploy the same way
+      `weather-service.js`/`oscar-service.js` are (check `server.js` starts
+      all three)
+- [ ] After deploy: hard-refresh the live site, confirm the Geology row
+      appears and all four features work as above
+- [ ] Public about pages (`/about/`, `/about/kids/`) updated to describe the
+      new layers — deliberately deferred until this deploy step (see
+      CHANGELOG.md v0.3.0 entry)
+
+---
+
 ## v0.2.0 — public-launch verification round (2026-05-27)
 
 Sweep before declaring v0.2.0 live. Changes landed in v0.1.6 → v0.1.9 all

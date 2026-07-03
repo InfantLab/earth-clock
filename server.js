@@ -13,6 +13,7 @@ var path = require("path");
 // These are started from the main server process so Docker/CapRover runs a single long-lived process.
 var weatherService = require("./weather-service");
 var oscarService = require("./oscar-service");
+var earthquakeService = require("./earthquake-service");
 
 var port = process.env.PORT || 80;
 var basePath = process.env.BASE_PATH || "/";
@@ -155,6 +156,11 @@ setTimeout(function () {
         oscarService.startOscarService();
     } catch (e2) {
         console.error("Failed to start OSCAR service:", e2 && e2.message ? e2.message : e2);
+    }
+    try {
+        earthquakeService.startEarthquakeService();
+    } catch (e3) {
+        console.error("Failed to start earthquake service:", e3 && e3.message ? e3.message : e3);
     }
 }, 0);
 
