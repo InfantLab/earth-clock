@@ -104,7 +104,13 @@ async function applySkybox(quality: "lo" | "hi") {
 }
 applySkybox("lo");
 
-const globe = new Globe();
+const globe = new Globe({
+  // dataRegistry is declared further down (after DATA_ORDER); safe to reference here since
+  // these callbacks only ever fire asynchronously, once a texture load actually resolves —
+  // well after dataRegistry has been constructed further down this same script.
+  onDayStatus: (status) => dataRegistry.report("day map", { source: "Solar System Scope · 2k_earth_daymap.jpg", ...status }),
+  onNightStatus: (status) => dataRegistry.report("night map", { source: "Solar System Scope · 2k_earth_nightmap.jpg", ...status }),
+});
 scene.add(globe.mesh);
 
 // Atmospheric rim glow — separate mesh in world space, doesn't rotate with Earth.
@@ -114,7 +120,8 @@ const atmosphere = new Atmosphere();
 scene.add(atmosphere.mesh);
 
 // Moon — positioned at the actual sub-lunar location * distance (in Earth radii)
-const moon = new Moon();
+const moon = new Moon((status) =>
+  dataRegistry.report("moon", { source: "NASA / USGS · moon_1024.jpg", ...status }));
 scene.add(moon.mesh);
 
 // Coastlines (Natural Earth, 50m resolution). Loaded async from /data/earth-topo.json.
@@ -390,12 +397,16 @@ const DATA_ORDER = [
 ];
 
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
-// Static / bundled assets are reported up-front so they appear in the panel without waiting.
+// Bundled textures used to be reported as permanently `bundled: true` (always shows a static
+// "-" mark) up front, but they're fetched over HTTP like anything else and can genuinely fail
+// or stall (see INCIDENT-2026-07-19-slow-transfers.md) — so day map/night map/moon start as
+// pending here and Globe/Moon's resilient loaders (above) report real ok/retrying/error status
+// as their texture loads actually resolve.
 const dataRegistry = new DataRegistry();
 dataRegistry.setOrder(DATA_ORDER);
-dataRegistry.report("day map",   { source: "Solar System Scope · 2k_earth_daymap.jpg",   bundled: true });
-dataRegistry.report("night map", { source: "Solar System Scope · 2k_earth_nightmap.jpg", bundled: true });
-dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg",                 bundled: true });
+dataRegistry.report("day map",   { source: "Solar System Scope · 2k_earth_daymap.jpg" });
+dataRegistry.report("night map", { source: "Solar System Scope · 2k_earth_nightmap.jpg" });
+dataRegistry.report("moon",      { source: "NASA / USGS · moon_1024.jpg" });
 
 // Slim console logger — the visible bottom-right "tools" panel was retired alongside
 // the Tools menu entry. The diagnostic affordances it used to host (Use test data,

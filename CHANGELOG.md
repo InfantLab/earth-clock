@@ -13,31 +13,37 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 **Mitigates** an ongoing production issue (see
 [INCIDENT-2026-07-19-slow-transfers.md](INCIDENT-2026-07-19-slow-transfers.md))
-where the hosting VPS's outbound network is erratic enough that texture
-requests sometimes stall for many seconds. A stalled/incomplete WebGL texture
-samples as solid black once bound to a material's `map`, regardless of the
-material's base color — that's the actual mechanism behind the "black globe"
-symptom, independent of whatever's wrong with the network itself.
+where texture requests sometimes stall for many seconds. A stalled/incomplete
+WebGL texture samples as solid black once bound to a material's `map`,
+regardless of the material's base color — that's the actual mechanism behind
+the "black globe" symptom, independent of whatever's actually causing the
+slow transfers (still under investigation — evidence so far leans toward
+the investigation's own testing traffic rather than a real hosting-provider
+fault, see the incident doc).
 
 - New `frontend/src/scene/resilientTexture.ts`: wraps `THREE.TextureLoader`
-  with an 8s timeout and up to 4 attempts with exponential backoff. Textures
-  that fail or stall get retried instead of leaving the material permanently
-  incomplete.
+  with a 15s per-attempt timeout and **indefinite** retry with backoff
+  (capped at 30s) — never permanently gives up, since the network condition
+  this mitigates is expected to be transient.
+- After 3 failed/timed-out attempts, the load is flagged as a visible ✗ in
+  the app's existing Data panel (same status mechanism every other data
+  layer already uses) instead of only logging to the console — "day map",
+  "night map", and "moon" now show real pending/ok/error status (with retry
+  count) rather than a permanent static grey dot. Confirmed it self-heals to
+  ✓ automatically once a load succeeds, no reload needed.
 - `Globe.ts` and `Moon.ts`: day/night/normal/specular/moon textures are no
   longer passed directly into material constructors from a raw
   `loader.load()` call. Each material starts with a plausible placeholder
   color (muted ocean/land tint for Earth, grey for the Moon) and the real
-  texture is attached asynchronously once it actually finishes loading — so a
-  slow network shows "planet loading" rather than a broken-looking black
-  sphere.
+  texture is attached asynchronously once it actually finishes loading.
 - The night-lights shader's `uMap` sampler now starts bound to a 1×1 black
   placeholder texture (`createBlackPlaceholderTexture`) rather than an
   in-flight texture, avoiding undefined-sampler behavior before the real
   night-lights texture loads.
 
-This does not fix the underlying network issue (still under investigation,
-suspected to be hosting-provider-level) — it makes the app degrade gracefully
-instead of rendering broken while that's ongoing.
+This does not fix whatever is actually causing transfers to be slow — it
+makes the app degrade visibly and recover automatically instead of silently
+rendering broken while that's ongoing.
 
 ---
 

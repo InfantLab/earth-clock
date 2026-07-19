@@ -57,31 +57,91 @@ order they were investigated, so nobody re-treads this ground.
 | 11 | earth-clock's TLS certificate is unusual (chain length, key type, expiry) in a way that degrades large transfers | `openssl s_client` against both domains: both Let's Encrypt ECDSA P-256, both TLS 1.3 / `TLS_AES_256_GCM_SHA384`, both valid, nothing unusual. | **Ruled out** |
 | 12 | earth-clock specifically has degraded public-facing throughput while other apps on the same VPS are fine | **This was the load-bearing assumption behind hypotheses 4–11**, based on one early sample showing `onemonkey.org` transferring faster than earth-clock. Re-tested properly: 5 back-to-back requests to each domain, same test conditions. `onemonkey.org` came back at 5.3s, 8.3s, 5.3s, 8.8s for a 415KB file — just as bad as earth-clock, sometimes worse. | **Ruled out — the premise itself was wrong** |
 
-### Current leading hypothesis
+### Update — likely self-inflicted by today's testing volume, not Hetzner
+
+Two independent checks after the table above both point away from a
+hosting-provider fault:
+
+- **Host-level check (Tad, via SSH into `caspar-ghost`)**: load average 0.11,
+  RAM plenty free, disk 61%, `journalctl -p err` empty, Hetzner's public
+  status page reachable with nothing reported. Host looks healthy.
+- **Re-tested throughput after a pause from testing**: earlier in the
+  session, repeated back-to-back and concurrent `curl` tests to
+  `earth-clock.onemonkey.org` consistently showed 3–14s for a 463KB file.
+  After stopping test traffic for a few minutes and re-testing, single
+  requests came back fast and consistent (0.4–1.6s), and an 8-concurrent-request
+  burst mostly came back fast too (7 of 8 under 1.6s, one 5.1s outlier).
+
+Between these two, the evidence now leans toward **the heavy volume of
+testing traffic during the investigation itself (this session's repeated
+curl bursts and concurrent-connection tests, plus Tad's own troubleshooting
+traffic earlier) contributing to or causing the appearance of a network
+problem** — not a genuine Hetzner infrastructure fault, and not (per #9) an
+earth-clock app/container issue either. This is **not fully proven** — some
+jitter remained even after the pause — but it's a materially better-supported
+explanation than "blame the hosting provider," and the earlier "VPS/hosting-
+provider network-level issue" framing below should be read with that caveat.
+
+<details>
+<summary>Original "VPS/hosting-provider" framing (superseded by the update above, kept for context)</summary>
 
 Given #9 (app is fast internally, 5ms) and #12 (the "problem" is not specific
 to earth-clock — a properly controlled comparison shows `onemonkey.org` is
-equally slow and equally erratic), this looks like a **VPS/hosting-provider
+equally slow and equally erratic), this looked like a VPS/hosting-provider
 network-level issue affecting the whole box's outbound path to at least some
-external networks**, not a bug in earth-clock's code, config, or anything
+external networks, not a bug in earth-clock's code, config, or anything
 touched during today's Umami/BASE_PATH work. The IP (`91.98.123.241`) is in a
-Hetzner Cloud range. Candidates: noisy-neighbor contention on shared
-infrastructure, an outbound bandwidth cap or throttle triggered on the
+Hetzner Cloud range. Candidates considered: noisy-neighbor contention on
+shared infrastructure, an outbound bandwidth cap or throttle triggered on the
 account, a peering/congestion issue on the route between the VPS and testing
 clients, or an active provider-side incident.
 
+</details>
+
 ### Next steps (not yet done)
 
-- Check the hosting provider's status page / account dashboard directly for
-  bandwidth alerts, abuse flags, or active network incidents — this is
-  outside anything queryable from inside the VPS or over HTTP.
-- If the provider confirms nothing, consider an `mtr`/traceroute from the VPS
-  itself out to a few different external targets to characterize where
-  packet loss or latency is actually being introduced.
+- If slowness recurs, check whether it correlates with active testing/curl
+  volume against the domain before assuming it's infrastructure — that's the
+  new leading suspect.
+- If it recurs with no unusual traffic in play, an `mtr`/traceroute from the
+  VPS itself out to a few different external targets would help characterize
+  where packet loss or latency is actually being introduced.
 - Re-run the 5-sample back-to-back comparison test (see hypothesis #12 above)
   from a completely different network (not this session's sandbox, not
-  Caspar's home connection) to triangulate whether it's provider-wide or
-  specific to certain routes.
+  Caspar's home connection) to triangulate further if needed.
+
+## Problem 3 — shipped: resilient texture loading (mitigation, not a root-cause fix)
+
+Whatever the root cause turns out to be, the app previously had no defense
+against a slow/stalled texture load at all — a stalled request just left the
+WebGL texture "incomplete" forever, which samples as solid black once bound
+to a material's `map`, regardless of the material's base color. First-pass
+mitigation (v0.3.1, see Problem 1) only fixed the *known* bug; it didn't add
+any resilience to the network condition itself. Follow-up (v0.3.2):
+
+- New `frontend/src/scene/resilientTexture.ts`: wraps `THREE.TextureLoader`
+  with a 15s per-attempt timeout and **indefinite** retry with backoff (capped
+  at 30s between attempts) — it does not give up permanently, since the
+  network condition this mitigates is expected to be transient.
+- After 3 failed/timed-out attempts, the failure is reported as a visible
+  status rather than only logged to the console — wired into the app's
+  existing Data panel (`DataRegistry`/`DataPanel`, the same ✓/✗/⋯ status
+  mechanism every other data layer already uses). "day map", "night map",
+  and "moon" — previously hardcoded as permanently `bundled: true` (a static
+  grey dot, no real health tracking) — now show real ⋯ pending → ✓ ok / ✗
+  error status, with the retry attempt count visible in the detail column.
+- Confirmed via Playwright with a simulated persistent failure (route abort):
+  2 quiet retries, then a visible `✗ slow/unreachable after 3 attempts —
+  retrying…` that stays visible while attempts keep climbing in the
+  background; confirmed self-heals to `✓` immediately once the simulated
+  network condition clears, no reload needed.
+- `Globe.ts` / `Moon.ts`: materials still start with a placeholder color
+  (muted ocean/land tint for Earth, grey for the Moon) and swap in the real
+  texture once it actually loads, as in v0.3.1.
+
+This does not fix whatever is actually causing transfers to be slow — it
+makes the app degrade visibly and recover automatically instead of silently
+rendering broken while that's ongoing (or being investigated).
 
 ### Secondary items noticed but not yet resolved
 

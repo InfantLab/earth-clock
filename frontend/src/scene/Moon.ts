@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { loadTextureResilient } from "./resilientTexture";
+import { loadTextureResilient, TextureLoadStatus } from "./resilientTexture";
 
 // Moon's radius is ~0.273 Earth radii. We render it at true scale; phases emerge
 // naturally from the same DirectionalLight that lights the Earth.
@@ -23,7 +23,7 @@ export class Moon {
   /** Reused scratch colour so per-frame setEclipseShadow doesn't allocate. */
   private readonly _scratchColor = new THREE.Color();
 
-  constructor() {
+  constructor(onTextureStatus?: (status: TextureLoadStatus) => void) {
     const loader = new THREE.TextureLoader();
 
     const geometry = new THREE.SphereGeometry(MOON_RADIUS, 64, 32);
@@ -51,7 +51,7 @@ export class Moon {
       this.material.map = texture;
       this.material.emissiveMap = texture;
       this.material.needsUpdate = true;
-    });
+    }, onTextureStatus);
   }
 
   setPosition(p: THREE.Vector3) {

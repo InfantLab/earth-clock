@@ -1,21 +1,40 @@
 import * as THREE from "three";
 
-const TIMEOUT_MS = 8000;
-const MAX_ATTEMPTS = 4;
+const TIMEOUT_MS = 15000;
+const MAX_BACKOFF_MS = 30000;
+/** After this many failed/timed-out attempts, report a visible error status — but keep
+ *  retrying in the background at the (capped) backoff interval rather than giving up.
+ *  The network condition this mitigates (see INCIDENT-2026-07-19-slow-transfers.md) is
+ *  expected to be transient, so a permanent failure that requires a page reload would be
+ *  the wrong tradeoff — better to keep quietly trying and self-heal if it clears. */
+const ATTEMPTS_BEFORE_VISIBLE_ERROR = 3;
+
+/** Status patch for a single texture load, meant to be merged into the caller's own
+ *  reporting (e.g. DataRegistry.report) alongside a fixed `source` label. Never sets more
+ *  than one of `fetched` / `error` / `detail` at a time. */
+export interface TextureLoadStatus {
+  /** Set once the texture has actually loaded. */
+  fetched?: Date;
+  /** Set once retries have been visibly flagged as failing; cleared by a later `fetched`. */
+  error?: string;
+  /** In-progress detail (e.g. "retrying (attempt 2)…") shown while still pending. */
+  detail?: string;
+}
 
 /**
- * Loads a texture with a manual timeout + retry-with-backoff. THREE's TextureLoader has
- * no timeout of its own — a stalled/slow network request just leaves the texture
- * "incomplete" forever, and an incomplete WebGL texture samples as solid black wherever
- * it's bound as a material's map, regardless of the material's base color. Callers should
- * assign the texture to the material inside `onLoad` (rather than passing a raw
- * `loader.load()` return value straight into a material constructor) so the material
- * shows its placeholder color/appearance until real image data actually arrives.
+ * Loads a texture with a manual timeout + indefinite retry-with-backoff. THREE's
+ * TextureLoader has no timeout of its own — a stalled/slow network request just leaves
+ * the texture "incomplete" forever, and an incomplete WebGL texture samples as solid
+ * black wherever it's bound as a material map, regardless of the material's base color.
+ * Callers should assign the texture to the material inside `onLoad` (rather than passing
+ * a raw `loader.load()` return value straight into a material constructor) so the
+ * material shows its placeholder color/appearance until real image data actually arrives.
  */
 export function loadTextureResilient(
   loader: THREE.TextureLoader,
   url: string,
   onLoad: (texture: THREE.Texture) => void,
+  onStatus?: (status: TextureLoadStatus) => void,
 ): void {
   let attempt = 0;
 
@@ -35,6 +54,7 @@ export function loadTextureResilient(
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        onStatus?.({ fetched: new Date() });
         onLoad(texture);
       },
       undefined,
@@ -48,12 +68,13 @@ export function loadTextureResilient(
   }
 
   function retry(reason: string) {
-    if (attempt >= MAX_ATTEMPTS) {
-      console.warn(`[orrery] texture failed permanently after ${attempt} attempts: ${url} (${reason})`);
-      return;
-    }
-    const delay = 1000 * Math.pow(2, attempt - 1);
+    const delay = Math.min(MAX_BACKOFF_MS, 1000 * Math.pow(2, attempt - 1));
     console.warn(`[orrery] texture load attempt ${attempt} failed, retrying in ${delay}ms: ${url} (${reason})`);
+    if (attempt >= ATTEMPTS_BEFORE_VISIBLE_ERROR) {
+      onStatus?.({ error: `slow/unreachable after ${attempt} attempts — retrying…` });
+    } else {
+      onStatus?.({ detail: `retrying (attempt ${attempt})…` });
+    }
     setTimeout(tryLoad, delay);
   }
 

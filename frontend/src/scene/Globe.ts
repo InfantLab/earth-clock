@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { loadTextureResilient, createBlackPlaceholderTexture } from "./resilientTexture";
+import { loadTextureResilient, createBlackPlaceholderTexture, TextureLoadStatus } from "./resilientTexture";
 
 // Earth's axial tilt (~23.44°). Applied to the parent group; the inner Earth spins on local Y.
 const AXIAL_TILT = 23.44 * Math.PI / 180;
@@ -9,6 +9,11 @@ const AXIAL_TILT = 23.44 * Math.PI / 180;
 // black once bound as a material's map, so the placeholder only helps if we wait for real
 // image data before assigning it.
 const PLACEHOLDER_COLOR = 0x3a5a6b;
+
+export interface GlobeTextureStatusCallbacks {
+  onDayStatus?: (status: TextureLoadStatus) => void;
+  onNightStatus?: (status: TextureLoadStatus) => void;
+}
 
 export class Globe {
   readonly mesh: THREE.Group;
@@ -20,7 +25,7 @@ export class Globe {
   private terminatorEnabled = true;
   private nightLightsEnabled = true;
 
-  constructor() {
+  constructor(statusCallbacks: GlobeTextureStatusCallbacks = {}) {
     const loader = new THREE.TextureLoader();
 
     // Day-side material (terminator ON): Phong + directional sun light produces the day/night
@@ -47,7 +52,7 @@ export class Globe {
       this.phongMaterial.needsUpdate = true;
       this.flatMaterial.map = day;
       this.flatMaterial.needsUpdate = true;
-    });
+    }, statusCallbacks.onDayStatus);
     loadTextureResilient(loader, "textures/earth_normal_2048.jpg", (normal) => {
       this.phongMaterial.normalMap = normal;
       this.phongMaterial.normalScale = new THREE.Vector2(0.85, 0.85);
@@ -72,7 +77,7 @@ export class Globe {
     loadTextureResilient(loader, "textures/earth_nightmap_2k.jpg", (night) => {
       night.colorSpace = THREE.SRGBColorSpace;
       nightUniforms.uMap.value = night;
-    });
+    }, statusCallbacks.onNightStatus);
     const nightMat = new THREE.ShaderMaterial({
       uniforms: nightUniforms,
       vertexShader: /* glsl */`
