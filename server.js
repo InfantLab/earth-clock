@@ -27,6 +27,7 @@ if (basePath !== "/" && basePath.endsWith("/")) {
 
 var publicDir = path.join(__dirname, "public");
 var publicDirResolved = path.resolve(publicDir);
+var legacyBasePath = "/earth-clock";
 
 var mimeTypes = {
     ".html": "text/html",
@@ -58,9 +59,15 @@ var server = http.createServer(function (req, res) {
     var queryIndex = urlPath.indexOf('?');
     var pathname = queryIndex >= 0 ? urlPath.substring(0, queryIndex) : urlPath;
 
-    // Strip base path if present (CapRover may or may not strip it)
+    // Strip the configured base path if present (CapRover may or may not strip it).
     if (basePath !== "/" && pathname.startsWith(basePath)) {
         pathname = pathname.substring(basePath.length);
+    }
+
+    // Temporary compatibility shim for stale cached HTML that still points at
+    // /earth-clock/... while production serves from the domain root.
+    if (pathname === legacyBasePath || pathname.startsWith(legacyBasePath + "/")) {
+        pathname = pathname.substring(legacyBasePath.length) || "/";
     }
 
     // Default to index.html for root
@@ -111,7 +118,7 @@ function serveFile(filePath, res, basePath) {
 
     // Check if this is an HTML file that needs base tag injection.
     var relativePath = path.relative(publicDirResolved, filePath).replace(/\\/g, "/");
-    var needsBaseTag = htmlFiles.indexOf(relativePath) >= 0;
+    var needsBaseTag = basePath !== "/" && htmlFiles.indexOf(relativePath) >= 0;
 
     if (needsBaseTag) {
         fs.readFile(filePath, "utf8", function (readErr, content) {
@@ -163,4 +170,3 @@ setTimeout(function () {
         console.error("Failed to start earthquake service:", e3 && e3.message ? e3.message : e3);
     }
 }, 0);
-
