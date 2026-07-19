@@ -110,6 +110,137 @@ clients, or an active provider-side incident.
   from a completely different network (not this session's sandbox, not
   Caspar's home connection) to triangulate further if needed.
 
+### 2026-07-20 update — self-inflicted/rate-limit theory killed; packet capture proves real external network loss
+
+Fresh session, new vantage point (a sandbox in Amsterdam, `AS3257 GTT
+Communications`, IP `212.56.48.48` — never made a single prior request to
+either domain, so it can't have been rate-limited or banned by anything this
+investigation itself triggered). Did the two things nobody had done yet:
+checked for host-level rate-limiting/security middleware, and captured
+packets on the host during a reproduced slow transfer.
+
+**Rate-limiting/fail2ban/iptables check — theory killed outright:**
+
+| Check | Command | Result |
+|---|---|---|
+| fail2ban jails | `sudo fail2ban-client status` | Only one jail exists: `sshd`. No HTTP/nginx/CapRover jail of any kind. |
+| ufw | `sudo ufw status verbose` | `Status: inactive` |
+| iptables/nftables | `sudo iptables -L -n -v` / `sudo nft list ruleset` | Only Docker bridge-isolation rules (0 packets matched on all of them) and Tailscale (`ts-input`/`ts-forward`) rules. Nothing rate-limits or drops based on connection rate, and nothing matches port 443/80 traffic at all. |
+| CrowdSec / WAF | `systemctl status crowdsec`, `docker ps` grep for waf/proxy/limit | `crowdsec.service` doesn't exist on this host. No WAF/rate-limit container running. |
+| nginx `limit_req`/`limit_conn` | grepped `/captain/` config tree and the live `captain-nginx` container's `/etc/nginx/` | Zero matches anywhere. |
+
+There is **no rate-limiting, banning, or connection-throttling infrastructure
+of any kind** on this host that could plausibly explain the recovery-after-
+pause pattern. That pattern was coincidental, not causal — see below for what
+actually explains the variability.
+
+**Reproduced cleanly under the most "innocent" possible test pattern** — a
+handful of single, well-spaced (3-8s apart), non-concurrent requests, from a
+brand-new IP that had never touched the domain before:
+
+```
+run1 TTFB:0.235s TOTAL:2.812s SIZE:463087   (earth_daymap_2k.jpg, 452KB)
+run2 TTFB:0.263s TOTAL:2.338s SIZE:463087
+run3 TTFB:0.213s TOTAL:2.971s SIZE:463087
+```
+
+If the self-inflicted-by-testing-volume theory were correct, this pattern —
+one request, wait 8s, next request — should have been unaffected. It wasn't.
+This alone is enough to kill the theory, but the session went further and
+got direct evidence of the actual mechanism.
+
+**Packet capture during reproduced slow transfers** — `tcpdump -i eth0 -s 0
+host <test-client-ip> and tcp port 443 -w /tmp/eq_capture.pcap` on the host,
+run for 35s while firing 4 more spaced single-request texture fetches from
+the test client. All 4 were captured mid-transfer (totals 1.9s–4.5s). No
+`tshark`/`scapy` on the host or in the local toolchain, so the pcap was
+converted with `tcpdump -r ... -tttt` and parsed with a small Python script
+grouping packets by TCP stream and flagging repeated (seq_start, seq_end)
+ranges per direction as retransmissions.
+
+**Every single one of the 4 streams — including the "fast" 1.9s one — showed
+genuine server→client TCP retransmissions**, recovered via SACK (not RTO
+timeouts — the gaps between original and retransmitted segments were
+sub-second, consistent with fast-retransmit, not a full retransmission
+timeout). Example from the slowest stream (client port 21076, 4.546s total):
+14 distinct retransmitted segments over the life of the transfer, e.g. `seq
+65980:68460` (a 2480-byte segment) retransmitted at t+0.511s, `seq
+352420:354900` retransmitted at t+2.907s, etc. The "fast" stream (port 9751,
+1.944s) still had 6 retransmitted segments — fewer, hence faster, but not
+zero. This is real, measurable packet loss on the wire, not an artifact of
+curl's timing.
+
+**Ruled out as a local/host-side cause of that loss:**
+
+| Check | Command | Result |
+|---|---|---|
+| fq_codel qdisc drops on the egress interface | `tc -s qdisc show dev eth0` | `Sent 75015236948 bytes 127811800 pkt (dropped 0, ...)`, `drop_overlimit 0`, `ecn_mark 0` — **zero packets dropped by the local qdisc in 44 days of uptime.** Whatever is dropping these segments, it isn't happening on this host's own egress queue. |
+| CPU steal time (noisy-neighbor hypervisor contention) | `vmstat 1 5` | `st` column reads 0 on every sample. No hypervisor-level CPU starvation. |
+| NIC-level errors/drops | `ethtool -S eth0` / `ip -s link show eth0` | All error/dropped/fifo/collision counters at 0. |
+| ECN black-holing (fq_codel has `ecn` enabled) | `tcpdump -v` for IP ToS bits; `sysctl net.ipv4.tcp_ecn` | Every captured packet has `tos 0x0` — no ECT/CE bits ever set, so ECN was never negotiated on these connections (`tcp_ecn=2`, i.e. server-side ECN is only used if the client requests it, and curl didn't). This isn't an ECN-blackhole problem. |
+
+So the loss is happening **beyond the VPS's own NIC** — somewhere in the
+network path outbound from Hetzner, not in anything under this host's or the
+app's control.
+
+**Ruled out as "my test network is just generally bad" or "Hetzner's network
+is bad in general":**
+
+| Test | Result |
+|---|---|
+| VPS → cachefly.cachefly.net (external CDN, 10MB file) | `SIZE:10485760 TIME:0.060s SPEED:174MB/s` — blazing fast, zero indication of a general host/provider-wide throughput problem. |
+| Test client → cachefly.cachefly.net (same 10MB file) | `SIZE:10485760 TIME:4.018s SPEED:2.6MB/s` (~21 Mbit/s) — normal, healthy throughput for the test client's own connection. |
+| Test client → earth-clock (VPS), 452KB–1.9MB files | 110–305 KB/s sustained, with confirmed retransmissions on every transfer. |
+
+Both ends are independently fine talking to a third party (cachefly). Only
+the VPS↔test-client path specifically is bad. `ipinfo.io` puts the VPS at
+Nuremberg, DE (`AS24940 Hetzner Online GmbH`) and the test client at
+Amsterdam, NL (`AS3257 GTT Communications`); TCP connect time was a normal
+62ms, so this isn't a long-haul-latency effect either — it's specifically
+lossy throughput on (at least) the Hetzner↔GTT path, most consistent with a
+congested or under-provisioned **inter-AS peering/transit link**, not a fault
+in earth-clock, CapRover, the shared nginx config, or the VPS host itself.
+(`mtr`/`traceroute`/`ping` to characterize the exact hop couldn't be run —
+ICMP appears to be filtered or deprioritized outbound from this host, `ping
+-c5 1.1.1.1` returned 100% loss/0 received, so no ICMP-based hop-by-hop trace
+was possible in this session. TCP-based tools would be needed for that; not
+attempted here.)
+
+**Congestion control note (not yet acted on):** the host is running `cubic`
+(loss-based, halves cwnd on every loss event) via `net.ipv4.tcp_congestion_control
+= cubic`; `net.ipv4.tcp_available_congestion_control` only lists `reno cubic`
+— the `tcp_bbr` module isn't loaded. BBR handles a lossy/congested path far
+more gracefully than cubic (it doesn't slash the window on isolated loss
+events) and is compatible with the `fq_codel` qdisc already in use. This
+would not fix the underlying loss but would very likely reduce how badly a
+lossy segment of path degrades total transfer time. **Not applied** — it's a
+host-wide sysctl change affecting every app on the VPS, and per the standing
+rule on this investigation, host-level production changes need Caspar's
+go-ahead first.
+
+**Conclusion**: the self-inflicted-by-testing-traffic theory is dead — there
+is no rate-limiting/banning mechanism on the host that could produce it, and
+the problem reproduces cleanly under a single-request, no-concurrency, fresh-
+IP test pattern. In its place: this is genuine, confirmed (via packet
+capture) TCP segment loss on the network path outbound from the Hetzner VPS,
+localized to beyond the host's own NIC (all host-side drop/error/CPU-steal
+counters are clean), most likely an inter-AS peering issue between Hetzner
+(AS24940) and at least GTT Communications (AS3257) — and plausibly other
+transit paths too, which would explain why Caspar sees it from his home
+connection. This is a real hosting/network-path problem, not an inference
+from timing variance alone; it is not fixable from the app, CapRover config,
+or anything in this repo. The two concrete next actions are outside this
+repo's scope: (1) Caspar could open a support ticket with Hetzner including
+this packet-capture evidence (host-side counters are clean, so the loss is
+demonstrably not local to the VM — that's useful ammunition for support to
+investigate their peering); (2) with Caspar's sign-off, try switching the
+host to BBR congestion control as a mitigation (`modprobe tcp_bbr; sysctl -w
+net.ipv4.tcp_congestion_control=bbr` — reversible instantly by setting it
+back to `cubic`, no restart required, affects all apps on the box).
+Meanwhile the already-shipped `resilientTexture.ts` mitigation (indefinite
+retry with backoff, visible status) is the right app-level response to a
+problem of this shape, and should stay as-is.
+
 ## Problem 3 — shipped: resilient texture loading (mitigation, not a root-cause fix)
 
 Whatever the root cause turns out to be, the app previously had no defense

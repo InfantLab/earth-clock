@@ -1,5 +1,32 @@
 # Handover: find the real cause of earth-clock's slow/erratic asset loading
 
+**2026-07-20 update — read this first, it supersedes most of the theory
+below.** The previous session's leading theory (self-inflicted by the
+investigation's own test traffic, possibly rate-limited) is now **dead** —
+checked and ruled out: no fail2ban jail beyond `sshd`, `ufw` inactive, no
+CrowdSec, no `limit_req`/`limit_conn` anywhere in the nginx config. The
+problem reproduces cleanly with single, well-spaced, non-concurrent requests
+from a brand-new IP that had never touched the domain before. A packet
+capture on the host during reproduced slow transfers showed genuine TCP
+retransmissions (real packet loss, SACK-recovered) on **every** transfer,
+fast and slow alike — and all host-side counters that could explain local
+loss (fq_codel qdisc drops, NIC errors, CPU steal time) are clean/zero. The
+loss is happening beyond the VPS's own NIC, most likely on an inter-AS
+peering path between Hetzner (AS24940) and at least one external transit
+network (`AS3257 GTT Communications`, confirmed from a test vantage point in
+Amsterdam). Full evidence and exact commands: see the "2026-07-20 update" in
+[INCIDENT-2026-07-19-slow-transfers.md](INCIDENT-2026-07-19-slow-transfers.md)
+under Problem 2. **Not fixable from this repo or CapRover config** — the two
+live options are (1) Caspar opens a Hetzner support ticket with the
+packet-capture evidence, since host-side counters prove it's not local to the
+VM, and (2) with Caspar's explicit sign-off, try switching the host from
+`cubic` to `BBR` congestion control as a mitigation (doesn't fix the loss,
+but handles it far more gracefully than cubic's halve-the-window-on-loss
+behavior) — reversible instantly, no restart needed, but it's a host-wide
+change affecting every app on the box, so don't do it without asking first.
+
+---
+
 Written for a fresh agent with no prior context. Caspar is **not convinced**
 the leading theory in the incident log is right, and wants a genuinely
 skeptical second pass — not a rubber stamp of what's already been concluded,
@@ -83,6 +110,12 @@ VPS's outbound path, or possibly something even further upstream/downstream
 of that.
 
 ## The unproven, currently-leading-by-default theory — treat this with suspicion
+
+**Status as of 2026-07-20: dead.** See the update at the top of this
+document — fail2ban/ufw/iptables/CrowdSec/nginx rate-limiting were all
+checked and none exist, and the problem reproduces under single-request,
+no-concurrency conditions from a fresh IP. Kept below for the historical
+record of how the theory arose.
 
 Two things happened late in the investigation that pointed away from a
 Hetzner/hosting-provider fault:
