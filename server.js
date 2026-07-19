@@ -27,7 +27,6 @@ if (basePath !== "/" && basePath.endsWith("/")) {
 
 var publicDir = path.join(__dirname, "public");
 var publicDirResolved = path.resolve(publicDir);
-var legacyBasePath = "/earth-clock";
 
 var mimeTypes = {
     ".html": "text/html",
@@ -62,12 +61,6 @@ var server = http.createServer(function (req, res) {
     // Strip the configured base path if present (CapRover may or may not strip it).
     if (basePath !== "/" && pathname.startsWith(basePath)) {
         pathname = pathname.substring(basePath.length);
-    }
-
-    // Temporary compatibility shim for stale cached HTML that still points at
-    // /earth-clock/... while production serves from the domain root.
-    if (pathname === legacyBasePath || pathname.startsWith(legacyBasePath + "/")) {
-        pathname = pathname.substring(legacyBasePath.length) || "/";
     }
 
     // Default to index.html for root

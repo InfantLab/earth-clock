@@ -30,11 +30,6 @@ export class Globe {
     const earthGeom = new THREE.SphereGeometry(1, 128, 64);
     this.phongMaterial = new THREE.MeshPhongMaterial({
       map: day,
-      // Keep the day texture faintly visible even on browsers/GPU paths where the
-      // lit surface goes implausibly black.
-      emissive: new THREE.Color(0xffffff),
-      emissiveMap: day,
-      emissiveIntensity: 0.22,
       normalMap: normal,
       normalScale: new THREE.Vector2(0.85, 0.85),
       specularMap: specular,

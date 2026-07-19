@@ -9,6 +9,32 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.3.1 — 2026-07-19 — Umami tracking + hotfix cleanup
+
+**Umami analytics** — added the `onemonkey.org` Umami tracking snippet to
+`index.html` so `earth-clock.onemonkey.org` reports into the existing Umami
+instance (site ID `4bc29459-777e-49a4-a843-1a1618473797`).
+
+**Fixed**: a stale `BASE_PATH=/earth-clock` environment variable left over on
+the live CapRover app config (production is documented in DEPLOYMENT.md as
+always serving from the domain root) caused `server.js` to inject a
+`<base href="/earth-clock/">` tag into every page, breaking every
+relative asset URL — textures, the JS bundle, everything. The env var has
+been removed from the CapRover config, and `server.js`'s base-tag injection
+now only fires when `BASE_PATH` is actually set (`needsBaseTag = basePath
+!== "/" && …`).
+
+**Reverted**: a same-day follow-up hotfix had added an emissive contribution
+to the globe's day-texture material (`Globe.ts`) as a defensive guess at the
+above symptom. It didn't address the root cause and — worse — bled the day
+texture through at all times regardless of lighting, washing out the
+night-side terminator that's the point of the app. Removed; the day/night
+material is back to the original Phong setup with no emissive component.
+Also removed a temporary `/earth-clock/*` compatibility shim in `server.js`
+added alongside it, now that the env var itself is gone.
+
+---
+
 ## v0.3.0 — 2026-07-02 — Geology layer
 
 **Earthquakes** — new `EarthquakeLayer.ts`: past-week USGS events as an additive
