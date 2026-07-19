@@ -1,8 +1,12 @@
 import * as THREE from "three";
+import { loadTextureResilient } from "./resilientTexture";
 
 // Moon's radius is ~0.273 Earth radii. We render it at true scale; phases emerge
 // naturally from the same DirectionalLight that lights the Earth.
 const MOON_RADIUS = 0.273;
+// Muted grey shown while the real moon texture is still loading/retrying — see
+// resilientTexture.ts for why we wait for real image data before binding it as a map.
+const PLACEHOLDER_COLOR = 0x888888;
 /** Default emissive intensity for the moon material — bright enough to read
  *  as a self-illuminated disc against the skybox. Restored when no lunar
  *  eclipse is in play. */
@@ -21,12 +25,13 @@ export class Moon {
 
   constructor() {
     const loader = new THREE.TextureLoader();
-    const texture = loader.load("textures/moon_1024.jpg");
-    texture.colorSpace = THREE.SRGBColorSpace;
 
     const geometry = new THREE.SphereGeometry(MOON_RADIUS, 64, 32);
+    // Texture attached asynchronously below rather than passed straight into the material
+    // constructor, so a slow/retrying load shows the placeholder color instead of black
+    // (an incomplete WebGL texture samples as black once bound as map/emissiveMap).
     this.material = new THREE.MeshPhongMaterial({
-      map: texture,
+      color: PLACEHOLDER_COLOR,
       shininess: 2,        // very matte — moon's regolith is dusty
       specular: 0x000000,
       // Self-illuminate the lunar texture so the moon is visible (a dim disc) even when its
@@ -36,11 +41,17 @@ export class Moon {
       // the moon reads as a bright object even at typical zoom — the moon's true albedo
       // is low (~0.12) but it's much brighter than the sky behind it.
       emissive: 0xffffff,
-      emissiveMap: texture,
       emissiveIntensity: DEFAULT_EMISSIVE_INTENSITY,
     });
 
     this.mesh = new THREE.Mesh(geometry, this.material);
+
+    loadTextureResilient(loader, "textures/moon_1024.jpg", (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      this.material.map = texture;
+      this.material.emissiveMap = texture;
+      this.material.needsUpdate = true;
+    });
   }
 
   setPosition(p: THREE.Vector3) {

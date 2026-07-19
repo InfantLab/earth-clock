@@ -9,6 +9,38 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.3.2 — 2026-07-19 — Resilient texture loading (network mitigation)
+
+**Mitigates** an ongoing production issue (see
+[INCIDENT-2026-07-19-slow-transfers.md](INCIDENT-2026-07-19-slow-transfers.md))
+where the hosting VPS's outbound network is erratic enough that texture
+requests sometimes stall for many seconds. A stalled/incomplete WebGL texture
+samples as solid black once bound to a material's `map`, regardless of the
+material's base color — that's the actual mechanism behind the "black globe"
+symptom, independent of whatever's wrong with the network itself.
+
+- New `frontend/src/scene/resilientTexture.ts`: wraps `THREE.TextureLoader`
+  with an 8s timeout and up to 4 attempts with exponential backoff. Textures
+  that fail or stall get retried instead of leaving the material permanently
+  incomplete.
+- `Globe.ts` and `Moon.ts`: day/night/normal/specular/moon textures are no
+  longer passed directly into material constructors from a raw
+  `loader.load()` call. Each material starts with a plausible placeholder
+  color (muted ocean/land tint for Earth, grey for the Moon) and the real
+  texture is attached asynchronously once it actually finishes loading — so a
+  slow network shows "planet loading" rather than a broken-looking black
+  sphere.
+- The night-lights shader's `uMap` sampler now starts bound to a 1×1 black
+  placeholder texture (`createBlackPlaceholderTexture`) rather than an
+  in-flight texture, avoiding undefined-sampler behavior before the real
+  night-lights texture loads.
+
+This does not fix the underlying network issue (still under investigation,
+suspected to be hosting-provider-level) — it makes the app degrade gracefully
+instead of rendering broken while that's ongoing.
+
+---
+
 ## v0.3.1 — 2026-07-19 — Umami tracking + hotfix cleanup
 
 **Umami analytics** — added the `onemonkey.org` Umami tracking snippet to

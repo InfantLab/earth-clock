@@ -167,6 +167,9 @@ Open the in-app Data panel. If `clouds` shows ✗ or stays in pending, the VIIRS
 ### Weather data not refreshing
 Check CapRover logs for the `weather-service` startup banner. The service runs in-process with `server.js` and updates `public/data/weather/current/current-*.json` every 6 hours. If the JSON files are stale, the service may have died — restart the container. Pure-JS GRIB2 decoding has no Java dependency, so the only real failure mode is upstream NOMADS being unreachable.
 
+### Slow page load / dark-looking globe / assets loading erratically
+See [INCIDENT-2026-07-19-slow-transfers.md](INCIDENT-2026-07-19-slow-transfers.md) before re-investigating — it has a long table of ruled-out causes (GRIB2 parsing, background service contention, CapRover resource limits, HTTP/2 framing, DNS/CDN routing, Docker overlay network, container restart, Dockerfile drift, the app itself, the live NGINX config, TLS certs) plus the one still-open lead: this looked earth-clock-specific at first but a properly controlled test showed the *whole VPS* transfers erratically to at least some networks — likely a hosting-provider-level network issue, not an app bug.
+
 ## Windows Screensaver (.scr)
 
 This repo also contains a **Windows screensaver** wrapper at [`screensaver/`](screensaver/) that hosts the wallpaper-engine version using WinForms + WebView2. Unrelated to the CapRover web deployment but documented here for completeness.
