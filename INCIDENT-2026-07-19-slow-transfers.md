@@ -318,8 +318,14 @@ packets."
 Raw trace files (server → sandbox test client, server → Caspar's real IP,
 and Caspar's WinMTR export) are session working files, not committed to this
 repo — they contain Caspar's home IP address, which doesn't belong in git
-history. Ready to attach directly to the Hetzner support ticket when it's
-submitted.
+history.
+
+**Status: support ticket filed.** Hetzner ticket **`2026072103043849`**,
+submitted 2026-07-21, with the full explanation above (ruled-out local
+causes, MTU check, all three MTR traces attached) — see that ticket for
+Hetzner's response. Nothing further to investigate from this repo/CapRover
+side unless Hetzner comes back asking for more diagnostics or identifies
+something requiring a code/config change here.
 
 ### 2026-07-21 update, part 1 — ruled out DNS, Hetzner traffic quota, and Cloud Firewall; confirmed the loss is genuinely random, not a targeted/size-based block
 
