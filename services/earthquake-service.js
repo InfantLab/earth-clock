@@ -15,7 +15,7 @@ var https = require("https");
 var fs = require("fs");
 var path = require("path");
 
-var EARTHQUAKE_DIR = path.join(__dirname, "public", "data", "earthquakes");
+var EARTHQUAKE_DIR = path.join(__dirname, "..", "public", "data", "earthquakes");
 var OUT_PATH = path.join(EARTHQUAKE_DIR, "current.json");
 var DEFAULT_SOURCE = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson";
 var SOURCE_URL = process.env.EARTHQUAKE_SOURCE_URL || DEFAULT_SOURCE;

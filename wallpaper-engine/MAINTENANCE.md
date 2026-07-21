@@ -30,7 +30,7 @@ Wallpaper Engine's Chromium-based renderer **does not allow access to parent dir
 After making changes to core files in `public/libs/earth/`, run the sync script:
 
 ```bash
-node sync-wallpaper.js
+node services/sync-wallpaper.js
 ```
 
 This copies updated files from `public/` to `wallpaper-engine/`, keeping the versions in sync.
@@ -52,7 +52,7 @@ This copies updated files from `public/` to `wallpaper-engine/`, keeping the ver
 ### Manual Update Process
 
 1. **Make changes to core code** in `public/libs/earth/`
-2. **Run sync script**: `node sync-wallpaper.js`
+2. **Run sync script**: `node services/sync-wallpaper.js`
 3. **Test in Wallpaper Engine editor**:
    - Open Wallpaper Engine
    - Open your wallpaper project

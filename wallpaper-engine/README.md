@@ -68,7 +68,7 @@ The wallpaper-engine directory contains copies of core files. To keep them in sy
 
 1. Run the sync script from the project root:
    ```bash
-   node sync-wallpaper.js
+   node services/sync-wallpaper.js
    ```
 
 2. This copies updated files from `public/classic/libs/earth/` to `wallpaper-engine/libs/earth/`.

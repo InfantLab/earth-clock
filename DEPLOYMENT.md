@@ -36,9 +36,11 @@ earth-clock/
 │   ├── about/              # detailed about page (static HTML)
 │   ├── classic/            # ← classic earth-clock archive
 │   └── data/               # ← weather + ocean data, refreshed by weather-service
-├── server.js               # production Node static server
-├── weather-service.js      # background GFS data refresher
-├── lib/                    # supporting modules for weather-service
+├── services/               # Node daemons
+│   ├── server.js           # production Node static server
+│   ├── weather-service.js  # background GFS data refresher
+│   └── lib/                # supporting modules for weather-service
+├── scripts/                # one-off data-build scripts (plates, timezones, volcanoes)
 ├── infra/                  # infrastructure config
 │   ├── nginx-caprover-override.conf       # CapRover NGINX template (placeholder key, committed)
 │   └── nginx-caprover-override.local.conf # same with real key (gitignored)

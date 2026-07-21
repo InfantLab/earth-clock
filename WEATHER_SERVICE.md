@@ -16,7 +16,7 @@ All four read the same JSON files in [`public/data/weather/current/`](public/dat
 
 The weather service consists of three main components:
 
-### 1. Weather Service (`weather-service.js`)
+### 1. Weather Service (`services/weather-service.js`)
 
 The main service orchestrator that:
 - Determines the latest available GFS forecast run (00z, 06z, 12z, or 18z)
@@ -86,7 +86,7 @@ npm run weather-service
 Or directly:
 
 ```bash
-node weather-service.js
+node services/weather-service.js
 ```
 
 The service will:
@@ -110,7 +110,7 @@ This file is automatically picked up by the frontend application.
 
 Default: 6 hours (21600000 milliseconds)
 
-To change, modify `UPDATE_INTERVAL` in `weather-service.js`:
+To change, modify `UPDATE_INTERVAL` in `services/weather-service.js`:
 
 ```javascript
 var UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
@@ -152,10 +152,11 @@ The service includes:
 ## File Structure
 
 ```
-weather-service.js          # Main service orchestrator
-lib/
-  ├── grib2-converter.js    # GRIB2 to JSON conversion
-  └── nomads-downloader.js  # NOMADS data downloader
+services/
+  ├── weather-service.js    # Main service orchestrator
+  └── lib/
+      ├── grib2-converter.js    # GRIB2 to JSON conversion
+      └── nomads-downloader.js  # NOMADS data downloader
 public/data/weather/current/ # Output directory
 ```
 

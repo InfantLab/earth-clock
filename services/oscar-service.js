@@ -15,7 +15,7 @@ var https = require("https");
 var fs = require("fs");
 var path = require("path");
 
-var OSCAR_DIR = path.join(__dirname, "public", "data", "oscar");
+var OSCAR_DIR = path.join(__dirname, "..", "public", "data", "oscar");
 // Default to the existing earth-clock deployment, which serves OSCAR JSON layers.
 // You can point this at any server hosting the same file structure.
 var DEFAULT_SOURCE = "https://earth-clock.onemonkey.org/data/oscar";

@@ -25,7 +25,7 @@ if (basePath !== "/" && basePath.endsWith("/")) {
     basePath = basePath.slice(0, -1);
 }
 
-var publicDir = path.join(__dirname, "public");
+var publicDir = path.join(__dirname, "..", "public");
 var publicDirResolved = path.resolve(publicDir);
 
 var mimeTypes = {

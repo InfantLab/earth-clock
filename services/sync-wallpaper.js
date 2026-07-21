@@ -7,7 +7,7 @@
  * its bundled libs/data/styles to be flat-relative, so sources here come from
  * public/classic/ but destinations stay at wallpaper-engine/.
  *
- * Usage: node sync-wallpaper.js
+ * Usage: node services/sync-wallpaper.js
  */
 
 var fs = require('fs');
@@ -28,8 +28,8 @@ var filesToSync = [
     // 'styles/styles.css',
 ];
 
-var publicDir = path.join(__dirname, 'public', 'classic');
-var wallpaperDir = path.join(__dirname, 'wallpaper-engine');
+var publicDir = path.join(__dirname, '..', 'public', 'classic');
+var wallpaperDir = path.join(__dirname, '..', 'wallpaper-engine');
 
 console.log('Syncing files from public/classic/ to wallpaper-engine/...');
 console.log('');

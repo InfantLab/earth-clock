@@ -52,7 +52,7 @@ keep that codename — stable API surfaces.
 ## Dev workflow
 
 - `cd frontend && npm run dev` — Vite dev server on `:5173` with HMR. Has dev-side proxies for `/proxy/nhc/` and `/proxy/geocode/`.
-- `npm run dev` (from repo root) — node `dev-server.js` on `:8080` serving `public/` exactly as prod does. Useful for smoke-testing the production bundle.
+- `npm run dev` (from repo root) — node `services/dev-server.js` on `:8080` serving `public/` exactly as prod does. Useful for smoke-testing the production bundle.
 - TypeScript check before commit: `cd frontend && npx tsc --noEmit`.
 
 ## Where things live

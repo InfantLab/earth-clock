@@ -6,7 +6,7 @@
  * Input:  %TEMP%\tz_extract\combined.json   (already downloaded)
  * Output: public/data/timezone-bounds.json
  *
- * Usage: node simplify-tz.mjs
+ * Usage: node scripts/simplify-tz.mjs
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
@@ -16,7 +16,7 @@ import os from "os";
 
 const __dirname  = dirname(fileURLToPath(import.meta.url));
 const INPUT_FILE = join(os.tmpdir(), "tz_extract", "combined.json");
-const OUT_FILE   = join(__dirname, "public", "data", "timezone-bounds.json");
+const OUT_FILE   = join(__dirname, "..", "public", "data", "timezone-bounds.json");
 const TOLERANCE  = 0.4;   // degrees – ≈ 44 km at equator; keeps shapes accurate enough to not overlap
 const MIN_RING   = 4;     // drop rings that collapse to fewer than 4 points
 

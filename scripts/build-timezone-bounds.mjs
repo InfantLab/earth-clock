@@ -4,7 +4,7 @@
  * Generates public/data/timezone-bounds.json from the Natural Earth 110m timezone dataset.
  *
  * Usage:
- *   node build-timezone-bounds.mjs
+ *   node scripts/build-timezone-bounds.mjs
  *
  * Requires: Node 18+ (built-in fetch).
  *
@@ -25,7 +25,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT_PATH  = join(__dirname, "public", "data", "timezone-bounds.json");
+const OUT_PATH  = join(__dirname, "..", "public", "data", "timezone-bounds.json");
 
 // Try multiple CDN sources in order; the first one that returns valid JSON wins.
 const NE_URLS = [
@@ -163,7 +163,7 @@ for (const feat of geojson.features ?? []) {
 zones.sort((a, b) => a.utcOffset - b.utcOffset || a.tzid.localeCompare(b.tzid));
 
 const out = { version: 1, generated: new Date().toISOString(), zones };
-mkdirSync(join(__dirname, "public", "data"), { recursive: true });
+mkdirSync(join(__dirname, "..", "public", "data"), { recursive: true });
 writeFileSync(OUT_PATH, JSON.stringify(out));
 
 const sizeKB = Math.round(JSON.stringify(out).length / 1024);

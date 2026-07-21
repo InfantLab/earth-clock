@@ -17,10 +17,10 @@
         "grib-js": "^1.0.0"
     },
     "scripts": {
-        "start": "node server.js",
-        "dev": "node dev-server.js 8080",
-        "weather-service": "node weather-service.js",
-        "sync-wallpaper": "node sync-wallpaper.js",
+        "start": "node services/server.js",
+        "dev": "node services/dev-server.js 8080",
+        "weather-service": "node services/weather-service.js",
+        "sync-wallpaper": "node services/sync-wallpaper.js",
         "release": "node release.mjs",
         "release:push": "node release.mjs --push"
     },

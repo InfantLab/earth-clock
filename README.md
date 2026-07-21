@@ -70,10 +70,11 @@ earth-clock/
 ├── public/
 │   ├── assets/        Vite bundle (index-*.js)
 │   ├── classic/       Original D3 + canvas renderer (archival, unmodified)
-│   ├── data/          GFS JSON feeds written by weather-service.js
+│   ├── data/          GFS JSON feeds written by services/weather-service.js
 │   ├── textures/      Globe, moon, skybox textures
 │   └── about/         Static about + kids pages
-├── weather-service.js Node daemon: NOAA NOMADS GRIB2 → JSON, runs every 6 h
+├── services/          Node daemons: server.js, weather/oscar/earthquake services
+├── scripts/           One-off data-build scripts (plates, timezones, volcanoes)
 ├── screensaver/       Windows .scr wrapper (WebView2, classic renderer)
 └── wallpaper-engine/  Wallpaper Engine output (classic renderer)
 ```

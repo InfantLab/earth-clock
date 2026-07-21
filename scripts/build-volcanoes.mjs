@@ -5,7 +5,7 @@
  * Program's "Volcanoes of the World" (VOTW) Holocene volcano database.
  *
  * Usage:
- *   node build-volcanoes.mjs
+ *   node scripts/build-volcanoes.mjs
  *
  * Requires: Node 18+ (built-in fetch).
  *
@@ -23,7 +23,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT_PATH  = join(__dirname, "public", "data", "volcanoes.json");
+const OUT_PATH  = join(__dirname, "..", "public", "data", "volcanoes.json");
 
 const SOURCE_URL =
   "https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows" +
@@ -60,7 +60,7 @@ for (const feat of geojson.features ?? []) {
 }
 
 const out = { version: 1, generated: new Date().toISOString(), source: "Smithsonian GVP · Volcanoes of the World (Holocene)", volcanoes };
-mkdirSync(join(__dirname, "public", "data"), { recursive: true });
+mkdirSync(join(__dirname, "..", "public", "data"), { recursive: true });
 writeFileSync(OUT_PATH, JSON.stringify(out));
 
 const sizeKB = Math.round(JSON.stringify(out).length / 1024);

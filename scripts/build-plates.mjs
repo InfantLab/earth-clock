@@ -5,7 +5,7 @@
  * boundary dataset, mirrored as GeoJSON by fraxen/tectonicplates.
  *
  * Usage:
- *   node build-plates.mjs
+ *   node scripts/build-plates.mjs
  *
  * Requires: Node 18+ (built-in fetch).
  *
@@ -23,7 +23,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT_PATH  = join(__dirname, "public", "data", "plates.json");
+const OUT_PATH  = join(__dirname, "..", "public", "data", "plates.json");
 
 const SOURCE_URL =
   "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
@@ -55,7 +55,7 @@ for (const feat of geojson.features ?? []) {
 }
 
 const out = { version: 1, generated: new Date().toISOString(), source: "PB2002 (Bird 2003) via fraxen/tectonicplates", lines };
-mkdirSync(join(__dirname, "public", "data"), { recursive: true });
+mkdirSync(join(__dirname, "..", "public", "data"), { recursive: true });
 writeFileSync(OUT_PATH, JSON.stringify(out));
 
 const sizeKB = Math.round(JSON.stringify(out).length / 1024);

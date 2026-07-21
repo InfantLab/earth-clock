@@ -27,7 +27,7 @@ var path = require("path");
 var grib2Converter = require("./lib/grib2-converter");
 var nomadsDownloader = require("./lib/nomads-downloader");
 
-var WEATHER_DATA_DIR = path.join(__dirname, "public", "data", "weather", "current");
+var WEATHER_DATA_DIR = path.join(__dirname, "..", "public", "data", "weather", "current");
 var GFS_BASE_URL = "https://nomads.ncep.noaa.gov";
 // Use NOAA's public S3 mirror by default (more reliable and supports .idx + Range requests).
 // Override with GFS_DATA_BASE_URL and (optionally) GFS_DATA_PREFIX if needed.

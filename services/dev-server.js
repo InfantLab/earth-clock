@@ -13,7 +13,7 @@ var fs = require("fs");
 var path = require("path");
 
 var port = process.argv[2] || 8080;
-var publicDir = path.join(__dirname, "public");
+var publicDir = path.join(__dirname, "..", "public");
 var publicDirResolved = path.resolve(publicDir);
 
 var mimeTypes = {
