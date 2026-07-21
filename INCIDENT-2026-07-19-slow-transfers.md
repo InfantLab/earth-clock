@@ -241,6 +241,91 @@ Meanwhile the already-shipped `resilientTexture.ts` mitigation (indefinite
 retry with backoff, visible status) is the right app-level response to a
 problem of this shape, and should stay as-is.
 
+### 2026-07-21 update — ruled out DNS, Hetzner traffic quota, and Cloud Firewall; confirmed the loss is genuinely random, not a targeted/size-based block
+
+Caspar raised a fair objection to the "real network loss" conclusion above:
+"dropping packets doesn't sound like the right explanation — the textures
+are being blocked, everything else is served fine." That's worth testing
+directly rather than asserting past, since a deliberate throughput-based
+rate-limiter (burst credit, then throttle) and genuine random packet loss
+both *look* like retransmissions in a packet capture, but imply different
+causes. Three things were checked this round:
+
+**Ruled out: Hetzner traffic quota / bandwidth throttling.** Caspar pulled
+the server's network traffic graph from the Hetzner Cloud console. Total
+traffic over the full month shown never exceeds ~1 MBps even at its single
+peak (a Reddit-driven traffic spike in mid-July, several days before the
+actual incident) — nowhere near enough cumulative volume to trigger any
+plan's included-traffic throttle. The graph also shows no traffic anomaly
+at all during the actual incident window — flat baseline throughout —
+which is itself consistent with the loss being independent of load, not
+caused by it.
+
+**Ruled out: Hetzner Cloud Firewall.** Caspar pulled the firewall rule
+table: standard inbound allow-list (22/25/80/110/143/443/465/587/993/995,
+plus 2229/3000 restricted to a Tailscale CGNAT range) and a narrow outbound
+allow-list (25/53(tcp only)/80/443 — no UDP, no ICMP at all). The missing
+outbound ICMP/UDP explains why the earlier `ping`/`mtr` attempts got 100%
+loss (straightforwardly blocked by this firewall, not a mystery). But
+because Hetzner's Cloud Firewall — like all security-group-style cloud
+firewalls — is stateful, return traffic for an already-allowed inbound
+connection (the actual texture bytes going back to a browser on the
+already-permitted `tcp/443` inbound rule) is automatically passed regardless
+of the outbound rule list. So this firewall isn't touching the traffic
+that's actually slow.
+
+**Ruled out: the Joker DNS change for `shop.onemonkey.org` (Fourthwall).**
+Checked directly: `onemonkey.org`'s nameservers are still Joker's own
+(`x/y/z.ns.joker.com`, no migration to any CDN/proxy provider).
+`onemonkey.org` and `earth-clock.onemonkey.org` both still resolve directly
+to `91.98.123.241` (unchanged). `shop.onemonkey.org` resolves to a
+completely separate IP (`34.117.223.165`, a Google Cloud range, consistent
+with Fourthwall hosting it themselves) — an isolated new record for
+unrelated infrastructure, touching nothing else in the zone. The SOA serial
+(`2026071381`) reads as a 2026-07-13 last-edit date in Joker's standard
+convention, about a week before the incident. Once a client resolves to the
+correct IP and opens a TCP connection there, the DNS provider is out of the
+picture for that connection's data-plane performance — there's no
+mechanism by which an unrelated subdomain's DNS record could affect it.
+
+**Confirmed: this is genuine random per-packet loss, not a targeted block
+on textures and not a deterministic size-based throttle.** Fresh packet
+capture (`tcpdump` on the host, same methodology as before) during 3 small
+(`index.html`, 805B) and 3 large (`earth_daymap_2k.jpg`, 463KB) requests,
+fired alternately from the same fresh test client:
+
+| Request | Size class | Packets | Payload retransmissions | First loss offset |
+|---|---|---|---|---|
+| small #1 | 805B | 20 | 0 (2 harmless duplicate-FIN retransmits at teardown only) | n/a |
+| small #2 | 805B | 19 | 0 | n/a |
+| small #3 | 805B | 19 | 0 | n/a |
+| large #1 | 463KB | 516 | 11 | ~136KB in |
+| large #2 | 463KB | 518 | 7 | ~44KB in |
+| large #3 | 463KB | 512 | 6 | ~272KB in |
+
+All three small transfers had **zero actual payload data loss** — the one
+that took longer (1.17s) did so because it was a fresh TLS handshake plus
+two harmless duplicate FIN packets at connection close, not lost response
+bytes. All three large transfers lost multiple real payload segments, but
+critically **at wildly different byte offsets each time** (44KB, 136KB,
+272KB into otherwise-identical downloads). A deliberate throughput-based
+rate-limiter (burst allowance, then throttle) would trip at a consistent
+threshold every time, because it's enforcing a fixed policy — this doesn't.
+Random loss on a lossy path hits wherever it happens to hit, which is
+exactly this pattern. This also resolves why it looked textures-specific:
+small requests are short enough (a handful of packets) to usually never
+encounter the underlying loss rate at all, while anything sending enough
+packets (textures, the JS bundle, or — per the 2026-07-20 update above — the
+larger earthquakes JSON feed) has a real chance of being unlucky.
+
+Net: the 2026-07-20 conclusion (real, external, random packet loss between
+the Hetzner VPS and outside clients, not fixable from this repo/CapRover)
+stands, now with direct evidence against the two most plausible alternative
+explanations (a deliberate rate-limiter, and several Hetzner-console-visible
+causes: traffic quota, Cloud Firewall, unrelated DNS changes). Nothing left
+to check from this repo or the Hetzner console — the support ticket with
+this packet-capture evidence is the remaining path forward.
+
 ## Problem 3 — shipped: resilient texture loading (mitigation, not a root-cause fix)
 
 Whatever the root cause turns out to be, the app previously had no defense
