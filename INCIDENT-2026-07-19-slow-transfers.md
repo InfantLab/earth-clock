@@ -241,7 +241,87 @@ Meanwhile the already-shipped `resilientTexture.ts` mitigation (indefinite
 retry with backoff, visible status) is the right app-level response to a
 problem of this shape, and should stay as-is.
 
-### 2026-07-21 update — ruled out DNS, Hetzner traffic quota, and Cloud Firewall; confirmed the loss is genuinely random, not a targeted/size-based block
+### 2026-07-21 update, part 2 — Hetzner support requirements: opened outbound ICMP, ran the required bidirectional MTR, ran MTU black-hole check
+
+Pasting the draft support ticket in surfaced two Hetzner docs the ticket
+needs to follow: their [packet-loss diagnostic
+process](https://docs.hetzner.com/cloud/servers/network-diagnosis-and-report-to-hetzner/#packet-loss)
+(requires bidirectional `mtr -s 1000 -r -c 200 <target>`, 200 packets each
+direction, submitted as file attachments — not something we had) and their
+[MTU troubleshooting
+guide](https://docs.hetzner.com/networking/networks/troubleshooting/mtu/)
+(`ping -M do -s 1422/1423` to check for a PMTUD black hole).
+
+**Blocker found and fixed**: neither could be attempted at all, because the
+Cloud Firewall's outbound rules had no ICMP allowed (confirmed earlier as
+the reason `ping`/`mtr` got 100% loss in the 2026-07-20 investigation — it
+wasn't the network, it was this firewall). Caspar added one new outbound
+rule (protocol ICMP, Any IPv4 + Any IPv6, no port) — low-risk, outbound-only,
+doesn't open any new inbound attack surface. Confirmed working immediately
+(`ping 1.1.1.1` from the host: 0% loss).
+
+**MTU / PMTUD black-hole check — ruled out.** `ping -c 5 -M do -s 1422` and
+`-s 1423` to the actual test client (not a random third party) both came
+back with the *same* ~20% loss rate — no sharp cliff between the two sizes,
+which is what a real black-hole would show (one size clean, the other
+failing consistently). A plain small ping (84 bytes, 20 packets) to the same
+target came back 0% loss. Same pattern as the TCP-level finding via a
+completely different protocol: small packets essentially always get
+through, larger ones have a real, non-deterministic chance of loss — not an
+MTU-threshold effect.
+
+**Bidirectional MTR — mixed, not a clean single answer, but two concrete
+leads inside Hetzner's own network.**
+
+*Server → test client* (`mtr -s 1000 -r -c 200 <target>` from the host):
+every hop through Hetzner's own backbone (Nuremberg) and through GTT
+Communications' network (Frankfurt → Amsterdam) showed 0% loss; loss (7.5%)
+appeared only at the very last hop, the destination itself — the classic
+signature of the *destination* deprioritizing ICMP replies, not a path
+problem. This test's target (a sandbox client) turned out to be the wrong
+one to prioritize — Caspar's real connection is what actually matters — but
+it's a useful negative result for GTT's network specifically.
+
+*Server → Caspar's real IP* (re-run targeting his actual connection):
+`_gateway` → `101511.your-cloud.host` → (2 non-replying hops, normal) →
+`core-spine-rdev2.cloud1.nbg1.hetzner.com` **0.0%** → `core11.nbg1.hetzner.com`
+0.0% → **`core6.par.hetzner.com` (Hetzner's Paris PoP) — 6.0% loss** →
+`core7.lon.hetzner.com` 0.0% (heals immediately) → `195.66.231.49` (LINX
+peering) 0.0% → non-replying hop near Caspar's end.
+
+*Caspar → server* (WinMTR from his home connection, targeting the server's
+public IP `91.98.123.241`): his ISP → LINX peering (`195.66.231.49`, the
+same IP seen in the reverse direction — confirms both traces share this
+peering point) → Core-Backbone GmbH (a transit provider, London PoP then
+Nuremberg PoP) → handoff to Hetzner → `core12.nbg1.hetzner.com` 0.0% →
+**`core-spine-rdev2.cloud1.nbg1.hetzner.com` — 37.0% loss (85 sent, 54
+received)** → `101511.your-cloud.host` 0.0% (heals immediately).
+
+**The honest read**: the *same* spine router (`core-spine-rdev2.cloud1.nbg1.hetzner.com`)
+shows 0% loss in the server→client direction but 37% in the client→server
+direction — not a clean "same hop confirmed both ways" result. Instead, each
+direction implicates a *different* specific router (the Nuremberg spine one
+way, the Paris core router the other), each individually showing the classic
+"isolated loss at one hop, gone by the very next hop" pattern. That pattern
+is genuinely ambiguous from outside the network — it's exactly as consistent
+with a router deprioritizing its own ICMP-reply generation under load (not
+real forwarding-plane loss) as it is with a real, low-grade forwarding issue
+specific to that router. An external MTR trace cannot distinguish between
+those two explanations; only Hetzner's own internal interface/queue counters
+on those two specific routers can. Which is precisely why their intake
+process asks for these traces rather than accepting inferred conclusions —
+this hands their network team two concrete, named routers
+(`core-spine-rdev2.cloud1.nbg1.hetzner.com` and `core6.par.hetzner.com`) to
+check directly, rather than "something on your network is dropping
+packets."
+
+Raw trace files (server → sandbox test client, server → Caspar's real IP,
+and Caspar's WinMTR export) are session working files, not committed to this
+repo — they contain Caspar's home IP address, which doesn't belong in git
+history. Ready to attach directly to the Hetzner support ticket when it's
+submitted.
+
+### 2026-07-21 update, part 1 — ruled out DNS, Hetzner traffic quota, and Cloud Firewall; confirmed the loss is genuinely random, not a targeted/size-based block
 
 Caspar raised a fair objection to the "real network loss" conclusion above:
 "dropping packets doesn't sound like the right explanation — the textures
