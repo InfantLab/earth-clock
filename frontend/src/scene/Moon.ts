@@ -48,6 +48,9 @@ export class Moon {
 
     loadTextureResilient(loader, "textures/moon_1024.jpg", (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
+      // Real texture has arrived — clear the placeholder tint (material.color multiplies
+      // map), or the moon would stay grey-darkened forever instead of its intended brightness.
+      this.material.color.set(0xffffff);
       this.material.map = texture;
       this.material.emissiveMap = texture;
       this.material.needsUpdate = true;

@@ -9,6 +9,29 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.3.3 — 2026-07-21 — Fix: globe/moon stayed darkened after textures loaded
+
+**Regression fix** for a bug introduced by v0.3.2's placeholder-color
+mitigation (below): `Globe.ts` and `Moon.ts` set `material.color` to a muted
+placeholder tint so an incomplete texture wouldn't sample as solid black
+while loading — but the `onLoad` callbacks only ever assigned `.map` (and,
+for the Moon, `.emissiveMap`), never resetting `.color` back afterward.
+Three.js multiplies `map` by `material.color`, so every material stayed
+permanently tinted by its loading placeholder even after the real texture
+successfully loaded — the day/night globe and the moon all rendered visibly
+darker than before, regardless of whether the network fetch ultimately
+succeeded.
+
+- `Globe.ts`: day/Phong material resets `.color` to `0xffffff`, flat
+  (terminator-off) material resets to its original `0xbbbbbb` dimming tint,
+  both inside the day-texture `onLoad` callback.
+- `Moon.ts`: resets `.color` to `0xffffff` inside the moon-texture `onLoad`
+  callback.
+- See
+  [INCIDENT-2026-07-19-slow-transfers.md](INCIDENT-2026-07-19-slow-transfers.md)
+  for the full writeup (filed under Problem 3, since it's a regression in
+  the same mitigation).
+
 ## v0.3.2 — 2026-07-19 — Resilient texture loading (network mitigation)
 
 **Mitigates** an ongoing production issue (see

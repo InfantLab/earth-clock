@@ -445,6 +445,48 @@ This does not fix whatever is actually causing transfers to be slow — it
 makes the app degrade visibly and recover automatically instead of silently
 rendering broken while that's ongoing (or being investigated).
 
+### 2026-07-21 update, part 3 — regression: placeholder tint never cleared, so the globe/moon stayed darkened even after textures loaded
+
+Caspar noticed the globe looked darker than before *even once textures had
+successfully loaded* (screenshot showed the lit hemisphere rendering as a
+dark, blue-grey tinted surface instead of true color). Root cause: the v0.3.1
+placeholder-color mitigation (above) sets `material.color` to a muted tint so
+an incomplete texture doesn't sample as solid black — but the `onLoad`
+callbacks in `Globe.ts` and `Moon.ts` only ever assigned `.map` (and, for the
+Moon, `.emissiveMap`); nothing reset `.color` back to its original value once
+the real texture arrived. Three.js multiplies `map` by `material.color`, so
+every material was left permanently tinted by its loading-placeholder color —
+`0x3a5a6b` (dark blue-grey) on the Earth day material, `0xbbbbbb` on the flat
+(terminator-off) material, `0x888888` (mid-grey) on the Moon — regardless of
+whether the load ultimately succeeded. This was a straight-up regression
+introduced by the v0.3.1/v0.3.2 resilience work, not a symptom of the network
+issue itself.
+
+**Fix**: `Globe.ts`/`Moon.ts` now reset `.color` inside each texture's
+`onLoad` callback — `0xffffff` for the Earth day/Phong material and the Moon,
+`0xbbbbbb` for the flat material (its original intentional dimming tint,
+unchanged from pre-incident behaviour). Verified visually via Playwright
+screenshot against the local dev server: the lit hemisphere renders true
+color (blue ocean, white cloud cover) again.
+
+### Caspar's new data point (2026-07-21, unverified) — throughput seems better with his VPN off
+
+Caspar reports the slow-transfer symptom "doesn't seem as bad" when he
+disables his VPN. Noted here as a fresh, not-yet-investigated data point,
+not a conclusion — per the running theme of this incident (see the killed
+self-inflicted/rate-limit theories above), single anecdotal observations
+from one vantage point have repeatedly turned out to be misleading here.
+Plausible explanations if it holds up under proper testing: the VPN adds a
+hop/reroutes traffic through a different peering path than the direct
+Hetzner↔ISP route already traced above (in which case it's consistent with,
+not contradictory to, the confirmed inter-AS/spine-router loss), or it's
+coincidental session-to-session variance of the kind already seen throughout
+this investigation. **Not yet tested**: a controlled back-to-back comparison
+(VPN on vs. off, same file, same time window, several repeats each way) from
+Caspar's own connection would be needed before drawing any conclusion — single
+before/after impressions without that control have been wrong before in this
+investigation.
+
 ### Secondary items noticed but not yet resolved
 
 - `server.js`'s static file serving doesn't set `Content-Length` (relies on

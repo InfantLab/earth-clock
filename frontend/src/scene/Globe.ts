@@ -48,8 +48,13 @@ export class Globe {
 
     loadTextureResilient(loader, "textures/earth_daymap_2k.jpg", (day) => {
       day.colorSpace = THREE.SRGBColorSpace;
+      // Real texture has arrived — clear the placeholder tint (material.color multiplies
+      // map), or the day map would stay darkened/blue-tinted forever instead of rendering
+      // at its intended brightness.
+      this.phongMaterial.color.set(0xffffff);
       this.phongMaterial.map = day;
       this.phongMaterial.needsUpdate = true;
+      this.flatMaterial.color.set(0xbbbbbb);
       this.flatMaterial.map = day;
       this.flatMaterial.needsUpdate = true;
     }, statusCallbacks.onDayStatus);
