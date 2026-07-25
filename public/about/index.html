@@ -430,6 +430,11 @@
     Added in v0.3.0, prompted by a primary-school class visit: kids instinctively want to see the <em>structure</em> of Earth, not just its weather. Tectonic plates, earthquakes, and volcanoes are deeply connected — most volcanoes and the overwhelming majority of earthquakes sit directly on plate boundaries — so all three live together in one <strong>Geology</strong> row in the menu, between Geography and Astro.
   </p>
 
+  <figure class="fig">
+    <img src="/screenshots/110-earth-clock-tectonics.png" alt="The night side of Earth centred on South-East Asia and Australia, with amber tectonic plate boundaries and triangular volcano markers clustered along the Indonesian island arc">
+    <figcaption>The Geology row with all three layers on, over the western Pacific — the best place on Earth to see why they belong together. The amber lines are plate boundaries; the small triangles are volcanoes. They aren't scattered at random, they trace the Sunda arc and the Philippine and Australian plate margins almost exactly. This is the Ring of Fire, drawn by the data rather than by hand.</figcaption>
+  </figure>
+
   <h3>Tectonic plates</h3>
   <p>
     241 plate-boundary lines from Peter Bird's PB2002 model, drawn in warm amber/terracotta so they read distinctly from the cool-white coastlines. Effectively static on human timescales, so the data is bundled once rather than fetched live. Rendered with Three.js's "fat line" material rather than the default WebGL line — plain <code>LineBasicMaterial.linewidth</code> is silently capped at 1px on almost every desktop GPU driver, so a genuinely thicker stroke needs a purpose-built shader.
