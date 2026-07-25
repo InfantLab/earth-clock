@@ -106,6 +106,20 @@ export class EclipsePanel {
     this.root.classList.toggle("hidden", !visible);
   }
 
+  /** Is the panel currently on screen? Used by the top-right EclipseBadge to
+   *  stand down while the panel it opens is covering the same corner. */
+  isVisible(): boolean {
+    return !this.root.classList.contains("hidden");
+  }
+
+  /** Public tab switch. The EclipseBadge opens the panel on the tab matching
+   *  whichever kind of eclipse is imminent, rather than always landing on
+   *  Solar. Routes through `setActiveTab` so `onTabChange` still fires and the
+   *  other eclipse kind gets cleared. */
+  showTab(tab: TabKey) {
+    this.setActiveTab(tab);
+  }
+
   /**
    * Mark a catalogued eclipse as the currently-selected one — visually
    * highlights the row and clears the previous selection within the same tab.

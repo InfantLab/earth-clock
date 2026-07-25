@@ -669,7 +669,8 @@ export class Menu {
         // panel (catalogue browser + jump-to). The panel is the place users browse
         // events; the layer is the visual on the globe. Same toggle for both keeps
         // the two from drifting apart.
-        eclipse.mesh.visible = on;
+        eclipse.mesh.visible     = on;
+        eclipse.flatMesh.visible = on;
         this.panels.eclipse?.setVisible(on);
         break;
       case "lightning":

@@ -62,6 +62,12 @@ export class DataPanel {
     if (visible) this.render();
   }
 
+  /** Is the panel currently on screen? Used by the top-right EclipseBadge,
+   *  which shares this corner and yields when the panel is up. */
+  isVisible(): boolean {
+    return !this.root.classList.contains("hidden");
+  }
+
   destroy() {
     window.clearInterval(this.ageTimer);
     this.root.remove();

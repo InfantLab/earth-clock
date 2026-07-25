@@ -9,6 +9,72 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.4.0 — 2026-07-25 — Eclipse Ready: ECLIPSE badge + eclipse on the flat map
+
+First half of the **Eclipse Ready** push toward the 2026-08-12 Spain total solar
+eclipse (18 days out at release) and the 2026-08-28 partial lunar eclipse.
+Remaining items — mobile/Safari QA, load resilience, deep links, dress
+rehearsal — are tracked in [ROADMAP.md](ROADMAP.md) under v0.4.1.
+
+### ECLIPSE badge (new)
+
+A restrained top-right counterpart to the `earth-clock` wordmark — same font
+family, smaller and lighter, with a muted countdown beneath it. New
+[`EclipseBadge.ts`](frontend/src/ui/EclipseBadge.ts).
+
+- Appears on its own **3 weeks either side of a solar eclipse** and **3 days
+  either side of a lunar one**, and removes itself afterwards. The asymmetry is
+  deliberate: lunar eclipses are frequent and visible from a whole hemisphere, so
+  a 3-week banner for each would turn the badge into wallpaper. When both windows
+  overlap (they do in late Aug 2026) the nearest peak wins.
+- Countdown uses days as its coarsest unit — "in 18 days", not "in 3 weeks",
+  which would be vaguer than the truth and stuck on one string for a week. Turns
+  amber and reads "happening now" during the event; counts up afterwards.
+- Clicking it opens the eclipse catalogue on the matching tab. It does **not**
+  warp time: if the event is live, wall-clock already shows it.
+- Reads wall-clock time, deliberately *not* the shared `simulatedTime` — warping
+  the clock to 2027 must not conjure a badge for an eclipse a year away in
+  reality.
+- Yields the top-right corner whenever DataPanel or EclipsePanel is showing
+  (both live there), so no panel had to be reflowed. New `isVisible()` on both.
+
+**Why this is a fix, not just an affordance:** the Astro row's Eclipse toggle
+defaults to *off*, so before this a visitor arriving mid-totality on 12 August
+would have seen an ordinary globe. The badge now also auto-enables the eclipse
+layer once real first contact arrives — once per event per session, so switching
+it back off sticks, and without popping the catalogue panel open over the globe.
+
+### Eclipse on the flat map (new)
+
+[`EclipseLayer`](frontend/src/scene/EclipseLayer.ts) now exposes a `flatMesh`
+beside `mesh`, giving the equirectangular view the umbra/penumbra shadow and the
+path-of-totality polyline.
+
+- Implemented as a fragment shader over a plane rather than the 2D oval
+  approximation originally planned. Reusing the 3D shell's great-circle distance
+  test yields the **exact** shadow shape, correctly stretched toward the poles.
+- The shading GLSL and the **uniform object itself** are shared with the 3D
+  shell, so `setLiveShadow` updates both views in one write and the delicate
+  diamond-ring constants exist in exactly one place.
+- Longitude wrap-around is free: the plane spans 3 world-widths and `lon = x·π`,
+  so the trig is periodic and no duplicate meshes are needed. The path polyline
+  can't use that trick, so it gets three copies at x = 0, ±2 — the same approach
+  FlatMap already uses for its terminator arc — with antimeridian-spanning
+  segments dropped, as Coastlines does.
+- Verified by pixel-diffing frames with the shell on and off: the darkened region
+  lands on the predicted shadow centre at 421 × 195 px, matching the ±50°
+  longitude stretch expected for a 27° penumbra at 57.7°N. Dimming at 20° arc
+  measured alpha 0.33 against 0.36 theoretical.
+
+### Notes
+
+- `__orrery.eclipseBadge.preview(date)` freezes the badge at any instant for
+  visual QA without touching the system clock; `preview(null)` releases it.
+- The flat map surfaced a **pre-existing data question**: the catalogued 2026
+  path runs to (22°N, 25°E), continuing past Spain into northeast Africa, where
+  real totality ends at sunset around Spain. Flagged for verification against
+  NASA GSFC rather than adjusted by guesswork — see ROADMAP v0.4.1.
+
 ## v0.3.3 — 2026-07-21 — Fix: globe/moon stayed darkened after textures loaded
 
 **Regression fix** for a bug introduced by v0.3.2's placeholder-color

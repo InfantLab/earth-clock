@@ -34,6 +34,7 @@ import { SunDiscPanel } from "./ui/SunDiscPanel";
 import { ScaleKeyPanel } from "./ui/ScaleKeyPanel";
 import { computeObserverView } from "./astro/observerView";
 import { EclipsePanel } from "./ui/EclipsePanel";
+import { EclipseBadge } from "./ui/EclipseBadge";
 import type { EclipseEvent } from "./data/eclipseCatalog";
 import { LiveDataSource } from "./data/DataSource";
 import { fetchAuroraGrid } from "./data/auroraLoader";
@@ -45,9 +46,10 @@ import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { reverseGeocode } from "./data/geocoder";
 import { computeShadow, computePathOfTotality } from "./astro/eclipse";
-import { nextEclipse, ECLIPSE_CATALOG } from "./data/eclipseCatalog";
+import { nextEclipse, eclipseById, ECLIPSE_CATALOG } from "./data/eclipseCatalog";
 import {
   lunarEclipseFraction,
+  lunarEclipseById,
   type LunarEclipseEvent,
 } from "./data/lunarEclipseCatalog";
 import { getCataloguedEclipsePath, interpolateUmbraPosition } from "./data/nasaEclipsePaths";
@@ -250,6 +252,7 @@ flatMap.scene.add(lightning.flatMesh);
 flatMap.scene.add(aurora.flatMesh);
 flatMap.scene.add(hurricaneTracks.flatMesh);
 flatMap.scene.add(radiusVectors.flatMesh);
+flatMap.scene.add(eclipseLayer.flatMesh);
 
 // GPU wind particles. Live-tune from the console:
 //   __orrery.particles.setSpeed(0.05) / setPointSize(3) / setAlpha(0.4)
@@ -350,6 +353,12 @@ declare global {
       /** Dev helper: jump simulatedTime to T-1m of a catalogued eclipse and warp to 60×.
        *  Pass an event id (e.g. "20260812"); omit to use the next upcoming event. */
       jumpToEclipse: (id?: string) => void;
+      /** The top-right ECLIPSE badge. Assigned after the state block rather than
+       *  in the literal below, since it's constructed later. Call
+       *  `.preview(new Date("2026-08-12T17:00:00Z"))` to freeze the badge at an
+       *  arbitrary moment (e.g. eclipse day) without changing the system clock;
+       *  `.preview(null)` returns it to the wall clock. */
+      eclipseBadge?: EclipseBadge;
     };
   }
 }
@@ -1423,6 +1432,58 @@ function loadEclipse(event: EclipseEvent | null) {
 }
 
 loadEclipse(nextEclipse(new Date()));
+
+// ── ECLIPSE badge (top-right) ────────────────────────────────────────────────
+// Constructed here, after every `let` above, because the badge calls update()
+// synchronously in its constructor and `onLiveWindowOpen` touches
+// activeLunarEclipse / loadEclipse — both of which would be in the temporal
+// dead zone if the badge were built up next to the other panels.
+//
+// The badge announces real upcoming eclipses (3 weeks either side for solar,
+// 3 days for lunar) and is the fix for a discoverability hole: the Astro row's
+// Eclipse toggle defaults to off, so before this a live visitor on 2026-08-12
+// would have seen an ordinary globe. See EclipseBadge.ts for the window rules.
+const eclipseBadge = new EclipseBadge(document.body, {
+  // Click opens the catalogue on the matching tab. Deliberately does NOT warp
+  // time: if the event is happening now, wall-clock already shows it, and if
+  // it's weeks away the user can pick "jump" from the panel themselves.
+  onOpen: (target) => {
+    menu.setLayer("eclipse", true);
+    eclipsePanel.showTab(target.kind);
+    eclipsePanel.setVisible(true);
+    eclipsePanel.setSelected(target.kind, target.id);
+  },
+  // Real first contact has arrived. Turn the eclipse layer on so the umbra and
+  // path render without the visitor having to find the menu. Fires once per
+  // event per session, so switching it back off sticks.
+  onLiveWindowOpen: (target) => {
+    if (target.kind === "solar") {
+      const event = eclipseById(target.id);
+      if (event) loadEclipse(event);
+    } else {
+      const event = lunarEclipseById(target.id);
+      if (event) {
+        activeLunarEclipse = event;
+        sunDiscPanel.setMode("lunar");
+        sunDiscPanel.setEclipseWindow(event.startUtc, event.endUtc, event.peakUtc);
+      }
+    }
+    menu.setLayer("eclipse", true);
+    // The Eclipse toggle drives the 3D layer *and* the catalogue panel (see
+    // Menu.apply). Here we only want the layer: on the day itself the story is
+    // the umbra crossing the globe, not a browse-and-pick list of other events,
+    // and leaving the panel up would also cover the badge that says "happening
+    // now". Close it straight back — setLayer runs apply() synchronously, so the
+    // panel is already open by this line. Same move the mobile jump handlers make.
+    eclipsePanel.setVisible(false);
+    console.log(`[earth-clock] ${target.name} is underway — eclipse layer enabled.`);
+  },
+  // Yield the top-right corner to whichever panel is occupying it.
+  isSuppressed: () => eclipsePanel.isVisible() || dataPanel.isVisible(),
+});
+// Exposed for eclipse-day verification: `__orrery.eclipseBadge.update(date)`
+// renders the badge as it would appear at any moment, no clock-fiddling needed.
+window.__orrery.eclipseBadge = eclipseBadge;
 
 // Per-frame: feed the live umbra centre to the eclipse layer in the geographic frame.
 // The layer then applies the same daily-rotation we apply below, putting it back in world.
