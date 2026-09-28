@@ -25,68 +25,71 @@ Forward-looking engineering tracker. Shipped work lives in
 - ❌ Blocked
 
 Current shipped version: **v0.4.0** (2026-07-25). See [CHANGELOG.md](CHANGELOG.md).
+Unreleased work (axis beam, equator/ecliptic rings, `?eclipse=` deep links, Kp-scaled
+aurora, MSLP sea-level reduction) is listed under *Unreleased* in the changelog.
 
 ---
 
-## v0.4.1 — Eclipse Ready (remaining)
+## Next up — the next two biggish tasks
 
-**Deadline-driven.** The 2026-08-12 Spain total solar eclipse is the project's
-headline event and the site's largest traffic moment to date; a partial lunar
-eclipse follows on 2026-08-28. This track is scoped purely around being ready for
-those two dates. Flat Map v2 — once v0.4.0 — moved to v0.5.0, because new
-projections do nothing for eclipse day.
+### ⬜ "Year in a minute"
 
-v0.4.0 shipped the first two items: the **ECLIPSE badge** and **eclipse on the
-flat map**. See [CHANGELOG.md](CHANGELOG.md) for both. What's left, in priority
-order:
+The founding essay asks for it and the Vision check below flags it as a gap. A single
+button that sweeps `simulatedTime` through one calendar year (~10 s per month, so ~2 min;
+or a true 60 s mode) and then stops, returning to live time. Shows the terminator's annual
+swing, and with Beams on, the sun beam walking the gold ecliptic ring between the tropics
+while the cyan axis stays fixed — the seasons made visible.
 
-### ⬜ Verify the 2026 path extent against NASA
+- Infrastructure exists: `simulatedTime` + `window.__orreryTimeWarp` drive every
+  astronomical layer. This is UX on top: a Clock-panel button, a progress indicator
+  (month label), and a clean return to live.
+- At ~500 000× warp the daily spin becomes a blur. Decide whether to freeze Earth's
+  rotation at a fixed local time during the sweep (e.g. always solar noon over the
+  viewer) so the *annual* motion reads, not the daily one.
+- Live-data layers already hide via the freshness gate in [Menu.ts](frontend/src/ui/Menu.ts)
+  `apply()` once time leaves ±24 h — check nothing flickers on return.
 
-Not a rendering bug, but the flat map makes it obvious in a way the globe never
-did: the catalogued 2026 path in [nasaEclipsePaths.ts](frontend/src/data/nasaEclipsePaths.ts)
-runs from (78°N, 105°E) to (22°N, 25°E) — i.e. it continues past Spain across
-Algeria and ends over northeast Africa. Real totality for this eclipse ends at
-sunset around Spain and the Balearics, so the last two waypoints look like an
-extrapolation rather than an umbral track.
+Effort: ~half a day.
 
-Worth checking the waypoints against NASA GSFC's published U1–U4 circumstances
-before the day, since the headline event's own path line is the last thing that
-should be wrong. Flagged rather than fixed here: correcting it means substituting
-real published coordinates, not adjusted guesses.
+### ⬜ ISS position + ground track
 
-### ⬜ Mobile + Safari QA pass — the biggest open risk
+The literal source of the overview effect (see Vision check §4). Show the ISS as a
+small marker orbiting at ~400 km (r ≈ 1.063 Earth radii) plus its ground track for the
+current and next orbit, on the globe and the flat map.
 
-Browser-matrix QA is still Chrome/Edge only (see Infrastructure). Eclipse-day
-traffic will skew hard toward mobile Safari over Spain and Iceland — the exact
-configuration never tested. Not the biggest *feature* gap, but the biggest
-chance of something being outright broken for a large share of visitors.
+- Data: two-line elements from CelesTrak (`https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle`),
+  no auth. Refresh a few times a day — ideally via a tiny server-side mirror like the
+  earthquake service, so the browser isn't tied to CelesTrak's availability.
+- Propagation: `satellite.js` (SGP4) in the browser, driven by `simulatedTime` so it
+  time-warps with everything else. Convert TEME → the scene's equatorial frame, then
+  apply the same axial-tilt Z-rotation as `sunDir` in `updateAstro()`.
+- Nice extras once it works: highlight passes visible from the pinned location; an
+  "ISS view" camera path (already listed under Camera paths).
 
-Minimum: iOS Safari and macOS Safari on the globe, the eclipse layer, the
-SunDiscPanel inset, and the badge; plus Firefox desktop. Watch for WebGL
-precision differences in the shader-driven layers and `env(safe-area-inset-*)`
-handling around the new badge and the mobile bottom sheet.
+Effort: ~1 day.
 
-### ⬜ Eclipse-day load resilience
+---
 
-The Hetzner network packet loss (ticket 2026072103043849) is still open, and a
-traffic spike stress-tests [resilientTexture.ts](frontend/src/scene/resilientTexture.ts)
-for real. Decide *before* the day whether the textures and `public/data/` should
-sit behind a CDN rather than being served directly by CapRover — a fix attempted
-on 12 August is a fix that arrives too late.
+## Carried over from v0.4.1 — Eclipse Ready
 
-### ⬜ Shareable eclipse deep link
+The 2026-08-12 Spain eclipse and the 2026-08-28 lunar eclipse have passed. These items
+still matter, now aimed at the **2027-08-02 long total eclipse over Spain & North Africa**
+(`?eclipse=20270802`), which will draw an even bigger crowd.
 
-`?eclipse=20260812` to load straight into a given event — the thing people
-actually paste into group chats. `eclipseById` / `lunarEclipseById` already exist,
-so this is URL parsing plus a call into the existing jump handlers.
-
-### ⬜ Live dress rehearsal
-
-End-to-end pass at real wall-clock time (not warped) confirming the umbra,
-path-of-totality, SunDiscPanel and badge all behave during the actual event
-window. The path gate is time-window based ([main.ts](frontend/src/main.ts)), so
-this should already work — but "should" is not "verified", and there is no second
-attempt on the day.
+- ✅ **Shareable eclipse deep link** — `?eclipse=<YYYYMMDD>` loads straight into a solar
+  or lunar event (unreleased; see changelog).
+- ⬜ **Verify eclipse paths against NASA.** The 2026 path in [nasaEclipsePaths.ts](frontend/src/data/nasaEclipsePaths.ts)
+  continues past Spain across Algeria to (22°N, 25°E), though totality ended at sunset
+  around Spain and the Balearics — the last two waypoints look extrapolated. Check the
+  2027 waypoints against NASA GSFC's published U1–U4 circumstances well ahead of time;
+  substitute real published coordinates, not adjusted guesses.
+- ⬜ **Mobile + Safari QA pass.** Still Chrome/Edge only (see Infrastructure). Minimum:
+  iOS + macOS Safari on the globe, eclipse layer, SunDiscPanel and badge; Firefox desktop.
+  Watch shader precision and `env(safe-area-inset-*)` around the badge and bottom sheet.
+- ⬜ **Load resilience.** Decide whether textures and `public/data/` should sit behind a
+  CDN rather than being served directly by CapRover (Hetzner packet-loss ticket
+  2026072103043849 context).
+- ⬜ **Live dress rehearsal** at real wall-clock time before the 2027 event.
 
 ---
 
@@ -101,12 +104,15 @@ TCW companion JSON alongside the existing wind file. Restores classic
 earth-clock's full overlay set. ~1–2 days server-side, then wire into the
 existing [OverlayLayer](frontend/src/scene/OverlayLayer.ts).
 
-### ⬜ Pressure map — verify post-v0.1.8 fix
+### 🔄 Pressure map — sea-level reduction
 
-After the half-float → byte texture fix in v0.1.8, MSLP should show clear
-high/low pressure systems. Verify on the next live data pass. If still uniform,
-check: wrong units (hPa vs Pa), poorly tuned palette, or server-side decode
-producing a constant field. Quick check: `window.__orrery.overlay.lastGrid?.values?.slice(0, 10)`.
+Root cause found: the "MSLP" file was raw **surface** pressure relabelled (PRMSL is
+complex-packed and grib-js can't decode it), so over high ground it read ~550–800 hPa
+and the 960–1040 hPa palette showed topography instead of weather systems.
+[weather-service.js](services/weather-service.js) now also fetches `HGT:surface` and
+reduces to sea level with the barometric formula (unreleased). **Verify on the next live
+data pass** — the service logs a warning and falls back to raw surface pressure if the
+HGT record doesn't decode. Quick check: `window.__orrery.overlay.lastGrid?.values?.slice(0, 10)`.
 
 ### ⬜ Additional cartographic projections
 
@@ -177,16 +183,16 @@ Effort: ~half-day design doc, then a few days to build.
 ### Earth-clock branding
 
 - Hour rings ⬜
-- Equator + ecliptic rings ⬜
+- Equator + ecliptic rings ✅ (with the rotation axis, under Beams)
 - Analemma trace ⬜
 
 ### Further sky + space layers
 
 - 10-min live cloud stitch (GOES-East + Himawari + Meteosat, replaces VIIRS daily mosaic) ⬜
-- Kp index → aurora intensity scaling (Kp already in [DataPanel](frontend/src/ui/DataPanel.ts); wire to [AuroraLayer](frontend/src/scene/AuroraLayer.ts) opacity) ⬜
+- Kp index → aurora intensity scaling ✅ (`AuroraLayer.setKp`: Kp 3 neutral, 0.7× quiet → 1.4× storm)
 - Real star skybox (Tycho-2 / Deepstar ≥100k stars) ⬜
 - Full solar system (planets, moons, ecliptic plane) ⬜
-- ISS position + track ⬜
+- ISS position + track ⬜ — promoted to *Next up*
 
 ### Communications
 
