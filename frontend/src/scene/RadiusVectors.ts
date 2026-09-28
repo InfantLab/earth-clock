@@ -3,7 +3,8 @@ import * as THREE from "three";
 /**
  * The earth-clock "beams" — visible pointers from Earth's centre toward the sun and moon.
  *
- * Plus a fixed, narrow rod through the true poles showing Earth's axis of rotation.
+ * Plus a fixed, narrow cyan rod through the true poles showing Earth's axis of rotation,
+ * with N / S labels at its tips and a ring + arrowhead near N showing the spin direction.
  *
  * Two visual modes:
  *
@@ -33,14 +34,14 @@ export class RadiusVectors {
 
   private readonly sunBeam: THREE.Mesh;
   private readonly moonBeam: THREE.Mesh;
-  private readonly axisBeam: THREE.Mesh;
+  private readonly axis: THREE.Group;
   private readonly sunDot: THREE.Mesh;
   private readonly moonDot: THREE.Mesh;
   private readonly moonPhaseMat: THREE.ShaderMaterial;
 
   private static readonly SUN_COLOR  = 0xffcc44;
   private static readonly MOON_COLOR = 0xc8d8f0;
-  private static readonly AXIS_COLOR = 0xe8f4ff;
+  private static readonly AXIS_COLOR = 0x33e0ff;
 
   constructor() {
     this.mesh = new THREE.Group();
@@ -59,8 +60,8 @@ export class RadiusVectors {
     // AXIS_BEAM_LENGTH beyond each. Unlike the sun/moon beams it never moves — the spin
     // axis is fixed in the inertial frame — so it's oriented once here. Same Z-tilt as
     // Globe's tilted parent group; depthTest hides the portion inside the planet.
-    this.axisBeam = makeAxisBeam(RadiusVectors.AXIS_COLOR, 0.6);
-    this.mesh.add(this.axisBeam);
+    this.axis = makeAxis(RadiusVectors.AXIS_COLOR, 0.7);
+    this.mesh.add(this.axis);
 
     // ---- 2D flat-map dots ----
     // Sun dot: small gold disc. z=+0.01 keeps it just above the plane's other content
@@ -126,8 +127,8 @@ export class RadiusVectors {
   setSunBeamVisible(v: boolean)  { this.sunBeam.visible  = v; }
   /** Moon beam (3D) visibility — gated by BOTH Moon (target exists) and Beams. */
   setMoonBeamVisible(v: boolean) { this.moonBeam.visible = v; }
-  /** Rotation-axis beam (3D) visibility — gated by the Beams toggle only. */
-  setAxisBeamVisible(v: boolean) { this.axisBeam.visible = v; }
+  /** Rotation axis (3D rod, N/S labels, spin ring) visibility — gated by the Beams toggle only. */
+  setAxisBeamVisible(v: boolean) { this.axis.visible = v; }
   /** Sun dot (flat-map) visibility — gated by the Beams toggle only. */
   setSunDotVisible(v: boolean)   { this.sunDot.visible   = v; }
   /** Moon dot (flat-map) visibility — gated by the Moon toggle (the moon dot is the
@@ -149,6 +150,14 @@ const BEAM_TIP_RADIUS  = 0.006;
 const AXIS_BEAM_LENGTH = 0.5;
 /** Axis beam radius — narrower than the sun/moon beams so it reads as a line, not a gnomon. */
 const AXIS_BEAM_RADIUS = 0.005;
+/** Spin-direction ring: sits around the rod partway out from the north pole. */
+const AXIS_RING_HEIGHT = 1 + AXIS_BEAM_LENGTH * 0.55;
+const AXIS_RING_RADIUS = 0.1;
+const AXIS_RING_TUBE   = 0.004;
+/** How much of the circle the ring covers — the gap leaves room for the arrowhead. */
+const AXIS_RING_ARC    = Math.PI * 1.7;
+/** World size of the N / S label sprites, in Earth radii. */
+const AXIS_LABEL_SIZE  = 0.09;
 /** Earth's obliquity. Must match Globe.ts and main.ts — search for AXIAL_TILT_RAD. */
 const AXIAL_TILT_RAD = 23.44 * Math.PI / 180;
 /** Radius of the flat-map sun dot in plane units (the 2×1 plane is 2 wide × 1 tall).
@@ -169,17 +178,74 @@ function makeBeam(color: number, opacity: number): THREE.Mesh {
   return mesh;
 }
 
-function makeAxisBeam(color: number, opacity: number): THREE.Mesh {
-  // Pole to pole plus AXIS_BEAM_LENGTH past each, centred on Earth's centre along +Y.
-  const geom = new THREE.CylinderGeometry(
-    AXIS_BEAM_RADIUS, AXIS_BEAM_RADIUS, 2 * (1 + AXIS_BEAM_LENGTH), 12,
-  );
+function makeAxis(color: number, opacity: number): THREE.Group {
+  // Built in the equatorial frame (+Y = spin axis, north up), then the whole group gets
+  // the same Z-tilt as Globe's parent so it lines up with the true geographic poles.
+  const group = new THREE.Group();
+  group.rotation.z = AXIAL_TILT_RAD;
   const mat = new THREE.MeshBasicMaterial({
     color, transparent: true, opacity, depthWrite: false,
   });
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.rotation.z = AXIAL_TILT_RAD; // Y (the equatorial-frame spin axis) → tilted world frame
-  return mesh;
+  const tip = 1 + AXIS_BEAM_LENGTH;
+
+  // Rod: pole to pole plus AXIS_BEAM_LENGTH past each, centred on Earth's centre.
+  const rod = new THREE.Mesh(
+    new THREE.CylinderGeometry(AXIS_BEAM_RADIUS, AXIS_BEAM_RADIUS, 2 * tip, 12),
+    mat,
+  );
+  rod.frustumCulled = false;
+  group.add(rod);
+
+  // Spin ring: a partial torus in the plane orthogonal to the axis, with an arrowhead at
+  // the leading end. TorusGeometry lies in local XY, sweeping counter-clockwise about +Z;
+  // rotating the ring by −90° about X maps +Z → +Y, so the sweep becomes a positive
+  // (right-hand) rotation about the spin axis — i.e. counter-clockwise seen from above
+  // the north pole, west → east, matching earthRotationY() increasing with GMST.
+  const ring = new THREE.Group();
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = AXIS_RING_HEIGHT;
+  ring.add(new THREE.Mesh(
+    new THREE.TorusGeometry(AXIS_RING_RADIUS, AXIS_RING_TUBE, 8, 64, AXIS_RING_ARC),
+    mat,
+  ));
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(AXIS_RING_TUBE * 4, AXIS_RING_TUBE * 10, 12), mat);
+  arrow.position.set(
+    AXIS_RING_RADIUS * Math.cos(AXIS_RING_ARC), AXIS_RING_RADIUS * Math.sin(AXIS_RING_ARC), 0,
+  );
+  // Cone points along local +Y; turn it to the ring's tangent at the arc's end.
+  arrow.quaternion.setFromUnitVectors(
+    _up, new THREE.Vector3(-Math.sin(AXIS_RING_ARC), Math.cos(AXIS_RING_ARC), 0),
+  );
+  ring.add(arrow);
+  group.add(ring);
+
+  // N / S labels just beyond each tip. Sprites always face the camera.
+  const n = makeLabel("N", color);
+  n.position.y = tip + AXIS_LABEL_SIZE * 0.7;
+  const sLabel = makeLabel("S", color);
+  sLabel.position.y = -(tip + AXIS_LABEL_SIZE * 0.7);
+  group.add(n, sLabel);
+
+  return group;
+}
+
+function makeLabel(text: string, color: number): THREE.Sprite {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.font = `bold ${size * 0.8}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+  ctx.fillText(text, size / 2, size / 2 + size * 0.04);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthWrite: false,
+  }));
+  sprite.scale.set(AXIS_LABEL_SIZE, AXIS_LABEL_SIZE, 1);
+  return sprite;
 }
 
 const _up = new THREE.Vector3(0, 1, 0);
