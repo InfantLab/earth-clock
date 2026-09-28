@@ -4,7 +4,9 @@ import * as THREE from "three";
  * The earth-clock "beams" — visible pointers from Earth's centre toward the sun and moon.
  *
  * Plus a fixed, narrow cyan rod through the true poles showing Earth's axis of rotation,
- * with N / S labels at its tips and a ring + arrowhead near N showing the spin direction.
+ * with N / S labels at its tips and a ring + arrowhead near N showing the spin direction,
+ * plus two great circles on the surface: the equator (cyan) and the ecliptic (gold) — the
+ * 23.44° between them is the obliquity that drives the seasons.
  *
  * Two visual modes:
  *
@@ -61,6 +63,11 @@ export class RadiusVectors {
     // axis is fixed in the inertial frame — so it's oriented once here. Same Z-tilt as
     // Globe's tilted parent group; depthTest hides the portion inside the planet.
     this.axis = makeAxis(RadiusVectors.AXIS_COLOR, 0.7);
+    // Equator + ecliptic ride in the same tilted equatorial frame as the rod.
+    this.axis.add(
+      makeGreatCircle(RadiusVectors.AXIS_COLOR, 0.5, _up),
+      makeGreatCircle(RadiusVectors.SUN_COLOR,  0.6, ECLIPTIC_NORMAL_EQ),
+    );
     this.mesh.add(this.axis);
 
     // ---- 2D flat-map dots ----
@@ -127,7 +134,7 @@ export class RadiusVectors {
   setSunBeamVisible(v: boolean)  { this.sunBeam.visible  = v; }
   /** Moon beam (3D) visibility — gated by BOTH Moon (target exists) and Beams. */
   setMoonBeamVisible(v: boolean) { this.moonBeam.visible = v; }
-  /** Rotation axis (3D rod, N/S labels, spin ring) visibility — gated by the Beams toggle only. */
+  /** Rotation axis (3D rod, N/S labels, spin ring, equator + ecliptic) visibility — gated by the Beams toggle only. */
   setAxisBeamVisible(v: boolean) { this.axis.visible = v; }
   /** Sun dot (flat-map) visibility — gated by the Beams toggle only. */
   setSunDotVisible(v: boolean)   { this.sunDot.visible   = v; }
@@ -160,6 +167,14 @@ const AXIS_RING_ARC    = Math.PI * 1.7;
 const AXIS_LABEL_SIZE  = 0.09;
 /** Earth's obliquity. Must match Globe.ts and main.ts — search for AXIAL_TILT_RAD. */
 const AXIAL_TILT_RAD = 23.44 * Math.PI / 180;
+/** Equator / ecliptic ring radius — just above the cloud shell (1.003) so neither z-fights. */
+const GREAT_CIRCLE_RADIUS = 1.012;
+const GREAT_CIRCLE_TUBE   = 0.0025;
+/** Ecliptic pole in the equatorial frame (+X = vernal equinox, +Y = north, −Z = RA 90°;
+ *  see sunDirectionWorld). The standard (0, −sin ε, cos ε) in (X, RA 90°, north) axes
+ *  becomes (0, cos ε, sin ε) here. Every sun direction sunDirectionWorld() returns lies
+ *  in the plane orthogonal to this. */
+const ECLIPTIC_NORMAL_EQ = new THREE.Vector3(0, Math.cos(AXIAL_TILT_RAD), Math.sin(AXIAL_TILT_RAD));
 /** Radius of the flat-map sun dot in plane units (the 2×1 plane is 2 wide × 1 tall).
  *  Sized for ~6 px on a 360 px wide mobile screen at default zoom; larger on desktop. */
 const FLAT_DOT_RADIUS = 0.036;
@@ -227,6 +242,17 @@ function makeAxis(color: number, opacity: number): THREE.Group {
   group.add(n, sLabel);
 
   return group;
+}
+
+/** Thin surface ring whose plane is orthogonal to `normal` (in the parent's frame). */
+function makeGreatCircle(color: number, opacity: number, normal: THREE.Vector3): THREE.Mesh {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(GREAT_CIRCLE_RADIUS, GREAT_CIRCLE_TUBE, 6, 256),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }),
+  );
+  // TorusGeometry's axis is local +Z; turn it onto the requested normal.
+  ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+  return ring;
 }
 
 function makeLabel(text: string, color: number): THREE.Sprite {

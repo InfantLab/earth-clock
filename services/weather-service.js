@@ -343,6 +343,33 @@ function findRecord(records, predicate) {
     return null;
 }
 
+/**
+ * Reduce surface pressure to mean sea level with the standard-atmosphere barometric
+ * formula, using the 2 m temperature as the station temperature:
+ *   p0 = p · (1 − L·h / (T + L·h)) ^ (−g·M / (R·L))
+ * Good to a few hPa almost everywhere; less trustworthy over very high, very cold
+ * terrain (Antarctic plateau), which is also where the real PRMSL is a model fiction.
+ * Points with missing inputs pass through unchanged.
+ */
+function reduceToSeaLevel(pressure, temp2m, height) {
+    var L = 0.0065;     // K/m, standard lapse rate
+    var EXP = 5.25588;  // g·M / (R·L)
+    if (!pressure || !temp2m || !height ||
+        pressure.length !== temp2m.length || pressure.length !== height.length) {
+        throw new Error("Cannot reduce MSLP: pressure, temperature and height grids do not align");
+    }
+    var out = new Array(pressure.length);
+    for (var i = 0; i < pressure.length; i++) {
+        var p = pressure[i], t = temp2m[i], h = height[i];
+        if (typeof p === "number" && typeof t === "number" && typeof h === "number" && t > 0) {
+            out[i] = p * Math.pow(1 - (L * h) / (t + L * h), -EXP);
+        } else {
+            out[i] = p;
+        }
+    }
+    return out;
+}
+
 function deriveAirDensity(tempRecord, pressureRecord) {
     var Rd = 287.05; // J/(kg·K)
     var t = tempRecord.data;
@@ -434,7 +461,8 @@ function fetchCurrentGFSData(callback) {
     ];
     var patternsTmp2mAndPresSfc = [
         ":TMP:2 m above ground:",
-        ":PRES:surface:"
+        ":PRES:surface:",
+        ":HGT:surface:"
     ];
     var patternsRH2m = [
         ":RH:2 m above ground:"
@@ -453,7 +481,8 @@ function fetchCurrentGFSData(callback) {
         ":TCDC:entire atmosphere"
     ];
     // Mean sea level pressure (PRMSL) uses complex packing in GFS and is not decoded by grib-js.
-    // We generate MSLP from the decoded surface pressure record instead.
+    // We reduce the decoded surface pressure to sea level instead, using surface height
+    // (HGT:surface) and 2 m temperature — see reduceToSeaLevel().
 
     console.log("Fetching GFS data");
     console.log("Will try dates:", datesToTry.join(", "));
@@ -514,10 +543,25 @@ function fetchCurrentGFSData(callback) {
                         var rhoJson = deriveAirDensity(tempRec, presRec);
                         writeJsonAtomic(outAD, rhoJson);
                         // Generate MSLP overlay from surface pressure (PRMSL is complex-packed in GFS).
+                        // Raw surface pressure is ~550 hPa over Tibet and ~700 hPa over Antarctica,
+                        // so without reduction the overlay shows topography rather than weather.
+                        var hgtRec = findRecord(records, function (r) {
+                            var h = r && r.header;
+                            return h &&
+                                ((h.parameterCategoryName === "Mass") || (h.parameterCategory === 3)) &&
+                                h.parameterNumber === 5 &&
+                                (h.surface1TypeName || "").toLowerCase().indexOf("surface") >= 0;
+                        });
+                        var mslData = presRec.data;
+                        if (hgtRec) {
+                            mslData = reduceToSeaLevel(presRec.data, tempRec.data, hgtRec.data);
+                        } else {
+                            console.warn("HGT:surface not decoded; MSLP overlay falls back to raw surface pressure");
+                        }
                         var mslHeader = {};
                         Object.keys(presRec.header || {}).forEach(function (k) { mslHeader[k] = presRec.header[k]; });
                         mslHeader.parameterNumberName = "Mean Sea Level Pressure";
-                        writeJsonAtomic(outMSLP, [{ header: mslHeader, data: presRec.data }]);
+                        writeJsonAtomic(outMSLP, [{ header: mslHeader, data: mslData }]);
                     });
                 }).finally(function () {
                     safeUnlink(tmpGrib);
