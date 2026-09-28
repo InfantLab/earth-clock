@@ -236,7 +236,7 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   // Astro
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
-  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
+  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, a thin rod through the poles for Earth's spin axis, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
   // View
   map:         "Equirectangular flat-map view — drag to pan, wheel to zoom (centred on cursor), double-click to reset",
@@ -720,6 +720,7 @@ export class Menu {
         // with Beams on, both hidden with Beams off.
         radiusVectors.setSunBeamVisible(on);
         radiusVectors.setMoonBeamVisible(on);
+        radiusVectors.setAxisBeamVisible(on);
         radiusVectors.setSunDotVisible(on);
         radiusVectors.setMoonDotVisible(on);
         break;

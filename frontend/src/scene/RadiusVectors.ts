@@ -3,6 +3,8 @@ import * as THREE from "three";
 /**
  * The earth-clock "beams" — visible pointers from Earth's centre toward the sun and moon.
  *
+ * Plus a fixed, narrow rod through the true poles showing Earth's axis of rotation.
+ *
  * Two visual modes:
  *
  *   • **3D (globe view)**: a tapered glowing cylinder from Earth's surface outward in the
@@ -31,12 +33,14 @@ export class RadiusVectors {
 
   private readonly sunBeam: THREE.Mesh;
   private readonly moonBeam: THREE.Mesh;
+  private readonly axisBeam: THREE.Mesh;
   private readonly sunDot: THREE.Mesh;
   private readonly moonDot: THREE.Mesh;
   private readonly moonPhaseMat: THREE.ShaderMaterial;
 
   private static readonly SUN_COLOR  = 0xffcc44;
   private static readonly MOON_COLOR = 0xc8d8f0;
+  private static readonly AXIS_COLOR = 0xe8f4ff;
 
   constructor() {
     this.mesh = new THREE.Group();
@@ -50,6 +54,13 @@ export class RadiusVectors {
     this.sunBeam  = makeBeam(RadiusVectors.SUN_COLOR,  0.7);
     this.moonBeam = makeBeam(RadiusVectors.MOON_COLOR, 0.55);
     this.mesh.add(this.sunBeam, this.moonBeam);
+
+    // Rotation axis: one narrow rod through both true (geographic) poles, poking out
+    // AXIS_BEAM_LENGTH beyond each. Unlike the sun/moon beams it never moves — the spin
+    // axis is fixed in the inertial frame — so it's oriented once here. Same Z-tilt as
+    // Globe's tilted parent group; depthTest hides the portion inside the planet.
+    this.axisBeam = makeAxisBeam(RadiusVectors.AXIS_COLOR, 0.6);
+    this.mesh.add(this.axisBeam);
 
     // ---- 2D flat-map dots ----
     // Sun dot: small gold disc. z=+0.01 keeps it just above the plane's other content
@@ -115,6 +126,8 @@ export class RadiusVectors {
   setSunBeamVisible(v: boolean)  { this.sunBeam.visible  = v; }
   /** Moon beam (3D) visibility — gated by BOTH Moon (target exists) and Beams. */
   setMoonBeamVisible(v: boolean) { this.moonBeam.visible = v; }
+  /** Rotation-axis beam (3D) visibility — gated by the Beams toggle only. */
+  setAxisBeamVisible(v: boolean) { this.axisBeam.visible = v; }
   /** Sun dot (flat-map) visibility — gated by the Beams toggle only. */
   setSunDotVisible(v: boolean)   { this.sunDot.visible   = v; }
   /** Moon dot (flat-map) visibility — gated by the Moon toggle (the moon dot is the
@@ -132,6 +145,12 @@ const BEAM_LENGTH = 0.6;
  *  rather than a pencil. */
 const BEAM_BASE_RADIUS = 0.018;
 const BEAM_TIP_RADIUS  = 0.006;
+/** How far the axis beam extends beyond each pole, in Earth radii. */
+const AXIS_BEAM_LENGTH = 0.5;
+/** Axis beam radius — narrower than the sun/moon beams so it reads as a line, not a gnomon. */
+const AXIS_BEAM_RADIUS = 0.005;
+/** Earth's obliquity. Must match Globe.ts and main.ts — search for AXIAL_TILT_RAD. */
+const AXIAL_TILT_RAD = 23.44 * Math.PI / 180;
 /** Radius of the flat-map sun dot in plane units (the 2×1 plane is 2 wide × 1 tall).
  *  Sized for ~6 px on a 360 px wide mobile screen at default zoom; larger on desktop. */
 const FLAT_DOT_RADIUS = 0.036;
@@ -147,6 +166,19 @@ function makeBeam(color: number, opacity: number): THREE.Mesh {
   });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.frustumCulled = false; // bounds change every frame as we re-orient
+  return mesh;
+}
+
+function makeAxisBeam(color: number, opacity: number): THREE.Mesh {
+  // Pole to pole plus AXIS_BEAM_LENGTH past each, centred on Earth's centre along +Y.
+  const geom = new THREE.CylinderGeometry(
+    AXIS_BEAM_RADIUS, AXIS_BEAM_RADIUS, 2 * (1 + AXIS_BEAM_LENGTH), 12,
+  );
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.rotation.z = AXIAL_TILT_RAD; // Y (the equatorial-frame spin axis) → tilted world frame
   return mesh;
 }
 
