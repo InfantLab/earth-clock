@@ -24,9 +24,8 @@ Forward-looking engineering tracker. Shipped work lives in
 - ✅ Done
 - ❌ Blocked
 
-Current shipped version: **v0.4.0** (2026-07-25). See [CHANGELOG.md](CHANGELOG.md).
-Unreleased work (axis beam, equator/ecliptic rings, `?eclipse=` deep links, Kp-scaled
-aurora, MSLP sea-level reduction) is listed under *Unreleased* in the changelog.
+Current shipped version: **v0.4.1** (2026-09-28) — spin axis, equator/ecliptic rings,
+`?eclipse=` deep links, Kp-scaled aurora, MSLP sea-level reduction. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -77,7 +76,7 @@ still matter, now aimed at the **2027-08-02 long total eclipse over Spain & Nort
 (`?eclipse=20270802`), which will draw an even bigger crowd.
 
 - ✅ **Shareable eclipse deep link** — `?eclipse=<YYYYMMDD>` loads straight into a solar
-  or lunar event (unreleased; see changelog).
+  or lunar event (v0.4.1).
 - ⬜ **Verify eclipse paths against NASA.** The 2026 path in [nasaEclipsePaths.ts](frontend/src/data/nasaEclipsePaths.ts)
   continues past Spain across Algeria to (22°N, 25°E), though totality ended at sunset
   around Spain and the Balearics — the last two waypoints look extrapolated. Check the
@@ -110,7 +109,7 @@ Root cause found: the "MSLP" file was raw **surface** pressure relabelled (PRMSL
 complex-packed and grib-js can't decode it), so over high ground it read ~550–800 hPa
 and the 960–1040 hPa palette showed topography instead of weather systems.
 [weather-service.js](services/weather-service.js) now also fetches `HGT:surface` and
-reduces to sea level with the barometric formula (unreleased). **Verify on the next live
+reduces to sea level with the barometric formula (v0.4.1). **Verify on the next live
 data pass** — the service logs a warning and falls back to raw surface pressure if the
 HGT record doesn't decode. Quick check: `window.__orrery.overlay.lastGrid?.values?.slice(0, 10)`.
 

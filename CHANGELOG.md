@@ -9,7 +9,7 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
-## Unreleased
+## v0.4.1 — 2026-09-28 — Spin axis, equator & ecliptic, eclipse deep links
 
 - **Rotation axis (Beams).** A narrow cyan rod through the true geographic poles,
   labelled N and S, with a ring and arrowhead near N showing the west → east spin
