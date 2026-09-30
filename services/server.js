@@ -14,6 +14,7 @@ var path = require("path");
 var weatherService = require("./weather-service");
 var oscarService = require("./oscar-service");
 var earthquakeService = require("./earthquake-service");
+var satelliteService = require("./satellite-service");
 
 var port = process.env.PORT || 80;
 var basePath = process.env.BASE_PATH || "/";
@@ -161,5 +162,10 @@ setTimeout(function () {
         earthquakeService.startEarthquakeService();
     } catch (e3) {
         console.error("Failed to start earthquake service:", e3 && e3.message ? e3.message : e3);
+    }
+    try {
+        satelliteService.startSatelliteService();
+    } catch (e4) {
+        console.error("Failed to start satellite service:", e4 && e4.message ? e4.message : e4);
     }
 }, 0);

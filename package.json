@@ -20,6 +20,7 @@
         "start": "node services/server.js",
         "dev": "node services/dev-server.js 8080",
         "weather-service": "node services/weather-service.js",
+        "satellites:fallback": "node services/satellite-service.js --once public/data/satellites/fallback.json",
         "sync-wallpaper": "node services/sync-wallpaper.js",
         "release": "node release.mjs",
         "release:push": "node release.mjs --push"

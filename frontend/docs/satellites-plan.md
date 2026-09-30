@@ -1,6 +1,6 @@
 # Satellites plan — ISS, Tiangong, and what comes after
 
-Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **proposal, not started**.
+Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **Phase 0 (plumbing) landed; Phase 1 next.**
 Supersedes the short *ISS position + ground track* entry in [ROADMAP.md](../../ROADMAP.md).
 
 Two headline features:
@@ -95,7 +95,9 @@ export interface Propagator {
 - **Source:** CelesTrak GP API, OMM JSON (`gp.php?GROUP=stations&FORMAT=json` covers ISS +
   Tiangong + visiting vehicles; `CATNR=` for singles). OMM rather than TLE because
   5-digit catalogue numbers are running out; keep a TLE fallback. satellite.js ≥ 6
-  has an OMM parser (`json2satrec`) — **confirm before we depend on it**.
+  has an OMM parser (`json2satrec`) — confirmed in 7.1. satellite.js 7 also ships optional
+  WASM bulk-propagation runtimes that break Vite's bundling; `vite.config.ts` aliases them
+  to a stub (`src/space/shims/`). Revisit if we want bulk SGP4 for constellations.
 - **Server mirror is required, not optional.** CelesTrak asks clients not to refetch
   faster than the data updates (~2 h) and blocks IPs that do. Every browser hitting it
   directly isn't acceptable. `satellite-service.js` polls every 4 h, writes
@@ -296,7 +298,33 @@ rest of it.
 
 ---
 
-## 7. Decisions (2026-09-30)
+## 7. Progress
+
+**Phase 0 — landed (2026-09-30).**
+
+- `src/space/`: `catalog.ts` (ISS 25544, Tiangong 48274, with silhouettes + emoji),
+  `propagator.ts` (interface, factory, element-age gate), `sgp4Propagator.ts`, `frames.ts`
+  (TEME → scene, sub-point, Earth shadow, LVLH), `tracker.ts` (one propagator per entry).
+- `src/data/satelliteLoader.ts`: `current.json` → `fallback.json`, plus `crew.json`.
+- `services/satellite-service.js`: CelesTrak `stations` group + `SATELLITE_EXTRA_CATNR`
+  (default Hubble), every 4 h, skips the startup fetch if the file is fresh, keeps the last
+  good file on failure. Started from `server.js`. `current.json` is gitignored.
+- `main.ts`: loads elements hourly, "satellites" Data-panel row, console helpers
+  `__orrery.satellites()` / `__orrery.satelliteTracker`. No scene objects yet.
+- `scripts/verify-satellites.ts` (`npx tsx scripts/verify-satellites.ts [current.json]`):
+  OMM ≡ TLE (0.3 m), our `gmst` vs satellite.js `gstime` (≤ 4 m at ISS altitude over
+  2020–30), marker exactly over the pin, geodetic/geocentric gap 0.18°, period/altitude/
+  speed, and 100% agreement with satellite.js's conical shadow model over two orbits.
+
+**Still to do before v0.5.0 ships:**
+
+- `public/data/satellites/fallback.json` isn't committed yet — CelesTrak isn't reachable
+  from the cloud dev sandbox. Run `npm run satellites:fallback` locally and commit it.
+- Fill in `crew.json` (currently `updated: null`, so the UI will hide the count).
+- Live check: `npx tsx scripts/verify-satellites.ts ../public/data/satellites/fallback.json`
+  and compare the printed sub-points with wheretheiss.at (target < 0.1°).
+
+## 8. Decisions (2026-09-30)
 
 | # | Question | Decision |
 |---|---|---|

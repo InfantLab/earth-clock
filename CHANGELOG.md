@@ -9,6 +9,16 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## Unreleased — satellites groundwork
+
+- **Satellite plumbing (no visible change yet).** Orbital elements for the ISS and
+  Tiangong are mirrored from CelesTrak by a new `satellite-service.js` (every 4 h) and
+  propagated in the browser with SGP4 (`satellite.js`). Positions line up exactly with the
+  scene's own Earth rotation, so a satellite sits over the right pin. The Data panel gains
+  a "satellites" row. Design and phasing: [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md).
+
+---
+
 ## v0.4.1 — 2026-09-28 — Spin axis, equator & ecliptic, eclipse deep links
 
 - **Rotation axis (Beams).** A narrow cyan rod through the true geographic poles,

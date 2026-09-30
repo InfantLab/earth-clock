@@ -42,6 +42,8 @@ import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoad
 import { fetchFireDetections, type FireDetection } from "./data/firmsLoader";
 import { crossReferenceEruptions } from "./data/eruptionCrossRef";
 import { fetchEarthquakes } from "./data/earthquakeLoader";
+import { fetchSatelliteElements } from "./data/satelliteLoader";
+import { SatelliteTracker, type SatelliteSnapshot } from "./space/tracker";
 import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { reverseGeocode } from "./data/geocoder";
@@ -167,6 +169,8 @@ scene.add(fires.mesh);
 // coloured by depth. Geographically fixed, so rotates with Earth. Refreshes every 15 min.
 const earthquakes = new EarthquakeLayer();
 scene.add(earthquakes.mesh);
+// Orbital state for ISS / Tiangong / … (no scene objects yet — Space layer is Phase 1).
+const satelliteTracker = new SatelliteTracker();
 
 // Active tropical cyclones — NHC CurrentStorms.json. Empty off-season; auto-activates when storms appear.
 // Pulsing animated swirl sprites at r=1.012. Refreshes every 15 min.
@@ -359,6 +363,11 @@ declare global {
        *  arbitrary moment (e.g. eclipse day) without changing the system clock;
        *  `.preview(null)` returns it to the wall clock. */
       eclipseBadge?: EclipseBadge;
+      /** Tracked satellites (ISS, Tiangong, …) — data only until the Space layer lands. */
+      satelliteTracker: SatelliteTracker;
+      /** Dev helper: sub-satellite lat/lon/alt of every tracked satellite at the
+       *  current simulated time. Compare against wheretheiss.at to validate frames. */
+      satellites: () => SatelliteSnapshot[];
     };
   }
 }
@@ -384,6 +393,8 @@ window.__orrery = {
     }
     jumpToEclipseEvent(event);
   },
+  satelliteTracker,
+  satellites: () => satelliteTracker.snapshot(new Date(simulatedTime)),
 };
 
 // Display order matches the bottom-left Menu's group order so users can map a button to
@@ -403,6 +414,8 @@ const DATA_ORDER = [
   "earthquakes", "plates", "volcanoes",
   // Astro row
   "moon", "eclipse",
+  // Space row
+  "satellites",
 ];
 
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
@@ -434,6 +447,7 @@ const PENDING_SOURCES: Array<[string, string, string]> = [
   ["hurricanes", "NHC · CurrentStorms.json",                "fetching active storms…"],
   ["aurora",     "NOAA SWPC · Ovation aurora forecast",     "fetching SWPC Ovation…"],
   ["kp",         "NOAA SWPC · planetary K-index",           "fetching SWPC K-index…"],
+  ["satellites", "CelesTrak GP · orbital elements",         "fetching orbital elements…"],
   ["viirs",      "NASA GIBS · VIIRS NOAA-20 True Color",    "fetching VIIRS mosaic…"],
   ["gfs-clouds", "NOAA GFS · cloud cover",                  "fetching GFS cloud cover…"],
   ["mslp",       "NOAA GFS · MSLP",                         "fetching MSLP…"],
@@ -1277,6 +1291,29 @@ function loadEarthquakes() {
 }
 loadEarthquakes();
 setInterval(loadEarthquakes, 15 * 60 * 1000);
+
+// Orbital elements for the tracked satellites (satellites-plan.md §1.5), mirrored from
+// CelesTrak by satellite-service.js every ~4 h; falls back to the committed snapshot.
+function loadSatellites() {
+  fetchSatelliteElements()
+    .then(els => {
+      satelliteTracker.setElements(els.byNorad);
+      const summary = satelliteTracker.summary(new Date());
+      debug.info("satellites", summary);
+      dataRegistry.report("satellites", {
+        source: els.fallback ? "CelesTrak GP · bundled snapshot" : "CelesTrak GP · orbital elements",
+        fetched: els.generated ?? new Date(),
+        detail: summary,
+        refreshSeconds: 4 * 60 * 60,
+      });
+    })
+    .catch(err => {
+      debug.warn("satellites", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("satellites", { source: "CelesTrak GP", error: String(err.message ?? err) });
+    });
+}
+loadSatellites();
+setInterval(loadSatellites, 60 * 60 * 1000);
 
 // Fetch NHC active tropical cyclones. CORS-clean. Empty array off-season — that's fine,
 // the layer just sits dormant and lights up automatically once NHC posts the first storm.

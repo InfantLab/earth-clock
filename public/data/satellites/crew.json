@@ -1,0 +1,8 @@
+{
+  "_comment": "Hand-maintained list of people aboard each crewed station (satellites-plan.md §4.1). Keys match catalog.ts ids. Set `updated` to the date you last checked (YYYY-MM-DD); null means not filled in yet and the UI will hide the count. Sources: nasa.gov/international-space-station, cmse.gov.cn.",
+  "updated": null,
+  "stations": {
+    "iss": [],
+    "tiangong": []
+  }
+}
