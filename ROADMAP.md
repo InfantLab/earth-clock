@@ -198,6 +198,15 @@ Effort: ~half-day design doc, then a few days to build.
 - Full solar system (planets, moons, ecliptic plane) ⬜
 - ISS position + track ⬜ — promoted to *Next up*
 
+### ⬜ Kids / emoji mode
+
+Idea raised during satellite planning (2026-09-30). A toggle, or `?mode=kids`, that swaps
+point markers for emoji: 🛰️ stations, 🌋 volcanoes, 🌀 hurricanes, ⚡ lightning,
+🔥 fires, 📍 the pin. It could also add a friendlier label set and link to
+[/about/kids/](public/about/kids/). The satellites layer is being built with a
+`MarkerStyle` switch so it's ready ([satellites-plan.md](frontend/docs/satellites-plan.md) §2.3);
+other layers would need the same hook. Pairs with the picture-book / preschool audience.
+
 ### Communications
 
 #### ⬜ "Upgrading earth-clock to WebGL" blog post

@@ -52,6 +52,8 @@ export interface SatelliteSpec {
     | { kind: "sgp4"; noradId: number }            // ISS 25544, Tiangong (Tianhe) 48274, Hubble 20580
     | { kind: "ephemeris"; source: string };        // JWST, DSCOVR — Phase 4
   model?: { url: string; scaleMetres: number };     // glTF for POV / close zoom, lazy-loaded
+  silhouette: string;         // SVG path (top-down outline) → glowing sprite marker
+  emoji: string;              // kids-mode marker, e.g. "🛰️" — see §2.3
   facts?: string[];           // rotating one-liners for the info card
 }
 ```
@@ -131,7 +133,7 @@ ring, which is then the honest picture.
 
 | Element | Frame | Notes |
 |---|---|---|
-| **Marker** | inertial (tilted) | Sprite with a constant pixel size and an agency-coloured glyph. At true scale the ISS (109 m ≈ 1.7×10⁻⁵ R) is invisible, so exaggeration is deliberate here, as with earthquakes. Hover/click → SatellitePanel. |
+| **Marker** | inertial (tilted) | **Glowing station silhouette** (decided): a sprite with a constant pixel size, made from `spec.silhouette` drawn to a canvas with an agency-coloured outer glow (additive blend, soft halo ~3× the outline) so it reads against both day and night sides. It rotates to align with the velocity vector. At true scale the ISS (109 m ≈ 1.7×10⁻⁵ R) is invisible, so exaggeration is deliberate here, as with earthquakes. In emoji mode it swaps to `spec.emoji` (§2.3). Hover/click → SatellitePanel. |
 | **Orbit ring** | inertial | One period of positions, sampled every ~30 s and refreshed every few sim-minutes. Shows the key idea that **the orbit is fixed and Earth turns underneath it**. The plane precesses ~5°/day (J2), so refresh slowly. |
 | **Ground track** | Earth-fixed | Child of the rotated Earth group, like coastlines, lifted to r = 1.002. Past half-orbit faded, next 1–2 orbits bright, ticks every 10 min. |
 | **Nadir line** | inertial | Optional thin line from marker to sub-satellite point (matches the sun/moon gnomon "Beams" style). |
@@ -148,7 +150,7 @@ plumbing FlatMap already has.
 
 ### 2.3 UI
 
-- **Menu:** new **"Space"** row (next to Astro): `ISS`, `Tiangong`, `Tracks`, `Orbits`.
+- **Menu:** new **"Space"** row (decided; next to Astro): `ISS`, `Tiangong`, `Tracks`, `Orbits`.
   Per-sat keys for the headline stations. Later constellations get a group key rather
   than one button per object. Persisted in `orrery.menu.v1` like everything else.
 - **Find ISS** action button, alongside the existing "Find moon". It flies the camera
@@ -156,6 +158,10 @@ plumbing FlatMap already has.
 - **SatellitePanel** (click a marker): name, agency, altitude, speed, lat/lon, "over the
   South Pacific" (reuse [geocoder.ts](../src/data/geocoder.ts) / ocean names), sunlit or
   in shadow, next orbital sunrise, crew aboard, elements age, and a **Ride along ▶** button.
+- **Emoji marker mode (kids mode hook):** marker drawing goes through a small
+  `MarkerStyle` switch (`"silhouette" | "emoji"`), so the satellites layer is ready for
+  the site-wide kids / emoji mode proposed in [ROADMAP.md](../../ROADMAP.md). Until that
+  exists, `?markers=emoji` flips it for testing.
 - **Deep links:** `?sat=iss` (select + find), `?view=iss` (straight into POV). This
   follows the `?eclipse=` pattern at the end of [main.ts](../src/main.ts).
 
@@ -207,7 +213,7 @@ ISS in mind, and this becomes its first real implementation.
 | **Texture resolution** | From 420 km with a 60° FOV you see ~500 km across. An 8k equirect is ~5 km/px, which looks soft. | Accept it for v1 (clouds hide a lot). Stretch: stream GIBS Blue Marble tiles for the visible footprint only. |
 | **Layer altitudes** | Clouds, aurora and the atmosphere shell sit at fixed radii tuned for a distant view; from 420 km, wrong radii give obvious parallax or clipping. | Audit every layer's radius. Aurora curtains *should* be seen side-on at ~100–300 km, which works in our favour. |
 | **Atmosphere shader** | Tuned for viewing from outside the shell. The camera is now *inside* at the top. | Test the limb look early; may need an "inside" branch for the limb glow. |
-| **Station model** | ISS glTF from NASA 3D Resources (public domain), a few MB. Tiangong has no NASA model. | Lazy-load only on POV entry. Tiangong: CC-licensed community model or our own low-poly one (it's three modules and panels). Solar arrays rotate toward `sunDir`, which is a cheap, lovely detail. |
+| **Station model** | ISS glTF from NASA 3D Resources (public domain), a few MB. Tiangong has no NASA model. | Lazy-load only on POV entry. Tiangong (decided): search for a CC-BY / CC0 model first (Sketchfab etc., check the licence allows redistribution); otherwise build our own low-poly one (Tianhe + Wentian + Mengtian in a T, plus arrays). Solar arrays rotate toward `sunDir`, which is a cheap, lovely detail. |
 
 ### 3.3 HUD
 
@@ -224,6 +230,8 @@ boarded. Optional "overview effect" mode hides all chrome.
 - **Real stars** behind the limb (skybox). The v1 hi-res skybox is fine; this is a good
   reason to bump the Tycho-2 star skybox up the roadmap.
 - **Time-lapse button:** 1× / 30× / 120×, preset to match what astronaut time-lapses look like.
+- **Warp clamp (decided):** Ride-along limits time warp to **≤ 300×**. Faster warps set
+  from the Clock are clamped on entry and restored on exit, with a brief HUD note.
 
 ---
 
@@ -232,9 +240,11 @@ boarded. Optional "overview effect" mode hides all chrome.
 Rough value-for-effort order:
 
 1. **"Humans in space right now: 10"**, with 7 on the ISS and 3 on Tiangong, in the
-   Clock or Data panel. This lands the overview-effect idea directly. Source:
-   open-notify `astros.json` is HTTP-only and unmaintained, so mirror it server-side with
-   a hand-edited JSON fallback (crews change a few times a year).
+   Clock or Data panel. This lands the overview-effect idea directly. **Decided:** ship
+   with a hand-edited `public/data/satellites/crew.json`
+   (`{ updated, stations: { iss: [{name, agency, since}], tiangong: [...] } }`) and show
+   its age in the Data panel. A live source comes later (open-notify `astros.json` is
+   HTTP-only and unmaintained; pick a replacement then).
 2. **Data-provenance satellites.** Our cloud layers *come from* NOAA-20 (VIIRS),
    GOES-East, Himawari and Meteosat. Show the satellites behind the pixels you're looking at, with
    the geostationary ones parked in their GEO slots. This connects the Data panel to
@@ -286,12 +296,12 @@ rest of it.
 
 ---
 
-## 7. Open questions for Caspar
+## 7. Decisions (2026-09-30)
 
-1. **Menu placement:** a new "Space" row, or fold into "Astro"? (Proposal: new row, since
-   Astro is already full.)
-2. **Marker style:** simple glowing dot + label, or a tiny station silhouette icon?
-3. **POV while warping:** allow any warp in Ride-along, or clamp to ≤ 300× so the view
-   stays readable?
-4. **Tiangong model:** OK with a home-made low-poly model, or hold out for a good CC one?
-5. **Humans-in-space count:** worth the maintenance of a hand-edited crew fallback?
+| # | Question | Decision |
+|---|---|---|
+| 1 | Menu placement | New **Space** row. |
+| 2 | Marker style | **Glowing silhouette** per station. Emoji variant ready for a future kids mode. |
+| 3 | Warp in Ride-along | Clamp to **≤ 300×**. |
+| 4 | Tiangong model | Look for a redistributable CC model online; fall back to home-made low-poly. |
+| 5 | Crew count | Yes. Hand-edited `crew.json` now, live source later. |
