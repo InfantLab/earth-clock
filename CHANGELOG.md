@@ -9,6 +9,25 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## v0.4.1 — 2026-09-28 — Spin axis, equator & ecliptic, eclipse deep links
+
+- **Rotation axis (Beams).** A narrow cyan rod through the true geographic poles,
+  labelled N and S, with a ring and arrowhead near N showing the west → east spin
+  (counter-clockwise seen from above the North Pole).
+- **Equator and ecliptic rings (Beams).** Cyan equator and gold ecliptic great circles;
+  the sun beam always lands on the ecliptic, and the 23.44° between the rings is the
+  obliquity behind the seasons.
+- **Eclipse deep links.** `?eclipse=<YYYYMMDD>` (e.g. `?eclipse=20270802`) jumps straight
+  into a solar or lunar event from the catalogue.
+- **Kp-scaled aurora.** Aurora brightness now follows the live planetary K-index: Kp 3 is
+  unchanged, quiet nights dim to 0.7×, storms brighten up to 1.4×.
+- **MSLP overlay fix (weather service).** The pressure overlay was raw surface pressure,
+  which over mountains and ice sheets showed terrain rather than weather. It is now
+  reduced to sea level using surface height and 2 m temperature, falling back to the old
+  behaviour if the height record is unavailable.
+
+---
+
 ## v0.4.0 — 2026-07-25 — Eclipse Ready: ECLIPSE badge + eclipse on the flat map
 
 First half of the **Eclipse Ready** push toward the 2026-08-12 Spain total solar

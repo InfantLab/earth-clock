@@ -351,7 +351,7 @@
   <h2>What you see</h2>
 
   <p>
-    Most globes are stylised diagrams. This one is trying to be accurate. The texture is a real daily satellite composite. The clouds are from yesterday's VIIRS pass. The day/night boundary is where it actually is at this second — not a painted-on approximation. The gold arm pointing away from the globe shows you exactly where the sun is in 3D space; follow it and you'd reach the sun. The silver arm does the same for the moon.
+    Most globes are stylised diagrams. This one is trying to be accurate. The texture is a real daily satellite composite. The clouds are from yesterday's VIIRS pass. The day/night boundary is where it actually is at this second — not a painted-on approximation. The gold arm pointing away from the globe shows you exactly where the sun is in 3D space; follow it and you'd reach the sun. The silver arm does the same for the moon. A thin cyan rod through the poles is Earth's spin axis, and two rings around the globe mark the equator and the path the sun takes across the year — see <a href="#axis">Axis, equator and ecliptic</a>.
   </p>
 
   <h3>The day/night terminator</h3>
@@ -487,7 +487,7 @@
         <span class="feed-name">Pressure, temperature, humidity, moisture, cloud water</span>
         <span class="feed-cadence">refreshed every 6 h</span>
       </div>
-      <p class="feed-desc">GFS mean sea-level pressure (MSLP), 2 m air temperature, 2 m relative humidity, total precipitable water (TPW), and total cloud water (TCW). Switchable as a single mutex-row overlay; each rendered as a coloured shell at radius 1.006 R⊕.</p>
+      <p class="feed-desc">GFS mean sea-level pressure (MSLP), 2 m air temperature, 2 m relative humidity, total precipitable water (TPW), and total cloud water (TCW). Switchable as a single mutex-row overlay; each rendered as a coloured shell at radius 1.006 R⊕. GFS's own sea-level pressure field uses a packing our decoder can't read, so the MSLP overlay takes surface pressure and reduces it to sea level with the barometric formula (surface height + 2 m temperature) — without that step mountains and ice sheets showed up as permanent "lows".</p>
       <p class="feed-src">Source: NOAA NOMADS GFS</p>
     </li>
     <li>
@@ -503,7 +503,7 @@
         <span class="feed-name">Kp index</span>
         <span class="feed-cadence">refreshed every 5 min</span>
       </div>
-      <p class="feed-desc">Planetary K-index, the standard 0–9 scale of geomagnetic disturbance. Drives a plain-language "quiet / unsettled / active / minor storm / …" label on the in-app Data panel.</p>
+      <p class="feed-desc">Planetary K-index, the standard 0–9 scale of geomagnetic disturbance. Drives a plain-language "quiet / unsettled / active / minor storm / …" label on the in-app Data panel, and scales the aurora layer's brightness: Kp 3 is neutral, quiet nights dim to 0.7×, storms brighten up to 1.4×.</p>
       <p class="feed-src">Source: NOAA SWPC · <a href="https://www.swpc.noaa.gov/products/planetary-k-index">swpc.noaa.gov</a></p>
     </li>
     <li>
@@ -565,6 +565,22 @@
     <figcaption>The Location panel — click anywhere on the globe to pin (or hit "use my location"). Reads back the coordinates, the reverse-geocoded place name, and the true solar time at that longitude. The live sub-solar (☀️) and sub-lunar (🌙) rows show where the sun and moon are currently directly overhead — click either to drop the pin there.</figcaption>
   </figure>
 
+  <h3 id="axis">Axis, equator and ecliptic</h3>
+  <p>
+    With <strong>Beams</strong> on, three reference marks sit alongside the sun and moon arms:
+  </p>
+  <ul>
+    <li><strong>The spin axis</strong> — a narrow cyan rod through the true geographic poles, labelled <strong>N</strong> and <strong>S</strong>. The ring with an arrowhead just below N shows which way Earth turns: counter-clockwise seen from above the North Pole, carrying every place west → east, which is why the sun rises in the east. The axis never moves on screen — it points at the same spot among the stars (near Polaris) all year, and it's the globe that turns around it.</li>
+    <li><strong>The equator</strong> — the cyan ring around the middle, at right angles to the axis.</li>
+    <li><strong>The ecliptic</strong> — the gold ring: the plane of Earth's orbit, and so the great circle the sub-solar point traces over a year. The gold sun arm always meets the globe on this ring.</li>
+  </ul>
+  <p>
+    The 23.44° between the two rings is Earth's <em>obliquity</em>, and it is the whole story of the seasons. Where the gold ring crosses the cyan one are the equinoxes (March and September); its furthest points north and south of the equator are the solstices, touching the Tropics of Cancer and Capricorn. Leave Beams on and time-warp through a few months to watch the sun arm slide along the ecliptic.
+  </p>
+  <p>
+    Implementation note: all three live in the same tilted equatorial frame as the globe (a 23.44° rotation about the scene's Z axis), with the ecliptic pole at (0, cos ε, sin ε) in the scene's J2000 equatorial axes — the same frame the solar ephemeris uses, so the sun arm and the gold ring agree by construction.
+  </p>
+
   <h3>Greenwich mean sidereal time</h3>
   <p>
     The angle Earth has rotated past the J2000 epoch reference point, after correcting for precession of the equinoxes. This is the conversion factor between the inertial celestial frame (where stars sit at fixed positions) and Earth's geographic frame (where Greenwich is at longitude 0°). Everything that has to stay "glued to the ground" — coastlines, weather overlays, fire detections, hurricane tracks — applies a daily rotation by GMST.
@@ -615,6 +631,9 @@
   <h3>How to drive it</h3>
   <p>
     Toggle <code>Astro → Eclipse</code> in the menu to open the Eclipse panel (top-left, under the clock). Click any event row to snap the simulated clock to T-minus-one-minute and start a 60× time-warp. The whole four-hour event plays out in about four minutes. Pause, slow, or reverse via the time-control row that appears next to the clock; closing the Eclipse panel snaps simulated time back to wall-clock now.
+  </p>
+  <p>
+    <strong>Sharing an eclipse:</strong> add <code>?eclipse=</code> and the event's date as YYYYMMDD to the address — e.g. <a href="/?eclipse=20270802"><code>earth-clock.onemonkey.org/?eclipse=20270802</code></a> for the 2027 eclipse over Spain &amp; North Africa. The link opens straight into that event, solar or lunar, with the clock already running.
   </p>
 </section>
 
@@ -743,7 +762,7 @@
     earth-clock · <a href="/">live view</a> · <a href="/about/">about</a> · <a href="/about/kids/">about for kids</a> · <a href="https://onemonkey.org/eclipses-equinoxes-and-everyday-awe-telling-the-time-on-spaceship-earth/" target="_blank" rel="noopener">blog</a> · <a href="https://github.com/infantlab/earth-clock">source code</a> · MIT licensed
   </p>
   <p>
-    Last updated for v0.3.0 — Geology layer (tectonic plates, earthquakes, volcanoes, active-eruption cross-reference); v0.2.4 feedback link + contact page; v0.2.3 quick wins (terminator arc, penumbral eclipse, skybox toggle, mobile markers, flat-map polish).
+    Last updated for v0.4.1 — spin axis, equator &amp; ecliptic rings, <code>?eclipse=</code> links, Kp-scaled aurora, sea-level pressure fix; v0.3.0 — Geology layer (tectonic plates, earthquakes, volcanoes, active-eruption cross-reference); v0.2.4 feedback link + contact page; v0.2.3 quick wins (terminator arc, penumbral eclipse, skybox toggle, mobile markers, flat-map polish).
   </p>
 </footer>
 

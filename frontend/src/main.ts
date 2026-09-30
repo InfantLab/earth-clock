@@ -1216,6 +1216,7 @@ function loadKp() {
       const label = kpActivityLabel(reading.kp);
       const lat = kpVisibleLatitude(reading.kp);
       debug.info("kp", `Kp ${reading.kp.toFixed(1)} (${label}), aurora visible above ~${lat}° mag-lat`);
+      aurora.setKp(reading.kp);
       dataRegistry.report("kp", {
         source: "NOAA SWPC · planetary K-index",
         fetched: new Date(),
@@ -1980,6 +1981,19 @@ function animate(t: number) {
     renderer.render(scene, camera);
   }
   requestAnimationFrame(animate);
+}
+
+// Shareable deep link: `?eclipse=20270802` loads straight into that event — the thing
+// people paste into group chats. Ids are the catalogue's YYYYMMDD keys; solar and lunar
+// ids never share a date, so one parameter covers both. Runs last so every layer and
+// panel the jump handlers touch already exists.
+const eclipseParam = new URLSearchParams(window.location.search).get("eclipse");
+if (eclipseParam) {
+  const solar = eclipseById(eclipseParam);
+  const lunar = solar ? undefined : lunarEclipseById(eclipseParam);
+  if (solar) jumpToEclipseEvent(solar);
+  else if (lunar) jumpToLunarEclipseEvent(lunar);
+  else console.warn(`[earth-clock] ?eclipse=${eclipseParam}: no solar or lunar eclipse with that id`);
 }
 
 requestAnimationFrame(animate);

@@ -207,7 +207,7 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   tzPolitical: "Real political timezone boundaries from /data/timezone-bounds.json. DST-correct via IANA/Intl. Falls back to nominal if data absent.",
   tzRelative:  "Swap labels from absolute HH:MM to hours offset relative to your local timezone (+2h, −3h…). Requires Meridians or Time Zones to be active.",
   // Weather
-  aurora:      "Aurora oval probability (NOAA SWPC Ovation, refreshed 5 min)",
+  aurora:      "Aurora oval probability (NOAA SWPC Ovation, refreshed 5 min), brightened or dimmed by the live Kp index",
   fires:       "Active wildfires from satellite thermal detections (NASA FIRMS, last 24 h)",
   hurricanes:  "Active tropical cyclones (NOAA NHC, refreshed 15 min)",
   tracks:      "Past track + 5-day forecast track + uncertainty cone for each active storm",
@@ -236,7 +236,7 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   // Astro
   terminator:  "Day/night shading — sun-direction lighting + city-lights overlay",
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
-  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
+  hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, a cyan rod through the poles for Earth's spin axis with a spin-direction arrow, the equator (cyan) and ecliptic (gold) rings, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
   // View
   map:         "Equirectangular flat-map view — drag to pan, wheel to zoom (centred on cursor), double-click to reset",
@@ -720,6 +720,7 @@ export class Menu {
         // with Beams on, both hidden with Beams off.
         radiusVectors.setSunBeamVisible(on);
         radiusVectors.setMoonBeamVisible(on);
+        radiusVectors.setAxisBeamVisible(on);
         radiusVectors.setSunDotVisible(on);
         radiusVectors.setMoonDotVisible(on);
         break;

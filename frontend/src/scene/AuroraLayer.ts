@@ -243,6 +243,16 @@ export class AuroraLayer {
     this.material.uniforms.uOpacity.value = o;
   }
 
+  /**
+   * Scale brightness by the planetary K-index. Ovation already maps *where* aurora is;
+   * Kp says how strong the storm is globally. Kp 3 ("unsettled") is neutral (1.0), quiet
+   * nights dim to 0.7, storms brighten up to 1.4 — alpha saturates at 1, so the boost
+   * lifts the faint fringe of the oval rather than blowing out its core.
+   */
+  setKp(kp: number) {
+    this.setOpacity(THREE.MathUtils.clamp(0.7 + 0.1 * kp, 0.7, 1.4));
+  }
+
   /** Master Terminator switch — when off, aurora renders everywhere (no night-only mask). */
   setTerminatorEnabled(enabled: boolean) {
     this.material.uniforms.uTerminator.value = enabled ? 1.0 : 0.0;
