@@ -52,6 +52,11 @@ Effort: ~half a day.
 
 ### ⬜ ISS position + ground track
 
+> **Full design:** [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md) —
+> ISS + Tiangong from day one, a catalogue/propagator split so Hubble, JWST, etc. drop in
+> later, plus the "Ride along" POV mode and visible-pass predictions. The notes below are
+> the original sketch.
+
 The literal source of the overview effect (see Vision check §4). Show the ISS as a
 small marker orbiting at ~400 km (r ≈ 1.063 Earth radii) plus its ground track for the
 current and next orbit, on the globe and the flat map.
