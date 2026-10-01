@@ -9,7 +9,7 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
-## Unreleased — ISS and Tiangong
+## v0.5.0 — 2026-10-01 — ISS and Tiangong
 
 - **Space row.** The International Space Station and China's Tiangong appear as glowing
   station silhouettes, flying nose-first along their orbits and dimming while they're in
@@ -18,13 +18,15 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
   which stays put while Earth turns beneath it. *Find ISS* swings the camera over the
   station.
 - **Station card.** Click a station for its position, altitude, speed, whether it's in
-  sunlight, and a countdown to its next orbital sunrise or sunset. `?sat=iss` and
-  `?sat=tiangong` link straight to it.
+  sunlight, a countdown to its next orbital sunrise or sunset, and who's aboard (from a
+  hand-maintained `crew.json`). `?sat=iss` and `?sat=tiangong` link straight to it.
 - **Satellite plumbing.** Orbital elements for the ISS and
   Tiangong are mirrored from CelesTrak by a new `satellite-service.js` (every 4 h) and
   propagated in the browser with SGP4 (`satellite.js`). Positions line up exactly with the
   scene's own Earth rotation, so a satellite sits over the right pin. The Data panel gains
-  a "satellites" row. Design and phasing: [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md).
+  a "satellites" row. A committed `fallback.json` snapshot keeps the layer working before
+  the service's first fetch. Checked against live data: ISS sub-point within 0.06° of
+  wheretheiss.at. Design and phasing: [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md).
 
 ---
 

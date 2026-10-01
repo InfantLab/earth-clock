@@ -24,8 +24,8 @@ Forward-looking engineering tracker. Shipped work lives in
 - ✅ Done
 - ❌ Blocked
 
-Current shipped version: **v0.4.1** (2026-09-28) — spin axis, equator/ecliptic rings,
-`?eclipse=` deep links, Kp-scaled aurora, MSLP sea-level reduction. See [CHANGELOG.md](CHANGELOG.md).
+Current shipped version: **v0.5.0** (2026-10-01) — ISS and Tiangong: station markers,
+ground tracks, orbit rings, station card with crew aboard. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -50,27 +50,18 @@ while the cyan axis stays fixed — the seasons made visible.
 
 Effort: ~half a day.
 
-### ⬜ ISS position + ground track
+### ⬜ Satellites — visible passes, then "Ride along"
 
-> **Full design:** [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md) —
-> ISS + Tiangong from day one, a catalogue/propagator split so Hubble, JWST, etc. drop in
-> later, plus the "Ride along" POV mode and visible-pass predictions. The notes below are
-> the original sketch.
+> **Full design:** [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md) §5.
+> Phases 0–1 (ISS + Tiangong markers, tracks, orbits, station card) shipped in v0.5.0.
 
-The literal source of the overview effect (see Vision check §4). Show the ISS as a
-small marker orbiting at ~400 km (r ≈ 1.063 Earth radii) plus its ground track for the
-current and next orbit, on the globe and the flat map.
-
-- Data: two-line elements from CelesTrak (`https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle`),
-  no auth. Refresh a few times a day — ideally via a tiny server-side mirror like the
-  earthquake service, so the browser isn't tied to CelesTrak's availability.
-- Propagation: `satellite.js` (SGP4) in the browser, driven by `simulatedTime` so it
-  time-warps with everything else. Convert TEME → the scene's equatorial frame, then
-  apply the same axial-tilt Z-rotation as `sunDir` in `updateAstro()`.
-- Nice extras once it works: highlight passes visible from the pinned location; an
-  "ISS view" camera path (already listed under Camera paths).
-
-Effort: ~1 day.
+- **Phase 2 — Passes (v0.5.1).** Worker-based visible-pass predictor for the pinned
+  location, a LocationPanel section, "Watch this pass", .ics export, humans-in-space count.
+  ~1–1.5 days.
+- **Phase 3 — Ride along (v0.6.0 in the plan).** Camera on the station, ISS model, HUD,
+  `?view=iss`. Has the rendering risks; spike first. ~3–4 days.
+- **Keep `public/data/satellites/crew.json` current** — hand-maintained; update on every
+  crew rotation (next: Crew-12 departs after Crew-13 docks, early Oct 2026).
 
 ---
 
@@ -196,7 +187,7 @@ Effort: ~half-day design doc, then a few days to build.
 - Kp index → aurora intensity scaling ✅ (`AuroraLayer.setKp`: Kp 3 neutral, 0.7× quiet → 1.4× storm)
 - Real star skybox (Tycho-2 / Deepstar ≥100k stars) ⬜
 - Full solar system (planets, moons, ecliptic plane) ⬜
-- ISS position + track ⬜ — promoted to *Next up*
+- ISS + Tiangong position, tracks, orbits ✅ (v0.5.0) — passes / Ride along in *Next up*
 
 ### ⬜ Kids / emoji mode
 

@@ -1,8 +1,20 @@
 {
-  "_comment": "Hand-maintained list of people aboard each crewed station (satellites-plan.md §4.1). Keys match catalog.ts ids. Set `updated` to the date you last checked (YYYY-MM-DD); null means not filled in yet and the UI will hide the count. Sources: nasa.gov/international-space-station, cmse.gov.cn.",
-  "updated": null,
+  "_comment": "Hand-maintained list of people aboard each crewed station (satellites-plan.md §4.1). Keys match catalog.ts ids. Set `updated` to the date you last checked (YYYY-MM-DD); null means not filled in yet and the UI will hide the count. Sources: nasa.gov/international-space-station, cmse.gov.cn, en.wikipedia.org/wiki/Expedition_75, en.wikipedia.org/wiki/Shenzhou_23. Next change: SpaceX Crew-13 (Watkins, Delaney, Kutryk, Teteryatnikov) docks ~2026-10-02; Crew-12 departs a few days later.",
+  "updated": "2026-10-01",
   "stations": {
-    "iss": [],
-    "tiangong": []
+    "iss": [
+      { "name": "Jessica Meir", "agency": "NASA", "since": "2026-02-14" },
+      { "name": "Jack Hathaway", "agency": "NASA", "since": "2026-02-14" },
+      { "name": "Sophie Adenot", "agency": "ESA", "since": "2026-02-14" },
+      { "name": "Andrey Fedyaev", "agency": "Roscosmos", "since": "2026-02-14" },
+      { "name": "Pyotr Dubrov", "agency": "Roscosmos", "since": "2026-07-14" },
+      { "name": "Anna Kikina", "agency": "Roscosmos", "since": "2026-07-14" },
+      { "name": "Anil Menon", "agency": "NASA", "since": "2026-07-14" }
+    ],
+    "tiangong": [
+      { "name": "Zhu Yangzhu", "agency": "CMSA", "since": "2026-05-24" },
+      { "name": "Zhang Zhiyuan", "agency": "CMSA", "since": "2026-05-24" },
+      { "name": "Lai Ka-ying", "agency": "CMSA", "since": "2026-05-24" }
+    ]
   }
 }

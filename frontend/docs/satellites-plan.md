@@ -1,6 +1,6 @@
 # Satellites plan — ISS, Tiangong, and what comes after
 
-Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **Phases 0–1 landed; v0.5.0 release pending real element data. Phase 2 (passes) next.**
+Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **Phases 0–1 shipped in v0.5.0 (2026-10-01). Phase 2 (passes) next.**
 Supersedes the short *ISS position + ground track* entry in [ROADMAP.md](../../ROADMAP.md).
 
 Two headline features:
