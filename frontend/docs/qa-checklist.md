@@ -7,9 +7,9 @@ Headless-Chromium checks during development used synthetic "today-epoch" element
 `?sat=` centres the camera, clicking a marker opens the card, warp > 5 000× hides markers
 and tracks, emoji mode renders. **Needs a real-data sweep:**
 
-- [ ] `npm run satellites:fallback` writes `public/data/satellites/fallback.json`; commit it.
-- [ ] `cd frontend && npx tsx scripts/verify-satellites.ts ../public/data/satellites/fallback.json`
-      — sub-points within 0.1° of https://wheretheiss.at at the same moment.
+- [x] `npm run satellites:fallback` writes `public/data/satellites/fallback.json`; commit it. *(2026-10-01, 23 element sets)*
+- [x] `cd frontend && npx tsx scripts/verify-satellites.ts ../public/data/satellites/fallback.json`
+      — sub-points within 0.1° of https://wheretheiss.at at the same moment. *(2026-10-01: all checks pass; ISS 0.06° off, 1.7 s apart)*
 - [ ] ISS marker over the right place on the globe *and* the flat map; nose points along the track.
 - [ ] Ground track: next pass crosses ~23° further west each orbit; no stray line across
       the flat map at the antimeridian.
@@ -17,7 +17,8 @@ and tracks, emoji mode renders. **Needs a real-data sweep:**
 - [ ] Orbits on: ring is fixed in space while Earth turns (try 300× warp).
 - [ ] `?eclipse=20270802` → stations hidden; card says "orbit unknown this far from today".
 - [ ] Card stacks above the Location panel when both are open; mobile layout OK.
-- [ ] Production: `satellite-service` logs a successful CelesTrak fetch; Data panel row green.
+- [x] Production: `satellite-service` logs a successful CelesTrak fetch *(2026-10-01 16:50Z, 23 sets)*.
+- [ ] Production: Data panel satellites row green.
 
 
 ## v0.3.0 — Geology layer verification round (2026-07-02)
