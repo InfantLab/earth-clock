@@ -29,6 +29,13 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
+  resolve: {
+    alias: {
+      // satellite.js ships optional WASM runtimes we don't use — see the stub for why.
+      "#wasm-single-thread": resolve(__dirname, "src/space/shims/satellite-wasm-stub.ts"),
+      "#wasm-multi-thread": resolve(__dirname, "src/space/shims/satellite-wasm-stub.ts"),
+    },
+  },
   build: {
     outDir,
     // emptyOutDir is dangerous when building to ../public (would wipe everything including

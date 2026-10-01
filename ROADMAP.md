@@ -52,6 +52,11 @@ Effort: ~half a day.
 
 ### ⬜ ISS position + ground track
 
+> **Full design:** [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md) —
+> ISS + Tiangong from day one, a catalogue/propagator split so Hubble, JWST, etc. drop in
+> later, plus the "Ride along" POV mode and visible-pass predictions. The notes below are
+> the original sketch.
+
 The literal source of the overview effect (see Vision check §4). Show the ISS as a
 small marker orbiting at ~400 km (r ≈ 1.063 Earth radii) plus its ground track for the
 current and next orbit, on the globe and the flat map.
@@ -192,6 +197,43 @@ Effort: ~half-day design doc, then a few days to build.
 - Real star skybox (Tycho-2 / Deepstar ≥100k stars) ⬜
 - Full solar system (planets, moons, ecliptic plane) ⬜
 - ISS position + track ⬜ — promoted to *Next up*
+
+### ⬜ Kids / emoji mode
+
+A toggle (View row), or `?mode=kids`, that swaps every point marker for an emoji. It
+makes the globe instantly readable to a four-year-old and fun for everyone else, and it
+pairs with the [/about/kids/](public/about/kids/) page and the picture-book audience.
+Raised during satellite planning (2026-09-30).
+
+| Layer | Now | Emoji |
+|---|---|---|
+| Volcanoes / active eruptions | triangles / glow | 🌋 |
+| Hurricanes (+ forecast track) | spiral glyph | 🌀 |
+| Earthquakes | pulsing rings | 💥 (size by magnitude) |
+| Fires | hot pixels | 🔥 |
+| Lightning | flashes | ⚡ |
+| Aurora | curtains | stays as is, maybe ✨ at the oval peaks |
+| Satellites (ISS, Tiangong) | glowing silhouette | 🛰️ + 🧑‍🚀 count |
+| Sub-solar / sub-lunar points | dots | ☀️ / 🌙 (phase-correct 🌒🌓🌔…) |
+| Location pin | pin | 📍 (or 🏠) |
+
+Design notes:
+
+- **One shared switch.** `MarkerStyle = "standard" | "emoji"` held by Menu and persisted in
+  `orrery.menu.v1`. Each layer implements `setMarkerStyle()` — the satellites layer is built
+  this way from day one ([satellites-plan.md](frontend/docs/satellites-plan.md) §2.3), so the
+  rest can follow its pattern.
+- **Consistent glyphs.** System emoji differ wildly between Windows, macOS, Android and the
+  Wallpaper Engine build. Bundle one open set (Twemoji or Noto Emoji — check licence/credit
+  terms) as a small sprite atlas instead of drawing system fonts to canvas.
+- **Density.** Thousands of fire pixels or a week of earthquakes as emoji turn to soup.
+  Cap per layer (largest N), or cluster into one bigger emoji with a count.
+- **Both views.** Globe sprites and flat-map sprites, with constant screen size and a
+  soft drop-shadow so they read on the night side.
+- **Nice extras:** a friendlier label set ("A volcano is erupting in Iceland!"), larger
+  touch targets, and tap-an-emoji → one-sentence fact card.
+
+Effort: ~1 day once the satellites layer has proved the `MarkerStyle` pattern.
 
 ### Communications
 

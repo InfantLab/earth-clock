@@ -42,6 +42,11 @@ import { fetchLatestKp, kpActivityLabel, kpVisibleLatitude } from "./data/kpLoad
 import { fetchFireDetections, type FireDetection } from "./data/firmsLoader";
 import { crossReferenceEruptions } from "./data/eruptionCrossRef";
 import { fetchEarthquakes } from "./data/earthquakeLoader";
+import { fetchSatelliteElements, fetchCrewManifest, type CrewManifest } from "./data/satelliteLoader";
+import { SatelliteLayer } from "./scene/SatelliteLayer";
+import { SatellitePanel } from "./ui/SatellitePanel";
+import { satelliteById } from "./space/catalog";
+import { SatelliteTracker, type SatelliteSnapshot } from "./space/tracker";
 import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
 import { reverseGeocode } from "./data/geocoder";
@@ -167,6 +172,14 @@ scene.add(fires.mesh);
 // coloured by depth. Geographically fixed, so rotates with Earth. Refreshes every 15 min.
 const earthquakes = new EarthquakeLayer();
 scene.add(earthquakes.mesh);
+// ISS, Tiangong, … — SGP4 orbital state (SatelliteTracker) drawn as glowing silhouette
+// markers, inertial orbit rings and Earth-fixed ground tracks (SatelliteLayer).
+// See frontend/docs/satellites-plan.md.
+const satelliteTracker = new SatelliteTracker();
+const satelliteLayer = new SatelliteLayer(satelliteTracker);
+scene.add(satelliteLayer.mesh);
+// Kids / emoji mode isn't a menu option yet (ROADMAP) — `?markers=emoji` previews it.
+if (new URLSearchParams(window.location.search).get("markers") === "emoji") satelliteLayer.setMarkerStyle("emoji");
 
 // Active tropical cyclones — NHC CurrentStorms.json. Empty off-season; auto-activates when storms appear.
 // Pulsing animated swirl sprites at r=1.012. Refreshes every 15 min.
@@ -253,6 +266,7 @@ flatMap.scene.add(aurora.flatMesh);
 flatMap.scene.add(hurricaneTracks.flatMesh);
 flatMap.scene.add(radiusVectors.flatMesh);
 flatMap.scene.add(eclipseLayer.flatMesh);
+flatMap.scene.add(satelliteLayer.flatMesh);
 
 // GPU wind particles. Live-tune from the console:
 //   __orrery.particles.setSpeed(0.05) / setPointSize(3) / setAlpha(0.4)
@@ -359,6 +373,13 @@ declare global {
        *  arbitrary moment (e.g. eclipse day) without changing the system clock;
        *  `.preview(null)` returns it to the wall clock. */
       eclipseBadge?: EclipseBadge;
+      /** Tracked satellites (ISS, Tiangong, …) — data only until the Space layer lands. */
+      satelliteTracker: SatelliteTracker;
+      /** Markers / rings / tracks. `.setMarkerStyle("emoji")` previews kids mode. */
+      satelliteLayer: SatelliteLayer;
+      /** Dev helper: sub-satellite lat/lon/alt of every tracked satellite at the
+       *  current simulated time. Compare against wheretheiss.at to validate frames. */
+      satellites: () => SatelliteSnapshot[];
     };
   }
 }
@@ -384,6 +405,9 @@ window.__orrery = {
     }
     jumpToEclipseEvent(event);
   },
+  satelliteTracker,
+  satelliteLayer,
+  satellites: () => satelliteTracker.snapshot(new Date(simulatedTime)),
 };
 
 // Display order matches the bottom-left Menu's group order so users can map a button to
@@ -403,6 +427,8 @@ const DATA_ORDER = [
   "earthquakes", "plates", "volcanoes",
   // Astro row
   "moon", "eclipse",
+  // Space row
+  "satellites",
 ];
 
 // Shared data-status registry — every loader writes to this; DataPanel + Debug both subscribe.
@@ -434,6 +460,7 @@ const PENDING_SOURCES: Array<[string, string, string]> = [
   ["hurricanes", "NHC · CurrentStorms.json",                "fetching active storms…"],
   ["aurora",     "NOAA SWPC · Ovation aurora forecast",     "fetching SWPC Ovation…"],
   ["kp",         "NOAA SWPC · planetary K-index",           "fetching SWPC K-index…"],
+  ["satellites", "CelesTrak GP · orbital elements",         "fetching orbital elements…"],
   ["viirs",      "NASA GIBS · VIIRS NOAA-20 True Color",    "fetching VIIRS mosaic…"],
   ["gfs-clouds", "NOAA GFS · cloud cover",                  "fetching GFS cloud cover…"],
   ["mslp",       "NOAA GFS · MSLP",                         "fetching MSLP…"],
@@ -560,13 +587,15 @@ const eclipsePanel = new EclipsePanel(document.body, {
 // the brand wordmark is the open/close affordance. Selections persist to localStorage.
 const menu = new Menu(document.body,
   { globe, atmosphere, moon, coastlines, plates, volcanoes, timezoneLayer, clouds, aurora, fires, earthquakes, hurricanes,
-    hurricaneTracks, lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap, trails },
+    hurricaneTracks, lightning, overlay, radiusVectors, eclipse: eclipseLayer, flatMap, trails,
+    satellites: satelliteLayer },
   { data: dataPanel, clock, location: locationPanel, eclipse: eclipsePanel },
 );
 
 // Wire the "Find moon" action button at the end of the Astro row. Reuses the same
 // camera-repositioning helper that powers `window.__orrery.findMoon()`.
 menu.onFindMoon(() => findMoonInCamera());
+menu.onFindIss(() => { selectSatellite("iss"); centreOnSatellite("iss"); });
 
 // Wire the Astro² "Hi-res sky" toggle. Subsequent toggles route through applySkybox;
 // on initial mount, if the user had hi-res persisted from a previous session, kick
@@ -662,7 +691,6 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   pointerDownPos = { x: event.clientX, y: event.clientY };
 });
 renderer.domElement.addEventListener("click", (event) => {
-  if (!menu.isLocationActive()) return;
   if (pointerDownPos) {
     const dx = event.clientX - pointerDownPos.x;
     const dy = event.clientY - pointerDownPos.y;
@@ -670,6 +698,12 @@ renderer.domElement.addEventListener("click", (event) => {
     if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) return;
   }
   const rect = renderer.domElement.getBoundingClientRect();
+  // A click on a satellite marker opens its card — works whether or not Location mode is on.
+  const satHit = menu.isMapMode()
+    ? satelliteLayer.pickFlat(event.clientX, event.clientY, rect, flatMap.camera)
+    : satelliteLayer.pickGlobe(event.clientX, event.clientY, rect, camera);
+  if (satHit) { selectSatellite(satHit); return; }
+  if (!menu.isLocationActive()) return;
   ndc.x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1;
   ndc.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
 
@@ -1278,6 +1312,121 @@ function loadEarthquakes() {
 loadEarthquakes();
 setInterval(loadEarthquakes, 15 * 60 * 1000);
 
+// Orbital elements for the tracked satellites (satellites-plan.md §1.5), mirrored from
+// CelesTrak by satellite-service.js every ~4 h; falls back to the committed snapshot.
+function loadSatellites() {
+  fetchSatelliteElements()
+    .then(els => {
+      satelliteTracker.setElements(els.byNorad);
+      satelliteLayer.rebuildVisuals();
+      resolveSatellitesReady();
+      const summary = satelliteTracker.summary(new Date());
+      debug.info("satellites", summary);
+      dataRegistry.report("satellites", {
+        source: els.fallback ? "CelesTrak GP · bundled snapshot" : "CelesTrak GP · orbital elements",
+        fetched: els.generated ?? new Date(),
+        detail: summary,
+        refreshSeconds: 4 * 60 * 60,
+      });
+    })
+    .catch(err => {
+      debug.warn("satellites", `load failed: ${err.message ?? err}`);
+      dataRegistry.report("satellites", { source: "CelesTrak GP", error: String(err.message ?? err) });
+    });
+}
+loadSatellites();
+setInterval(loadSatellites, 60 * 60 * 1000);
+
+// Hand-maintained crew list (public/data/satellites/crew.json). `updated: null` means
+// nobody has filled it in yet, so the panel hides the "aboard" line rather than say 0.
+let crewManifest: CrewManifest | null = null;
+fetchCrewManifest()
+  .then(m => { crewManifest = m.updated ? m : null; })
+  .catch(err => debug.warn("satellites", `crew.json: ${err.message ?? err}`));
+
+// ── Selected satellite: info card, camera centring, place-name lookup ─────────────
+const satellitePanel = new SatellitePanel(document.body);
+let selectedSatellite: string | null = null;
+let satPanelLastUpdate = 0;
+let satNextChange: { at: Date; sunrise: boolean } | null = null;
+let satNextChangeComputedAt = 0;
+let satPlaceLookupAt = 0;
+
+function selectSatellite(id: string | null) {
+  selectedSatellite = id;
+  satelliteLayer.setSelected(id);
+  satNextChange = null;
+  satNextChangeComputedAt = 0;
+  satPlaceLookupAt = 0;
+  const spec = id ? satelliteById(id) : undefined;
+  if (!spec) { satellitePanel.hide(); return; }
+  // Selecting a station you've hidden turns it back on — otherwise the card describes
+  // something that isn't on screen.
+  menu.setLayer(spec.id, true);
+  satellitePanel.show(spec, crewManifest ? (crewManifest.stations[spec.id] ?? []) : null);
+}
+satellitePanel.onClose(() => selectSatellite(null));
+satellitePanel.onCentre(() => { if (selectedSatellite) centreOnSatellite(selectedSatellite); });
+
+/** Look straight down on a satellite from 2.4 Earth radii — close enough to see the
+ *  region it's over, far enough to see its track curve away. Globe mode only. */
+function centreOnSatellite(id: string) {
+  if (menu.isMapMode()) return;
+  if (!satelliteLayer.worldPosition(id, new Date(simulatedTime), _satWorld)) {
+    console.warn(`[earth-clock] centre on ${id}: no position yet (orbital elements not loaded, or too far from today)`);
+    return;
+  }
+  camera.position.copy(_satWorld).normalize().multiplyScalar(2.4);
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+const _satWorld = new THREE.Vector3();
+
+/** ~4 Hz info-card refresh; orbital sunrise/sunset and place name on slower cadences. */
+function updateSatellitePanel(now: Date, wallMs: number) {
+  if (!selectedSatellite || wallMs - satPanelLastUpdate < 250) return;
+  satPanelLastUpdate = wallMs;
+  const id = selectedSatellite;
+  const st = satelliteLayer.state(id);
+  const prop = satelliteTracker.get(id)?.propagator;
+  if (!st || !prop) { satellitePanel.update(null); return; }
+  if (wallMs - satNextChangeComputedAt > 2000 || (satNextChange && satNextChange.at < now)) {
+    satNextChange = satelliteTracker.nextShadowChange(id, now);
+    satNextChangeComputedAt = wallMs;
+  }
+  satellitePanel.update({
+    ...st,
+    elementAgeHours: (now.getTime() - prop.epoch.getTime()) / 3_600_000,
+    nextChange: satNextChange,
+    now,
+  });
+  // Reverse-geocode the sub-satellite point once a minute (the geocoder is rate-limited).
+  // Nominatim returns no name over open water, which is most of the orbit.
+  if (st.age !== "unknown" && wallMs - satPlaceLookupAt > 60_000) {
+    satPlaceLookupAt = wallMs;
+    reverseGeocode(st.lat, st.lon).then(r => {
+      if (selectedSatellite !== id) return;
+      if (r.status === "ok") satellitePanel.setPlace(`over ${r.place.short}`);
+      else if (r.status === "no-name") satellitePanel.setPlace("over the ocean");
+    });
+  }
+}
+
+// `?sat=iss` deep link: select + centre once the elements have arrived.
+let resolveSatellitesReady: () => void = () => {};
+const satellitesReady = new Promise<void>(r => { resolveSatellitesReady = r; });
+const satParam = new URLSearchParams(window.location.search).get("sat");
+if (satParam) {
+  satellitesReady.then(() => {
+    if (!satelliteById(satParam)) {
+      console.warn(`[earth-clock] ?sat=${satParam}: unknown satellite id`);
+      return;
+    }
+    selectSatellite(satParam);
+    centreOnSatellite(satParam);
+  });
+}
+
 // Fetch NHC active tropical cyclones. CORS-clean. Empty array off-season — that's fine,
 // the layer just sits dormant and lights up automatically once NHC posts the first storm.
 function loadHurricanes() {
@@ -1731,6 +1880,8 @@ function updateAstro() {
   lightning.setRotationY(earthY);
   overlay.setRotationY(earthY);
   eclipseLayer.setRotationY(earthY);
+  satelliteLayer.setRotationY(earthY);
+  satelliteLayer.setSunDirection(sunDir);
   // Only draw the path-of-totality polyline when the simulated time is anywhere near
   // the eclipse window — a static future-eclipse path floating over the globe on a
   // random Wednesday is confusing. ±24h margin so the path is already visible when the
@@ -1849,6 +2000,8 @@ function animate(t: number) {
     }
   }
   locationPanel.setNow(now);
+  satelliteLayer.update(now, warp, camera, flatMap.camera, { w: window.innerWidth, h: window.innerHeight });
+  updateSatellitePanel(now, t);
 
   // Live-data freshness. When the user warps far from wall-clock now (catalogued
   // 2027 eclipse, scrubbing back to 1923, etc.), we hide every live-weather

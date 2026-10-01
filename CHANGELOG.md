@@ -9,6 +9,25 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## Unreleased — ISS and Tiangong
+
+- **Space row.** The International Space Station and China's Tiangong appear as glowing
+  station silhouettes, flying nose-first along their orbits and dimming while they're in
+  Earth's shadow. *Tracks* draws each station's ground track (half an orbit behind, one and
+  a half ahead) on the globe and the flat map; *Orbits* shows the orbit ring in space,
+  which stays put while Earth turns beneath it. *Find ISS* swings the camera over the
+  station.
+- **Station card.** Click a station for its position, altitude, speed, whether it's in
+  sunlight, and a countdown to its next orbital sunrise or sunset. `?sat=iss` and
+  `?sat=tiangong` link straight to it.
+- **Satellite plumbing.** Orbital elements for the ISS and
+  Tiangong are mirrored from CelesTrak by a new `satellite-service.js` (every 4 h) and
+  propagated in the browser with SGP4 (`satellite.js`). Positions line up exactly with the
+  scene's own Earth rotation, so a satellite sits over the right pin. The Data panel gains
+  a "satellites" row. Design and phasing: [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md).
+
+---
+
 ## v0.4.1 — 2026-09-28 — Spin axis, equator & ecliptic, eclipse deep links
 
 - **Rotation axis (Beams).** A narrow cyan rod through the true geographic poles,
