@@ -38,6 +38,10 @@ export interface SatelliteSpec {
   model?: { url: string; scaleMetres: number };
   /** Rotating one-liners for the info card. */
   facts?: string[];
+  /** Official mission site — linked from the crew list and the station card. */
+  officialUrl?: string;
+  /** Intrinsic visual magnitude at 1000 km, half-lit — drives pass brightness estimates. */
+  stdMagnitude?: number;
 }
 
 export const SATELLITES: readonly SatelliteSpec[] = [
@@ -50,6 +54,8 @@ export const SATELLITES: readonly SatelliteSpec[] = [
     crewed: true,
     povCapable: true,
     propagator: { kind: "sgp4", noradId: 25544 },
+    officialUrl: "https://www.nasa.gov/international-space-station/",
+    stdMagnitude: -1.8,
     // Long truss with four array wings each side, pressurised modules down the middle.
     silhouette:
       "M2 11.4h20v1.2H2z" +
@@ -73,6 +79,10 @@ export const SATELLITES: readonly SatelliteSpec[] = [
     povCapable: true,
     // Tracks the Tianhe core module; Wentian and Mengtian are docked to it.
     propagator: { kind: "sgp4", noradId: 48274 },
+    // China Manned Space Agency, English site.
+    officialUrl: "https://en.cmse.gov.cn/",
+    // Roughly a third of the ISS's area; observed passes peak around −1 to −2.
+    stdMagnitude: -0.8,
     // T-shape: Tianhe core along the flight axis, Wentian + Mengtian across it,
     // big arrays at the ends of the cross-bar, smaller ones on the core.
     silhouette:

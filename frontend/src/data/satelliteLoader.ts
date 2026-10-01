@@ -12,7 +12,14 @@ export interface SatelliteElements {
   fallback: boolean;
 }
 
-export interface CrewMember { name: string; agency: string; since?: string }
+export interface CrewMember {
+  name: string;
+  agency: string;
+  /** ISO date they boarded. */
+  since?: string;
+  /** Optional bio / agency profile link, shown on their name in the crew view. */
+  url?: string;
+}
 export interface CrewManifest {
   /** ISO date the hand-edited list was last checked; null = never filled in. */
   updated: string | null;
