@@ -396,6 +396,46 @@ function deriveAirDensity(tempRecord, pressureRecord) {
     return [{ header: header, data: rho }];
 }
 
+/**
+ * Model surface height (HGT:surface) on the 1° grid described by `targetHeader`.
+ * The 1p00 file complex-packs HGT, which grib-js can't decode, but the 0p25 file uses
+ * simple packing; its grid shares the 1° origin and scan order, so every 4th point
+ * lines up exactly. Orography is static, so it's fetched once per process (~0.5 MB).
+ */
+var orographyCache = null;
+function loadOrography1deg(dateStr, run, targetHeader) {
+    if (orographyCache) return Promise.resolve(orographyCache);
+    var tmp = path.join(__dirname, "temp_hgt_sfc_" + process.pid + "_" + Date.now() + ".grib2");
+    return downloadGFSFile(dateStr, run, [":HGT:surface:"], tmp, "gfs.t" + run + ".pgrb2.0p25.f000").then(function () {
+        return convertGrib2ToJson(tmp);
+    }).then(function (records) {
+        var rec = findRecord(records, function (r) {
+            var h = r && r.header;
+            return h && h.parameterCategory === 3 && h.parameterNumber === 5;
+        });
+        var src = rec && rec.header;
+        var dst = targetHeader || {};
+        if (!rec || !rec.data || rec.data.length !== src.nx * src.ny) {
+            throw new Error("HGT:surface not decoded from 0p25 file");
+        }
+        var step = Math.round(dst.dx / src.dx);
+        if (!(step >= 1) || src.la1 !== dst.la1 || src.lo1 !== dst.lo1 || src.scanMode !== dst.scanMode ||
+            (dst.nx - 1) * step >= src.nx || (dst.ny - 1) * step >= src.ny) {
+            throw new Error("0p25 orography grid does not nest in the target grid");
+        }
+        var out = new Array(dst.nx * dst.ny);
+        for (var j = 0; j < dst.ny; j++) {
+            for (var i = 0; i < dst.nx; i++) {
+                out[j * dst.nx + i] = rec.data[j * step * src.nx + i * step];
+            }
+        }
+        orographyCache = out;
+        return out;
+    }).finally(function () {
+        safeUnlink(tmp);
+    });
+}
+
 function downloadConvertWrite(dateStr, run, fieldPatterns, outputPath) {
     var tempGribFile = path.join(__dirname, "temp_" + path.basename(outputPath).replace(/[^a-zA-Z0-9_.-]/g, "_") + "_" + process.pid + "_" + Date.now() + ".grib2");
     return downloadGFSFile(dateStr, run, fieldPatterns, tempGribFile).then(function () {
@@ -461,8 +501,7 @@ function fetchCurrentGFSData(callback) {
     ];
     var patternsTmp2mAndPresSfc = [
         ":TMP:2 m above ground:",
-        ":PRES:surface:",
-        ":HGT:surface:"
+        ":PRES:surface:"
     ];
     var patternsRH2m = [
         ":RH:2 m above ground:"
@@ -482,7 +521,8 @@ function fetchCurrentGFSData(callback) {
     ];
     // Mean sea level pressure (PRMSL) uses complex packing in GFS and is not decoded by grib-js.
     // We reduce the decoded surface pressure to sea level instead, using surface height
-    // (HGT:surface) and 2 m temperature — see reduceToSeaLevel().
+    // (HGT:surface) and 2 m temperature — see reduceToSeaLevel(). HGT:surface is also
+    // complex-packed in the 1p00 file, so it comes from the 0p25 file — see loadOrography1deg().
 
     console.log("Fetching GFS data");
     console.log("Will try dates:", datesToTry.join(", "));
@@ -545,23 +585,19 @@ function fetchCurrentGFSData(callback) {
                         // Generate MSLP overlay from surface pressure (PRMSL is complex-packed in GFS).
                         // Raw surface pressure is ~550 hPa over Tibet and ~700 hPa over Antarctica,
                         // so without reduction the overlay shows topography rather than weather.
-                        var hgtRec = findRecord(records, function (r) {
-                            var h = r && r.header;
-                            return h &&
-                                ((h.parameterCategoryName === "Mass") || (h.parameterCategory === 3)) &&
-                                h.parameterNumber === 5 &&
-                                (h.surface1TypeName || "").toLowerCase().indexOf("surface") >= 0;
+                        // MSLP is a nice-to-have: any failure here falls back to raw surface
+                        // pressure rather than failing the run (and every overlay after it).
+                        return loadOrography1deg(dateStr, run, presRec.header).then(function (height) {
+                            return reduceToSeaLevel(presRec.data, tempRec.data, height);
+                        }).catch(function (err) {
+                            console.warn("MSLP reduction unavailable (" + err.message + "); MSLP overlay falls back to raw surface pressure");
+                            return presRec.data;
+                        }).then(function (mslData) {
+                            var mslHeader = {};
+                            Object.keys(presRec.header || {}).forEach(function (k) { mslHeader[k] = presRec.header[k]; });
+                            mslHeader.parameterNumberName = "Mean Sea Level Pressure";
+                            writeJsonAtomic(outMSLP, [{ header: mslHeader, data: mslData }]);
                         });
-                        var mslData = presRec.data;
-                        if (hgtRec) {
-                            mslData = reduceToSeaLevel(presRec.data, tempRec.data, hgtRec.data);
-                        } else {
-                            console.warn("HGT:surface not decoded; MSLP overlay falls back to raw surface pressure");
-                        }
-                        var mslHeader = {};
-                        Object.keys(presRec.header || {}).forEach(function (k) { mslHeader[k] = presRec.header[k]; });
-                        mslHeader.parameterNumberName = "Mean Sea Level Pressure";
-                        writeJsonAtomic(outMSLP, [{ header: mslHeader, data: mslData }]);
                     });
                 }).finally(function () {
                     safeUnlink(tmpGrib);

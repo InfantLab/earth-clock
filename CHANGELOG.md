@@ -28,6 +28,12 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
   the service's first fetch. Checked against live data: ISS sub-point within 0.06° of
   wheretheiss.at. Design and phasing: [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md).
 
+- **Fix: weather overlays stuck since v0.4.1.** The MSLP sea-level reduction needed surface
+  height, which GFS complex-packs in the 1° file, so it never decoded. The error aborted every
+  run, leaving wind, temperature, humidity and cloud data stale and MSLP missing. Height now
+  comes from the 0.25° file (cached once per process), and an MSLP failure falls back to raw
+  surface pressure without blocking the other overlays.
+
 ---
 
 ## v0.4.1 — 2026-09-28 — Spin axis, equator & ecliptic, eclipse deep links
