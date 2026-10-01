@@ -218,6 +218,26 @@ ISS in mind, and this becomes its first real implementation.
 | **Atmosphere shader** | Tuned for viewing from outside the shell. The camera is now *inside* at the top. | Test the limb look early; may need an "inside" branch for the limb glow. |
 | **Station model** | ISS glTF from NASA 3D Resources (public domain), a few MB. Tiangong has no NASA model. | Lazy-load only on POV entry. Tiangong (decided): search for a CC-BY / CC0 model first (Sketchfab etc., check the licence allows redistribution); otherwise build our own low-poly one (Tianhe + Wentian + Mengtian in a T, plus arrays). Solar arrays rotate toward `sunDir`, which is a cheap, lovely detail. |
 
+**Spike results (2026-10-01, branch `feat/iss-ride-along`).** `SatelliteCameraPath` with
+cupola + horizon views, `__orrery.rideAlong()`, `?view=iss[-cupola]`, V / Esc. Checked with
+headless screenshots stepped around one orbit:
+
+- **Depth precision: solved for cupola/horizon.** Dropping `camera.near` to 0.0005 R (≈ 3 km)
+  while riding, far unchanged, shows no z-fighting between globe, clouds (1.003), overlays
+  (1.006), coastlines and tracks. The two-pass render is only needed for the chase view.
+- **Atmosphere: works as-is.** The risk above was mis-stated: the shell tops out at
+  1.018 R (115 km) and the ISS is at ~1.066 R, so the camera is *above* it, not inside. The
+  existing Fresnel rim gives a convincing blue limb on the day side. Issues: (a) the limb
+  shows straight-segment facets — the atmosphere (96×48) and globe (128×64) spheres are too
+  coarse at 400 km range; (b) at dusk the twilight term turns the limb into a flat
+  lavender band; (c) the night limb is near-invisible.
+- **Layer radii: all below the station** (aurora 1.008, equator/ecliptic rings 1.012, track
+  1.0045). But the rings seen edge-on become a thick cyan band across the horizon, so Beams
+  should switch off while riding (restore on exit).
+- **Texture resolution: as predicted.** Clouds go blocky near the camera; wind trails show
+  as streaks on the ocean. Acceptable for a first version; consider hiding trails in ride.
+- The station's own ground track running straight ahead to the horizon reads well — keep it.
+
 ### 3.3 HUD
 
 Minimal and fading, in the same style as the eclipse badge: altitude, speed, position

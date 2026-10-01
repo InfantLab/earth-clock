@@ -44,6 +44,7 @@ import { crossReferenceEruptions } from "./data/eruptionCrossRef";
 import { fetchEarthquakes } from "./data/earthquakeLoader";
 import { fetchSatelliteElements, fetchCrewManifest, type CrewManifest } from "./data/satelliteLoader";
 import { SatelliteLayer } from "./scene/SatelliteLayer";
+import { SatelliteCameraPath, RIDE_VIEWS, type RideView } from "./scene/SatelliteCameraPath";
 import { SatellitePanel } from "./ui/SatellitePanel";
 import { satelliteById } from "./space/catalog";
 import { SatelliteTracker, type SatelliteSnapshot } from "./space/tracker";
@@ -380,6 +381,9 @@ declare global {
       /** Dev helper: sub-satellite lat/lon/alt of every tracked satellite at the
        *  current simulated time. Compare against wheretheiss.at to validate frames. */
       satellites: () => SatelliteSnapshot[];
+      /** Ride along (spike): `rideAlong("iss", "cupola")`; `rideAlong(null)` exits.
+       *  Assigned after the ride block below. */
+      rideAlong?: (id?: string | null, view?: RideView) => void;
     };
   }
 }
@@ -1427,6 +1431,77 @@ if (satParam) {
   });
 }
 
+// ── Ride along (satellites-plan.md §3) ────────────────────────────────────────
+// Spike: the camera sits on a station in its LVLH frame. While riding, OrbitControls
+// and the camera-locks-to-Earth block in animate() stand down (they'd fight the path),
+// the near plane drops so nothing between the station and the ground is clipped, and
+// time warp is clamped to 300× (decision #3). Everything is restored on exit.
+const RIDE_NEAR = 0.0005;     // ≈ 3 km. Default 0.05 R ≈ 320 km is most of the way to the ground.
+const RIDE_MAX_WARP = 300;
+let ride: {
+  id: string;
+  path: SatelliteCameraPath;
+  saved: { pos: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; near: number; warp: number };
+} | null = null;
+
+function startRide(id: string, view: RideView = "horizon") {
+  const spec = satelliteById(id);
+  if (!spec) { console.warn(`[earth-clock] ride along: unknown satellite "${id}"`); return; }
+  if (menu.isMapMode()) { console.warn("[earth-clock] ride along: globe view only"); return; }
+  if (!satelliteLayer.worldPosition(id, new Date(simulatedTime), _satWorld)) {
+    console.warn(`[earth-clock] ride along ${id}: no position (elements not loaded, or too far from today)`);
+    return;
+  }
+  if (ride) stopRide();
+  const warp = window.__orreryTimeWarp ?? 1;
+  ride = {
+    id,
+    path: new SatelliteCameraPath(spec.name, (d, p, v) => satelliteLayer.worldState(id, d, p, v), view),
+    saved: { pos: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), near: camera.near, warp },
+  };
+  if (Math.abs(warp) > RIDE_MAX_WARP) window.__orreryTimeWarp = Math.sign(warp) * RIDE_MAX_WARP;
+  controls.enabled = false;
+  controls.autoRotate = false;
+  camera.near = RIDE_NEAR;
+  camera.updateProjectionMatrix();
+  satelliteLayer.setRiding(id);
+}
+
+function stopRide() {
+  if (!ride) return;
+  const { saved } = ride;
+  ride = null;
+  camera.position.copy(saved.pos);
+  camera.up.copy(saved.up);
+  controls.target.copy(saved.target);
+  camera.near = saved.near;
+  camera.updateProjectionMatrix();
+  if (Math.abs(saved.warp) > RIDE_MAX_WARP) window.__orreryTimeWarp = saved.warp;
+  controls.enabled = true;
+  controls.update();
+  satelliteLayer.setRiding(null);
+}
+
+window.__orrery.rideAlong = (id: string | null = "iss", view?: RideView) => {
+  if (id === null) stopRide(); else startRide(id, view);
+};
+window.addEventListener("keydown", (e) => {
+  if (!ride || e.target instanceof HTMLInputElement) return;
+  if (e.key === "Escape") stopRide();
+  else if (e.key === "v" || e.key === "V") {
+    ride.path.view = RIDE_VIEWS[(RIDE_VIEWS.indexOf(ride.path.view) + 1) % RIDE_VIEWS.length];
+  }
+});
+
+// `?view=iss` / `?view=iss-cupola` deep link into Ride along.
+const viewParam = new URLSearchParams(window.location.search).get("view");
+if (viewParam) {
+  const [rideId, rideView] = viewParam.split("-");
+  satellitesReady.then(() => {
+    startRide(rideId, RIDE_VIEWS.includes(rideView as RideView) ? rideView as RideView : undefined);
+  });
+}
+
 // Fetch NHC active tropical cyclones. CORS-clean. Empty array off-season — that's fine,
 // the layer just sits dormant and lights up automatically once NHC posts the first storm.
 function loadHurricanes() {
@@ -2082,7 +2157,10 @@ function animate(t: number) {
   // the viewpoint stays where the user parked it. Lock resumes naturally
   // when warp returns to non-zero (press ▶ / pick a speed).
   const warpForLock = window.__orreryTimeWarp ?? 1;
-  if (!menu.isAutoOrbit() && !menu.isMapMode() && _prevEarthY !== null && warpForLock !== 0) {
+  if (ride) {
+    if (Math.abs(warpForLock) > RIDE_MAX_WARP) window.__orreryTimeWarp = Math.sign(warpForLock) * RIDE_MAX_WARP;
+    if (menu.isMapMode() || !ride.path.update(now, dtMs / 1000, camera, controls)) stopRide();
+  } else if (!menu.isAutoOrbit() && !menu.isMapMode() && _prevEarthY !== null && warpForLock !== 0) {
     const deltaEarthY = earthYNow - _prevEarthY;
     if (deltaEarthY !== 0) {
       _camOffset.subVectors(camera.position, controls.target);
@@ -2098,8 +2176,10 @@ function animate(t: number) {
   // OrbitControls' built-in autoRotate. Three.js pauses it automatically while the user is
   // actively dragging, so input handover is implicit; we just keep the flag in sync with
   // the menu toggle each frame.
-  controls.autoRotate = menu.isAutoOrbit();
-  controls.update();
+  if (!ride) {
+    controls.autoRotate = menu.isAutoOrbit();
+    controls.update();
+  }
 
   // FlatMap pan/zoom controls: enable only while in flat-map mode so they don't
   // intercept events meant for the 3D globe's OrbitControls. Edge-triggered on

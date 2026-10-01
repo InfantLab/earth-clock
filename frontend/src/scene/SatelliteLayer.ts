@@ -69,6 +69,7 @@ export class SatelliteLayer {
   private orbitsOn = false;
   private markerStyle: MarkerStyle = "silhouette";
   private selectedId: string | null = null;
+  private ridingId: string | null = null;
   private warp = 1;
   /** Untilted sun direction — same frame as satellite positions. */
   private readonly sunDir = new THREE.Vector3(1, 0, 0);
@@ -138,6 +139,9 @@ export class SatelliteLayer {
 
   setSelected(id: string | null) { this.selectedId = id; }
 
+  /** The satellite the camera is riding on: its globe marker would sit on the lens. */
+  setRiding(id: string | null) { this.ridingId = id; }
+
   /** Tilted world-frame sun direction, as computed in updateAstro(). */
   setSunDirection(tiltedSunDir: THREE.Vector3) {
     this.sunDir.copy(tiltedSunDir).applyAxisAngle(TILT_AXIS, -AXIAL_TILT);
@@ -171,7 +175,7 @@ export class SatelliteLayer {
       // and again when the elements are getting old.
       const opacity = (v.inShadow ? 0.6 : 1) * (v.age === "approximate" ? 0.6 : 1);
       const scaleBoost = v.tracked.spec.id === this.selectedId ? SELECTED_SCALE_BOOST : 1;
-      v.marker.visible = markersOk;
+      v.marker.visible = markersOk && v.tracked.spec.id !== this.ridingId;
       v.flatMarker.visible = markersOk;
       if (markersOk) {
         v.marker.position.copy(v.pos);
@@ -225,6 +229,17 @@ export class SatelliteLayer {
     if (!prop || elementAge(prop, date) === "unknown" || !prop.stateAt(date, out)) return null;
     this.mesh.updateMatrixWorld();
     return out.applyMatrix4(this.mesh.matrixWorld);
+  }
+
+  /** World-space (tilted) position and velocity (Earth radii, radii/s) at `date`, for the
+   *  Ride-along camera. Same trust rules as worldPosition(). */
+  worldState(id: string, date: Date, outPos: THREE.Vector3, outVel: THREE.Vector3): boolean {
+    const prop = this.visuals.get(id)?.tracked.propagator;
+    if (!prop || elementAge(prop, date) === "unknown" || !prop.stateAt(date, outPos, outVel)) return false;
+    this.mesh.updateMatrixWorld();
+    outPos.applyMatrix4(this.mesh.matrixWorld);
+    outVel.applyQuaternion(this.mesh.getWorldQuaternion(_q));
+    return true;
   }
 
   /** Satellite under a click on the globe, if any. Ignores markers hidden behind Earth. */
@@ -423,6 +438,7 @@ const RAD2DEG = 180 / Math.PI;
 const _p = new THREE.Vector3();
 const _geo = new THREE.Vector3();
 const _world = new THREE.Vector3();
+const _q = new THREE.Quaternion();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _d = new THREE.Vector3();
