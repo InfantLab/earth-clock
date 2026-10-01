@@ -314,6 +314,7 @@
   <a href="#geology">Geology</a>
   <a href="#feeds">Live data</a>
   <a href="#astronomy">Astronomy</a>
+  <a href="#space">People in orbit</a>
   <a href="#eclipse">Eclipses</a>
   <a href="#philosophy">Why this exists</a>
   <a href="#lineage">Lineage</a>
@@ -331,6 +332,7 @@
     <a href="#geology">Geology</a>
     <a href="#feeds">Live data</a>
     <a href="#astronomy">Astronomy</a>
+    <a href="#space">People in orbit</a>
     <a href="#eclipse">Eclipses</a>
     <a href="#philosophy">Why this exists</a>
     <a href="#lineage">Lineage</a>
@@ -540,6 +542,14 @@
     </li>
     <li>
       <div class="feed-title">
+        <span class="feed-name">Space stations</span>
+        <span class="feed-cadence">refreshed every 4 h</span>
+      </div>
+      <p class="feed-desc">Orbital elements (GP / OMM) for the ISS, Tiangong and their visiting vehicles, mirrored by a small server-side service so browsers never hit CelesTrak directly. Positions are computed in the browser with SGP4. See <a href="#space">People in orbit</a>.</p>
+      <p class="feed-src">Source: CelesTrak · <a href="https://celestrak.org/">celestrak.org</a></p>
+    </li>
+    <li>
+      <div class="feed-title">
         <span class="feed-name">Coastlines</span>
         <span class="feed-cadence">bundled</span>
       </div>
@@ -593,6 +603,39 @@
   <p>
     Reference: Jean Meeus, <em>Astronomical Algorithms</em> (2nd ed., 1998), chapter 47.
   </p>
+</section>
+
+<section id="space">
+  <h2>People in orbit</h2>
+  <p>
+    Added in v0.5.0. Right now there are people living about 400 km above the globe you're looking at — on the <strong>International Space Station</strong> (pale blue marker) and on China's <strong>Tiangong</strong> station (coral marker). Both appear on the <strong>Space</strong> row of the menu, each drawn as a small glowing silhouette that flies nose-first along its orbit. <strong>Find ISS</strong> swings the camera over the station, and <code>?sat=iss</code> or <code>?sat=tiangong</code> links straight to one.
+  </p>
+
+  <h3>Orbits and tracks — two views of the same path</h3>
+  <p>
+    The Space row has two separate switches, because there are two honest ways to draw where a station goes:
+  </p>
+  <ul>
+    <li><strong>Orbits</strong> — the station's path <em>through space</em>: a ring around the whole globe, one full lap, about 92 minutes for the ISS. The ring is tilted to the equator by the orbit's inclination (51.6° for the ISS, 41.5° for Tiangong) and, crucially, it <em>does not turn with Earth</em>. It stays fixed against the stars while the planet spins underneath it.</li>
+    <li><strong>Tracks</strong> — the path <em>over the ground</em>: the line traced by the point directly below the station. It's drawn half an orbit behind (faint) and one and a half orbits ahead, and it is glued to the surface like the coastlines.</li>
+  </ul>
+  <p>
+    The difference between the two is Earth's rotation. In the 92 minutes the ISS takes to go once around the ring, Earth turns about 23°, so when the station comes back round a different stretch of ground is waiting under it. That's why the ground track isn't a closed loop: it's a wave that slides about 23° west on every pass, and why over a day or so the station passes over almost everywhere between 51.6° N and 51.6° S. The wave peaks at ±51.6° because a station can never pass directly over a latitude higher than its orbit's inclination.
+  </p>
+  <p>
+    The easiest way to see it: turn on both Orbits and Tracks and time-warp at a few hundred times real speed. The ring holds still in space; the globe and the track turn together beneath it. Above about 5 000× warp a station laps Earth every second or so of screen time and the markers and tracks turn to noise, so they hide and only the orbit ring stays.
+  </p>
+
+  <h3>Sixteen sunrises a day</h3>
+  <p>
+    The stations dim while they're in Earth's shadow. At this height a station spends up to about 40% of every orbit in the dark, so the crew see about sixteen sunrises and sixteen sunsets a day — one of each every 92 minutes. Click a station for its card: position, altitude, speed, whether it's in sunlight, a countdown to the next orbital sunrise or sunset, and how many people are aboard (hover for names).
+  </p>
+
+  <h3>Where the positions come from</h3>
+  <p>
+    Every few hours a small server-side service downloads the latest published orbital elements — a compact description of each orbit at a given moment — and the browser calculates the position from them with the standard SGP4 orbit model, driven by the same simulated clock as the sun and moon. The ISS lands within about 0.1° of independent live trackers. Elements drift out of date as the orbit decays and the station fires its engines, so the markers hide if you warp more than two weeks from the date they were published. The crew list is kept by hand and updated at each crew rotation.
+  </p>
+  <p class="feed-src">Source: CelesTrak GP orbital elements · <a href="https://celestrak.org/">celestrak.org</a> · propagation with <a href="https://github.com/shashwatak/satellite-js">satellite.js</a></p>
 </section>
 
 <section id="eclipse">
@@ -719,6 +762,7 @@
     <li><strong>USGS</strong> — Earthquake Hazards Program real-time feed.</li>
     <li><strong>Smithsonian Institution</strong> — Global Volcanism Program, Volcanoes of the World database.</li>
     <li><strong>Peter Bird</strong> — PB2002 digital plate-boundary model, mirrored as GeoJSON by <a href="https://github.com/fraxen/tectonicplates">fraxen/tectonicplates</a>.</li>
+    <li><strong>CelesTrak</strong> (T.S. Kelso) — public orbital elements for the space stations; <strong>satellite.js</strong> — the SGP4 propagator that turns them into positions.</li>
     <li><strong>Blitzortung</strong> — community-volunteer-operated VLF lightning detection network.</li>
     <li><strong>Solar System Scope</strong> (INOVE s.r.o.) — Earth, moon, and starmap textures, CC-BY 4.0.</li>
     <li><strong>Natural Earth</strong> — public-domain coastline TopoJSON.</li>
