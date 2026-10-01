@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { SATELLITES, type SatelliteSpec } from "./catalog";
 import { createPropagator, elementAge, type ElementAge, type ElementIndex, type Propagator } from "./propagator";
-import { subPointDeg } from "./frames";
-import { gmst } from "../astro/solar";
+import { subPointDeg, isInEarthShadow } from "./frames";
+import { gmst, sunDirectionWorld } from "../astro/solar";
 
 export interface TrackedSatellite {
   spec: SatelliteSpec;
@@ -53,6 +53,38 @@ export class SatelliteTracker {
     }).join(" · ");
   }
 
+  /**
+   * Next orbital sunrise or sunset after `from`: steps forward 15 s at a time for up to
+   * one period, then bisects to ~1 s. Null if the satellite can't be placed or never
+   * changes state (e.g. a dawn–dusk sun-synchronous orbit).
+   */
+  nextShadowChange(id: string, from: Date): { at: Date; sunrise: boolean } | null {
+    const prop = this.get(id)?.propagator;
+    if (!prop) return null;
+    const shadowAt = (ms: number): boolean | null => {
+      const d = new Date(ms);
+      if (!prop.stateAt(d, _pos)) return null;
+      return isInEarthShadow(_pos, sunDirectionWorld(d, _sun));
+    };
+    const t0 = from.getTime();
+    const start = shadowAt(t0);
+    if (start === null) return null;
+    let lo = t0;
+    for (let hi = t0 + 15_000; hi <= t0 + prop.periodSec * 1000 + 15_000; hi += 15_000) {
+      const s = shadowAt(hi);
+      if (s === null) return null;
+      if (s !== start) {
+        while (hi - lo > 1000) {
+          const mid = (lo + hi) / 2;
+          if (shadowAt(mid) === start) lo = mid; else hi = mid;
+        }
+        return { at: new Date(hi), sunrise: start };
+      }
+      lo = hi;
+    }
+    return null;
+  }
+
   /** Where everything is at `date` — console helper and quick readouts. */
   snapshot(date: Date): SatelliteSnapshot[] {
     const g = gmst(date);
@@ -75,4 +107,5 @@ export class SatelliteTracker {
 
 const _pos = new THREE.Vector3();
 const _vel = new THREE.Vector3();
+const _sun = new THREE.Vector3();
 const round = (x: number, dp: number) => Math.round(x * 10 ** dp) / 10 ** dp;

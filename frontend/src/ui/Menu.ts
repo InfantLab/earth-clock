@@ -38,6 +38,7 @@ import type { Clock } from "./Clock";
 import type { LocationPanel } from "./LocationPanel";
 import type { EclipsePanel } from "./EclipsePanel";
 import type { TimezoneLayer } from "../scene/TimezoneLayer";
+import type { SatelliteLayer } from "../scene/SatelliteLayer";
 
 export interface MenuLayers {
   globe: Globe;
@@ -61,6 +62,8 @@ export interface MenuLayers {
   /** Wind-trail accumulator. The Wind row's mutex picker calls
    *  `trails.setIntensity(level)` directly via Menu.apply(). */
   trails: Trails;
+  /** ISS / Tiangong markers, orbit rings and ground tracks (Space row). */
+  satellites: SatelliteLayer;
 }
 
 export interface MenuPanels {
@@ -100,6 +103,10 @@ type LayerKey =
   // dots are paired and controlled by the Beams toggle. "Find moon" sits at the
   // end of the row as a non-toggling action button (reposition the camera).
   | "terminator" | "atmosphere" | "hands" | "eclipse"
+  // Space row (v0.5.0). Per-station keys for the headline crewed stations; ids match
+  // space/catalog.ts. Not behind the live-data freshness gate — SatelliteLayer hides
+  // stations itself when simulated time is too far from the orbital-element epoch.
+  | "iss" | "tiangong" | "satTracks" | "satOrbits"
   // View row. `skyboxHi` moved here from the former Astro² row.
   | "map" | "orbit" | "skyboxHi" | "data" | "location";
 
@@ -140,6 +147,8 @@ const DEFAULTS: Record<LayerKey, boolean> = {
   earthquakes: true, plates: true, volcanoes: true,
   // Astro
   terminator: true, atmosphere: true, hands: true, eclipse: false,
+  // Space
+  iss: true, tiangong: true, satTracks: true, satOrbits: false,
   // View — hi-res sky off by default so first paint stays on the 250 KB 2K texture.
   map: false, orbit: false, skyboxHi: false, data: false, location: false,
 };
@@ -190,6 +199,8 @@ const LABELS: Record<LayerKey, string> = {
   earthquakes: "Earthquakes", plates: "Plates", volcanoes: "Volcanoes",
   // Astro
   terminator: "Day/night", atmosphere: "Atmosphere", hands: "Beams", eclipse: "Eclipse",
+  // Space
+  iss: "ISS", tiangong: "Tiangong", satTracks: "Tracks", satOrbits: "Orbits",
   // View
   map: "Flat map", orbit: "Auto-spin", skyboxHi: "Hi-res sky", data: "Data", location: "Location",
 };
@@ -238,6 +249,11 @@ const TOOLTIPS: Partial<Record<LayerKey, string>> = {
   atmosphere:  "Atmospheric rim glow with day-twilight gradient",
   hands:       "Sun and moon beams — a gold gnomon pointing at the sun, a silver one at the moon, a cyan rod through the poles for Earth's spin axis with a spin-direction arrow, the equator (cyan) and ecliptic (gold) rings, plus paired sun + moon dots on the flat map. Under time-warp the sun beam sweeps one rotation per simulated day.",
   eclipse:     "Live umbra + penumbra discs and path-of-totality; opens the eclipse-catalogue panel for selecting an event and jumping to it",
+  // Space
+  iss:         "International Space Station — live position from CelesTrak orbital elements (refreshed every few hours). Dims while it's in Earth's shadow. Click it for details.",
+  tiangong:    "China's Tiangong space station — live position from CelesTrak orbital elements. Click it for details.",
+  satTracks:   "Ground tracks — the path over the surface: half an orbit behind (faint), 1½ orbits ahead",
+  satOrbits:   "Orbit rings — each station's orbit in space. The ring stays put while Earth turns underneath it; that's why each pass crosses further west.",
   // View
   map:         "Equirectangular flat-map view — drag to pan, wheel to zoom (centred on cursor), double-click to reset",
   orbit:       "Gentle auto-rotation around Earth (pauses on user input)",
@@ -294,6 +310,11 @@ const CATEGORIES: Array<{ label: string; keys: LayerKey[] }> = [
     // See the actions block in the constructor.
   },
   {
+    label: "Space",
+    keys: ["iss", "tiangong", "satTracks", "satOrbits"],
+    // "Find ISS" action button at the end, like "Find moon" on the Astro row.
+  },
+  {
     label: "View",
     keys: ["map", "orbit", "skyboxHi", "data", "location"],
   },
@@ -309,6 +330,7 @@ export class Menu {
   private overlayChangeHandler: ((active: LayerKey | null) => void) | null = null;
   private cloudsChangeHandler: ((active: CloudSourceKey | null) => void) | null = null;
   private findMoonHandler: (() => void) | null = null;
+  private findIssHandler: (() => void) | null = null;
   private skyboxHiResHandler: ((hires: boolean) => void) | null = null;
 
   constructor(parent: HTMLElement, layers: MenuLayers, panels: MenuPanels = {}) {
@@ -380,6 +402,15 @@ export class Menu {
         btn.textContent = "Find moon";
         btn.title = "Reposition the camera along the moon's direction so both Earth and moon sit in frame";
         btn.addEventListener("click", () => { this.findMoonHandler?.(); this.collapseIfMobile(); });
+        buttonsHost.appendChild(btn);
+      }
+      if (cat.label === "Space") {
+        buttonsHost.appendChild(document.createTextNode(" · "));
+        const btn = document.createElement("span");
+        btn.className = "orrery-tb orrery-action";
+        btn.textContent = "Find ISS";
+        btn.title = "Turn the camera to look down on the International Space Station and open its info card";
+        btn.addEventListener("click", () => { this.findIssHandler?.(); this.collapseIfMobile(); });
         buttonsHost.appendChild(btn);
       }
 
@@ -484,6 +515,11 @@ export class Menu {
    */
   onFindMoon(fn: () => void) {
     this.findMoonHandler = fn;
+  }
+
+  /** Hook for the "Find ISS" action button at the end of the Space row. */
+  onFindIss(fn: () => void) {
+    this.findIssHandler = fn;
   }
 
   /**
@@ -631,8 +667,18 @@ export class Menu {
   private apply(key: LayerKey) {
     const on = this.state[key];
     const fresh = this.liveFreshnessOk;
-    const { globe, atmosphere, coastlines, plates, volcanoes, clouds, aurora, fires, earthquakes, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails, timezoneLayer } = this.layers;
+    const { globe, atmosphere, coastlines, plates, volcanoes, clouds, aurora, fires, earthquakes, hurricanes, hurricaneTracks, lightning, overlay, radiusVectors, eclipse, flatMap, trails, timezoneLayer, satellites } = this.layers;
     switch (key) {
+      case "iss":
+      case "tiangong":
+        satellites.setSatelliteVisible(key, on);
+        break;
+      case "satTracks":
+        satellites.setTracksVisible(on);
+        break;
+      case "satOrbits":
+        satellites.setOrbitsVisible(on);
+        break;
       // Cloud source picker — visibility is "is any source active?" The actual texture/
       // scalar swap happens in main.ts via onCloudsChange. (CloudLayer doesn't know the
       // difference between sources — see CloudLayer.setTexture vs setScalarField.)

@@ -1,6 +1,6 @@
 # Satellites plan — ISS, Tiangong, and what comes after
 
-Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **Phase 0 (plumbing) landed; Phase 1 next.**
+Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **Phases 0–1 landed; v0.5.0 release pending real element data. Phase 2 (passes) next.**
 Supersedes the short *ISS position + ground track* entry in [ROADMAP.md](../../ROADMAP.md).
 
 Two headline features:
@@ -315,6 +315,22 @@ rest of it.
   OMM ≡ TLE (0.3 m), our `gmst` vs satellite.js `gstime` (≤ 4 m at ISS altitude over
   2020–30), marker exactly over the pin, geodetic/geocentric gap 0.18°, period/altitude/
   speed, and 100% agreement with satellite.js's conical shadow model over two orbits.
+
+**Phase 1 — landed (2026-10-01).**
+
+- `scene/SatelliteLayer.ts`: glowing silhouette sprites (constant screen size, nose turned
+  along the on-screen direction of flight), dimmed in Earth's shadow and when elements are
+  3–14 days old; inertial orbit rings (one period, rebuilt every 30 sim-s); Earth-fixed
+  ground tracks at r = 1.0045 (½ orbit behind, 1½ ahead); flat-map marker + track split at
+  the antimeridian. Markers and tracks hide above 5 000× warp; rings stay. Emoji variant via
+  `setMarkerStyle("emoji")` / `?markers=emoji`.
+- `ui/SatellitePanel.ts`: name, agency, position, altitude, speed, sunlit/shadow with next
+  orbital sunrise/sunset, crew (when `crew.json` is filled in), rotating facts, centre-view
+  button, disabled "ride along ▶ soon" teaser, element age. Stacks above the Location panel.
+- Menu **Space** row: ISS · Tiangong · Tracks · Orbits (off by default) · *Find ISS*.
+- Click a marker (globe or flat map) to select it; `?sat=iss` / `?sat=tiangong` deep links.
+- Not done from §2: nadir line and visibility footprint (optional), "over …" place names
+  only where Nominatim has a name (most of the orbit is ocean).
 
 **Still to do before v0.5.0 ships:**
 
