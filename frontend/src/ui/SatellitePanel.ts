@@ -36,6 +36,8 @@ export class SatellitePanel {
   private readonly iconEl: HTMLElement;
   private closeHandler: (() => void) | null = null;
   private centreHandler: (() => void) | null = null;
+  private rideHandler: (() => void) | null = null;
+  private readonly rideBtn: HTMLButtonElement;
   private spec: SatelliteSpec | null = null;
   private factIndex = 0;
   private factTimer: number | null = null;
@@ -66,7 +68,7 @@ export class SatellitePanel {
       <div class="orrery-sat-fact" id="orrery-sat-fact"></div>
       <div class="orrery-sat-actions">
         <button class="orrery-sat-btn" id="orrery-sat-centre" title="Point the camera down at the station">centre view</button>
-        <button class="orrery-sat-btn" disabled title="Ride along — the view from the station — is coming in v0.6">ride along ▶ soon</button>
+        <button class="orrery-sat-btn" id="orrery-sat-ride" title="Ride along — the view from the station. V switches view, Esc leaves.">ride along ▶</button>
       </div>
       <div class="orrery-sat-age" id="orrery-sat-age"></div>
     `;
@@ -86,10 +88,19 @@ export class SatellitePanel {
     this.iconEl   = q("orrery-sat-icon");
     q("orrery-sat-close").addEventListener("click", () => this.closeHandler?.());
     q("orrery-sat-centre").addEventListener("click", () => this.centreHandler?.());
+    this.rideBtn = q("orrery-sat-ride") as HTMLButtonElement;
+    this.rideBtn.addEventListener("click", () => this.rideHandler?.());
   }
 
   onClose(fn: () => void) { this.closeHandler = fn; }
   onCentre(fn: () => void) { this.centreHandler = fn; }
+  /** Ride-along toggle: the handler starts or stops riding the shown satellite. */
+  onRide(fn: () => void) { this.rideHandler = fn; }
+
+  /** Reflect whether the camera is currently riding the shown satellite. */
+  setRiding(on: boolean) {
+    this.rideBtn.textContent = on ? "leave ride ✕" : "ride along ▶";
+  }
 
   selectedId(): string | null { return this.spec?.id ?? null; }
 
@@ -99,6 +110,7 @@ export class SatellitePanel {
     this.nameEl.textContent = spec.name;
     this.agencyEl.textContent = spec.agency;
     this.iconEl.textContent = spec.emoji;
+    this.rideBtn.classList.toggle("hidden", !spec.povCapable);
     this.root.style.setProperty("--sat-accent", `#${spec.colour.toString(16).padStart(6, "0")}`);
     this.setPlace("");
     const showCrew = spec.crewed && crew !== null;

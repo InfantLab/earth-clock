@@ -1368,14 +1368,20 @@ function selectSatellite(id: string | null) {
   // something that isn't on screen.
   menu.setLayer(spec.id, true);
   satellitePanel.show(spec, crewManifest ? (crewManifest.stations[spec.id] ?? []) : null);
+  satellitePanel.setRiding(ride?.id === spec.id);
 }
 satellitePanel.onClose(() => selectSatellite(null));
 satellitePanel.onCentre(() => { if (selectedSatellite) centreOnSatellite(selectedSatellite); });
+satellitePanel.onRide(() => {
+  if (!selectedSatellite) return;
+  if (ride?.id === selectedSatellite) stopRide(); else startRide(selectedSatellite);
+});
 
 /** Look straight down on a satellite from 2.4 Earth radii — close enough to see the
  *  region it's over, far enough to see its track curve away. Globe mode only. */
 function centreOnSatellite(id: string) {
   if (menu.isMapMode()) return;
+  stopRide();
   if (!satelliteLayer.worldPosition(id, new Date(simulatedTime), _satWorld)) {
     console.warn(`[earth-clock] centre on ${id}: no position yet (orbital elements not loaded, or too far from today)`);
     return;
@@ -1465,6 +1471,7 @@ function startRide(id: string, view: RideView = "horizon") {
   camera.near = RIDE_NEAR;
   camera.updateProjectionMatrix();
   satelliteLayer.setRiding(id);
+  satellitePanel.setRiding(selectedSatellite === id);
 }
 
 function stopRide() {
@@ -1480,6 +1487,7 @@ function stopRide() {
   controls.enabled = true;
   controls.update();
   satelliteLayer.setRiding(null);
+  satellitePanel.setRiding(false);
 }
 
 window.__orrery.rideAlong = (id: string | null = "iss", view?: RideView) => {
