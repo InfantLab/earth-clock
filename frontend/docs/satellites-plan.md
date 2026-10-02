@@ -353,13 +353,28 @@ rest of it.
 - Not done from §2: nadir line and visibility footprint (optional), "over …" place names
   only where Nominatim has a name (most of the orbit is ocean).
 
-**Still to do before v0.5.0 ships:**
+**v0.5.0 shipped (2026-10-01)** with a committed `fallback.json` and filled-in `crew.json`;
+live ISS sub-point checked within 0.06° of wheretheiss.at.
 
-- `public/data/satellites/fallback.json` isn't committed yet — CelesTrak isn't reachable
-  from the cloud dev sandbox. Run `npm run satellites:fallback` locally and commit it.
-- Fill in `crew.json` (currently `updated: null`, so the UI will hide the count).
-- Live check: `npx tsx scripts/verify-satellites.ts ../public/data/satellites/fallback.json`
-  and compare the printed sub-points with wheretheiss.at (target < 0.1°).
+**Phase 2 — landed (2026-10-01).**
+
+- `space/passes.ts`: visible-pass search (≥ 10° up, station sunlit, sun < −6° at the
+  observer), 30 s coarse scan + 5 s fine sampling, 10-day window, sub-minute slivers
+  dropped, diffuse-sphere magnitude estimate from `spec.stdMagnitude`. Runs on the main
+  thread in 1-day slices with cancellation instead of a Web Worker: a worker build pulls in
+  satellite.js's WASM runtimes, which Vite can't bundle as a classic worker.
+- Verified in `scripts/verify-satellites.ts`: look angles match satellite.js to 1e-5°, and
+  over 5 cities × 7 days every brute-force-visible moment falls inside a predicted pass,
+  with no spurious passes.
+- Station card: "visible from 📍 …" with the next three passes (pin's time zone),
+  **▶ watch** (jump to T−1 min at 10×, camera over the pin), **📅** (.ics with a 10-min
+  alarm), friendly "none in the next 10 days" and "drop a pin" states.
+- Location panel: "🛰️ ISS / Tiangong visible — Tonight 21:42" row for the soonest pass.
+- **Who's up there?** (Space row, or the card's "aboard" link): everyone aboard each crewed
+  station, days in orbit, station names linking to the official sites (`spec.officialUrl`;
+  NASA ISS page and CMSA English site), optional per-person `url` in `crew.json`.
+- Marker "backflip" fix: the silhouette is anchored to the projected orbit normal; the
+  nose only swaps sides where the on-screen ellipse turns round, instead of spinning.
 
 ## 8. Decisions (2026-09-30)
 

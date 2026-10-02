@@ -44,6 +44,8 @@ interface SatVisuals {
   lon: number;
   placed: boolean;
   inShadow: boolean;
+  /** Which way along the projected orbit normal the nose points (see screenHeading). */
+  noseSign: 1 | -1;
   age: ElementAge;
   lastRingBuild: number;
   lastTrackBuild: number;
@@ -111,7 +113,7 @@ export class SatelliteLayer {
       this.visuals.set(t.spec.id, {
         tracked: t, marker, ring, track, flatMarker, flatTrack,
         pos: new THREE.Vector3(), vel: new THREE.Vector3(), lat: 0, lon: 0,
-        placed: false, inShadow: false, age: "unknown",
+        placed: false, inShadow: false, age: "unknown", noseSign: 1,
         lastRingBuild: NaN, lastTrackBuild: NaN,
       });
     }
@@ -317,14 +319,37 @@ export class SatelliteLayer {
     v.flatTrack.geometry.setAttribute("color", new THREE.Float32BufferAttribute(flatCol, 4));
   }
 
-  /** Sprite rotation so the silhouette's nose points along the on-screen direction of flight. */
+  /**
+   * Sprite rotation for the silhouette. The station's long axis (the ISS truss, Tiangong's
+   * cross-bar) lies along the orbit normal, which barely moves on screen, so we anchor the
+   * sprite to the *projected orbit normal* and only pick which side the nose is on from
+   * the on-screen velocity. Steering straight off the projected velocity made the marker
+   * spin ("backflip") where the orbit's on-screen ellipse turns round at the limb: there the
+   * apparent motion shrinks to nothing and reverses. Now the nose just swaps sides.
+   * When the orbit is seen nearly face-on its normal points at the camera and the velocity
+   * never reverses, so we steer by velocity instead.
+   */
   private screenHeading(v: SatVisuals, camera: THREE.Camera, viewport: { w: number; h: number }): number {
     this.mesh.updateMatrixWorld();
-    _a.copy(v.pos).applyMatrix4(this.mesh.matrixWorld).project(camera);
-    _b.copy(v.pos).addScaledVector(v.vel, 20).applyMatrix4(this.mesh.matrixWorld).project(camera);
-    const dx = (_b.x - _a.x) * viewport.w, dy = (_b.y - _a.y) * viewport.h;
-    if (dx === 0 && dy === 0) return 0;
-    return Math.atan2(dy, dx) - Math.PI / 2;
+    const mw = this.mesh.matrixWorld;
+    _a.copy(v.pos).applyMatrix4(mw).project(camera);
+    _b.copy(v.pos).addScaledVector(v.vel, 20).applyMatrix4(mw).project(camera);
+    const vx = (_b.x - _a.x) * viewport.w, vy = (_b.y - _a.y) * viewport.h;
+
+    _n.crossVectors(v.pos, v.vel).normalize().transformDirection(mw);
+    _d.copy(_n).transformDirection(camera.matrixWorldInverse);
+    if (Math.hypot(_d.x, _d.y) < 0.25) {
+      if (vx === 0 && vy === 0) return 0;
+      return Math.atan2(vy, vx) - Math.PI / 2;
+    }
+    _b.copy(v.pos).applyMatrix4(mw).addScaledVector(_n, 0.1).project(camera);
+    const nx = (_b.x - _a.x) * viewport.w, ny = (_b.y - _a.y) * viewport.h;
+    // Nose candidate: the projected normal turned 90°. Flip sides only once the station is
+    // clearly moving the other way (hysteresis stops jitter right at the turnaround).
+    const fx = -ny, fy = nx;
+    const along = (fx * vx + fy * vy) / (Math.hypot(fx, fy) * Math.hypot(vx, vy) || 1);
+    if (along * v.noseSign < -0.2) v.noseSign = -v.noseSign as 1 | -1;
+    return Math.atan2(fy * v.noseSign, fx * v.noseSign) - Math.PI / 2;
   }
 
   private flatHeading(v: SatVisuals, now: Date): number {
@@ -442,3 +467,4 @@ const _q = new THREE.Quaternion();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _d = new THREE.Vector3();
+const _n = new THREE.Vector3();

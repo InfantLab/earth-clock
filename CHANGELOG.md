@@ -9,6 +9,29 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
+## Unreleased — Can I see it tonight?
+
+- **Visible passes.** Pin a location and the station card lists the next times the ISS or
+  Tiangong will be visible from there: sunlit, at least 10° up, in a dark sky. Each pass
+  gives the time in the pin's time zone, how long it lasts, how high it climbs, where it
+  appears and disappears (or fades into Earth's shadow), and an estimated brightness. The
+  Location panel shows the soonest one. **▶ watch** jumps the clock to the pass and plays
+  it at 10× over your pin; **📅** downloads a calendar event with a 10-minute reminder.
+- **Who's up there?** A new Space-row button lists everyone in orbit right now, station by
+  station, with how many days they've been up and links to the official ISS (NASA) and
+  Tiangong (CMSA) sites. Agency names link to that agency's astronaut pages (NASA, ESA,
+  CSA, JAXA, CMSA).
+- **Station card tabs.** *ISS · Tiangong · Crew* along the top of the card switch between
+  the stations and the crew list without going back to the globe.
+- **Ride along (preview).** *ride along ▶* on the station card puts the camera on the
+  station: a horizon view looking ahead along the orbit, or the cupola view straight down
+  (**V** switches, **Esc** leaves). Orbital sunrises, the thin blue limb, the station's own
+  ground track running ahead to the horizon. Time warp is capped at 300× while riding.
+  `?view=iss` / `?view=iss-cupola` link straight in.
+- **Fix:** the station marker no longer does a backflip as its orbit swings behind the globe.
+
+---
+
 ## v0.5.0 — 2026-10-01 — ISS and Tiangong
 
 - **Space row.** The International Space Station and China's Tiangong appear as glowing

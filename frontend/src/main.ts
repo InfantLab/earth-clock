@@ -46,7 +46,11 @@ import { fetchSatelliteElements, fetchCrewManifest, type CrewManifest } from "./
 import { SatelliteLayer } from "./scene/SatelliteLayer";
 import { SatelliteCameraPath, RIDE_VIEWS, type RideView } from "./scene/SatelliteCameraPath";
 import { SatellitePanel } from "./ui/SatellitePanel";
-import { satelliteById } from "./space/catalog";
+import { satelliteById, SATELLITES } from "./space/catalog";
+import { predictVisiblePasses, type VisiblePass } from "./space/passes";
+import { elementAge } from "./space/propagator";
+import { formatPassWhen, formatPassDetail, downloadPassIcs } from "./ui/passFormat";
+import type { PassesState } from "./ui/SatellitePanel";
 import { SatelliteTracker, type SatelliteSnapshot } from "./space/tracker";
 import { fetchActiveStorms } from "./data/nhcLoader";
 import { fetchAndParseKmz, rewriteNhcUrl } from "./data/kmzParser";
@@ -547,7 +551,8 @@ function closeEclipseExperience() {
 }
 /** Cached state of the active pin — updated by `pinLocation` so the per-frame
  *  observer-view update doesn't have to dig through the LocationPanel internals. */
-const pinnedLocation: { lat: number; lon: number; visible: boolean } = { lat: 0, lon: 0, visible: false };
+const pinnedLocation: { lat: number; lon: number; visible: boolean; place: string; zone: string | null } =
+  { lat: 0, lon: 0, visible: false, place: "", zone: null };
 
 // Eclipse catalogue panel (top-left, under the Clock + Location stack). Lists every
 // bundled eclipse event with a one-click "jump to peak". Toggled by the Astro row's
@@ -600,6 +605,7 @@ const menu = new Menu(document.body,
 // camera-repositioning helper that powers `window.__orrery.findMoon()`.
 menu.onFindMoon(() => findMoonInCamera());
 menu.onFindIss(() => { selectSatellite("iss"); centreOnSatellite("iss"); });
+menu.onShowCrew(() => openCrewView());
 
 // Wire the Astro² "Hi-res sky" toggle. Subsequent toggles route through applySkybox;
 // on initial mount, if the user had hi-res persisted from a previous session, kick
@@ -639,11 +645,13 @@ function pinLocation(lat: number, lon: number, source: PinSource) {
   pinnedLocation.lat = lat;
   pinnedLocation.lon = lon;
   pinnedLocation.visible = true;
+  pinnedLocation.place = `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? "N" : "S"}, ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? "E" : "W"}`;
   // Timezone lookup: trigger political data load (no-op if already loaded),
   // then immediately set the best-available zone (nominal fallback until data lands).
   timezoneLayer.loadForLookup();
   const zone = timezoneLayer.findZoneAt(lat, lon);
   locationPanel.setPinnedZone(zone.ianaName || null, zone.utcOffset);
+  pinnedLocation.zone = zone.ianaName || null;
   // Drive ±Hours relative to the pinned location so "+0:00" means "same time as here".
   timezoneLayer.setReferenceZone(zone.ianaName || null);
   sunDiscPanel.setPlaceName(`${lat.toFixed(2)}°, ${lon.toFixed(2)}°`); // coord fallback until geocode resolves
@@ -657,6 +665,7 @@ function pinLocation(lat: number, lon: number, source: PinSource) {
       case "ok":
         locationPanel.setPlaceName(result.place.short);
         sunDiscPanel.setPlaceName(result.place.short);
+        if (pinnedLocation.lat === lat && pinnedLocation.lon === lon) pinnedLocation.place = result.place.short;
         break;
       case "no-name":
         // Upstream returned a valid response but no feature at this location
@@ -1323,6 +1332,7 @@ function loadSatellites() {
     .then(els => {
       satelliteTracker.setElements(els.byNorad);
       satelliteLayer.rebuildVisuals();
+      elementsStamp = els.generated?.getTime() ?? Date.now();
       resolveSatellitesReady();
       const summary = satelliteTracker.summary(new Date());
       debug.info("satellites", summary);
@@ -1367,10 +1377,131 @@ function selectSatellite(id: string | null) {
   // Selecting a station you've hidden turns it back on — otherwise the card describes
   // something that isn't on screen.
   menu.setLayer(spec.id, true);
-  satellitePanel.show(spec, crewManifest ? (crewManifest.stations[spec.id] ?? []) : null, crewManifest?.updated ?? null);
+  satellitePanel.show(spec, crewManifest ? (crewManifest.stations[spec.id] ?? []) : null);
   satellitePanel.setRiding(ride?.id === spec.id);
 }
 satellitePanel.onClose(() => selectSatellite(null));
+satellitePanel.onShowCrew(() => openCrewView());
+satellitePanel.onShowStation(id => { selectSatellite(id); centreOnSatellite(id); });
+satellitePanel.onRequestPin(() => menu.setLayer("location", true));
+satellitePanel.onCalendar(p => {
+  const spec = selectedSatellite ? satelliteById(selectedSatellite) : undefined;
+  if (spec) downloadPassIcs(p, spec.name, pinnedLocation.place);
+});
+satellitePanel.onWatchPass(p => watchPass(p));
+locationPanel.onNextPass(() => {
+  const next = soonestPass(new Date(simulatedTime));
+  if (next) selectSatellite(next.id);
+});
+
+/** "Who's in space" — crew of every crewed station, with links to the official sites. */
+function openCrewView() {
+  selectedSatellite = null;
+  satelliteLayer.setSelected(null);
+  satellitePanel.showCrew(crewManifest, SATELLITES);
+}
+
+// ── Visible passes from the pinned location ("can I see it tonight?") ──────────────
+// Recomputed when the pin moves, fresh elements arrive, or simulated time drifts more
+// than a day from the last search. Search runs in 1-day slices (space/passes.ts) so it
+// never blocks a frame for long; a newer request cancels an older one mid-search.
+const PASS_SEARCH_DAYS = 10;
+let elementsStamp = 0;
+let passCache: { key: string; from: number; bySat: Map<string, VisiblePass[]> } | null = null;
+let passSearchKey: string | null = null;
+let passSearchGen = 0;
+let passUiLastUpdate = 0;
+
+function passKey(): string {
+  return `${pinnedLocation.lat.toFixed(4)},${pinnedLocation.lon.toFixed(4)}|${elementsStamp}`;
+}
+
+function maybeSearchPasses(now: Date) {
+  if (!pinnedLocation.visible || !elementsStamp) return;
+  const key = passKey();
+  const t = now.getTime();
+  const fresh = passCache && passCache.key === key && t >= passCache.from - 3_600_000 && t <= passCache.from + 86_400_000;
+  if (fresh || passSearchKey === key) return;
+  passSearchKey = key;
+  const gen = ++passSearchGen;
+  const obs = { lat: pinnedLocation.lat, lon: pinnedLocation.lon };
+  (async () => {
+    const bySat = new Map<string, VisiblePass[]>();
+    for (const tr of satelliteTracker.all()) {
+      if (!tr.spec.crewed || !tr.propagator || elementAge(tr.propagator, now) === "unknown") continue;
+      const passes = await predictVisiblePasses(tr.propagator, obs, now, {
+        days: PASS_SEARCH_DAYS,
+        stdMag: tr.spec.stdMagnitude,
+        cancelled: () => gen !== passSearchGen,
+      });
+      if (!passes) return; // superseded
+      bySat.set(tr.spec.id, passes);
+    }
+    if (gen !== passSearchGen) return;
+    passCache = { key, from: t, bySat };
+    passSearchKey = null;
+  })();
+}
+
+/** Soonest not-yet-finished visible pass across all stations. */
+function soonestPass(now: Date): { id: string; pass: VisiblePass } | null {
+  if (!passCache || passCache.key !== passKey()) return null;
+  let best: { id: string; pass: VisiblePass } | null = null;
+  for (const [id, passes] of passCache.bySat) {
+    const p = passes.find(x => x.end > now);
+    if (p && (!best || p.start < best.pass.start)) best = { id, pass: p };
+  }
+  return best;
+}
+
+/** ~1 Hz: kick off searches and refresh the pass lists in the Location panel + card. */
+function updatePassUi(now: Date, wallMs: number) {
+  if (wallMs - passUiLastUpdate < 1000) return;
+  passUiLastUpdate = wallMs;
+  maybeSearchPasses(now);
+
+  const ready = passCache && passCache.key === passKey() ? passCache : null;
+  const next = pinnedLocation.visible ? soonestPass(now) : null;
+  locationPanel.setNextPass(next ? {
+    station: satelliteById(next.id)?.shortName ?? next.id,
+    when: next.pass.start <= now ? "overhead now" : formatPassWhen(next.pass.start, now, pinnedLocation.zone ?? undefined),
+    detail: formatPassDetail(next.pass),
+  } : null);
+
+  if (!selectedSatellite) return;
+  const prop = satelliteTracker.get(selectedSatellite)?.propagator;
+  let state: PassesState;
+  if (!pinnedLocation.visible) state = { kind: "no-pin" };
+  else if (!prop || elementAge(prop, now) === "unknown") state = { kind: "unknown" };
+  else if (!ready) state = { kind: "computing", place: pinnedLocation.place };
+  else state = {
+    kind: "ready", place: pinnedLocation.place, days: PASS_SEARCH_DAYS, now,
+    passes: ready.bySat.get(selectedSatellite) ?? [],
+    timeZone: pinnedLocation.zone ?? undefined,
+  };
+  satellitePanel.setPasses(state);
+}
+
+/** "▶ watch": jump to a minute before the pass, play it at 10×, look down over the pin. */
+function watchPass(p: VisiblePass) {
+  stopRide();   // watching from the ground — the pin view, not the station
+  simulatedTime = p.start.getTime() - 60_000;
+  window.__orreryTimeWarp = 10;
+  menu.setLayer("clock", true);
+  clock.setControlsExpanded(true);
+  if (menu.isMapMode()) return;
+  const when = new Date(simulatedTime);
+  const pin = latLonToGeographic(pinnedLocation.lat, pinnedLocation.lon, _satWorld)
+    .applyAxisAngle(_Y_AXIS, earthRotationY(when))
+    .applyAxisAngle(TILT_Z_AXIS, AXIAL_TILT_RAD);
+  camera.position.copy(pin).normalize().multiplyScalar(2.2);
+  controls.target.set(0, 0, 0);
+  controls.update();
+  // The camera follows Earth's spin frame-to-frame; reset its reference so the time
+  // jump itself doesn't swing the view round.
+  _prevEarthY = earthRotationY(when);
+}
+const _Y_AXIS = new THREE.Vector3(0, 1, 0);
 satellitePanel.onCentre(() => { if (selectedSatellite) centreOnSatellite(selectedSatellite); });
 // Station tabs on the card. A ride follows the switch — you hop to the other station.
 satellitePanel.onSwitch((id) => {
@@ -2086,11 +2217,13 @@ function animate(t: number) {
       const zone = timezoneLayer.findZoneAt(pinnedLocation.lat, pinnedLocation.lon);
       locationPanel.setPinnedZone(zone.ianaName || null, zone.utcOffset);
       timezoneLayer.setReferenceZone(zone.ianaName || null);
+      pinnedLocation.zone = zone.ianaName || null;
     }
   }
   locationPanel.setNow(now);
   satelliteLayer.update(now, warp, camera, flatMap.camera, { w: window.innerWidth, h: window.innerHeight });
   updateSatellitePanel(now, t);
+  updatePassUi(now, t);
 
   // Live-data freshness. When the user warps far from wall-clock now (catalogued
   // 2027 eclipse, scrubbing back to 1923, etc.), we hide every live-weather

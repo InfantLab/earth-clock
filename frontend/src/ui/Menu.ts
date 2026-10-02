@@ -331,6 +331,7 @@ export class Menu {
   private cloudsChangeHandler: ((active: CloudSourceKey | null) => void) | null = null;
   private findMoonHandler: (() => void) | null = null;
   private findIssHandler: (() => void) | null = null;
+  private showCrewHandler: (() => void) | null = null;
   private skyboxHiResHandler: ((hires: boolean) => void) | null = null;
 
   constructor(parent: HTMLElement, layers: MenuLayers, panels: MenuPanels = {}) {
@@ -412,6 +413,13 @@ export class Menu {
         btn.title = "Turn the camera to look down on the International Space Station and open its info card";
         btn.addEventListener("click", () => { this.findIssHandler?.(); this.collapseIfMobile(); });
         buttonsHost.appendChild(btn);
+        buttonsHost.appendChild(document.createTextNode(" · "));
+        const crew = document.createElement("span");
+        crew.className = "orrery-tb orrery-action";
+        crew.textContent = "Who's up there?";
+        crew.title = "Everyone in space right now, station by station, with links to the official mission sites";
+        crew.addEventListener("click", () => { this.showCrewHandler?.(); this.collapseIfMobile(); });
+        buttonsHost.appendChild(crew);
       }
 
       categoriesHost.appendChild(row);
@@ -520,6 +528,11 @@ export class Menu {
   /** Hook for the "Find ISS" action button at the end of the Space row. */
   onFindIss(fn: () => void) {
     this.findIssHandler = fn;
+  }
+
+  /** Hook for the "Who's up there?" action button (crew view of the station card). */
+  onShowCrew(fn: () => void) {
+    this.showCrewHandler = fn;
   }
 
   /**
