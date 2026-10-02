@@ -1,6 +1,6 @@
 # Satellites plan — ISS, Tiangong, and what comes after
 
-Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **Phases 0–1 shipped in v0.5.0 (2026-10-01). Phase 2 (passes) next.**
+Design doc for the v0.5 / v0.6 "people in orbit" work. Status: **Phases 0–1 shipped in v0.5.0 (2026-10-01); Phase 2 (passes) and a Phase 3 Ride-along preview shipped in v0.6.0 (2026-10-02). Ride-along polish next.**
 Supersedes the short *ISS position + ground track* entry in [ROADMAP.md](../../ROADMAP.md).
 
 Two headline features:
@@ -309,7 +309,7 @@ interface.
 |---|---|---|---|
 | **0 — Plumbing** | catalog, satellite-service + fallback, loader, sgp4 propagator, frames, validation vs reference positions | (internal) | ~1 day |
 | **1 — See them** | markers, shadow dimming, orbit ring, ground track (globe + flat map), Space menu row, Find ISS, SatellitePanel, `?sat=`, freshness gate, DataPanel row | **v0.5.0** | ~2 days |
-| **2 — Passes** | worker pass predictor, LocationPanel section, "Watch this pass", .ics, humans-in-space count | v0.5.1 | ~1–1.5 days |
+| **2 — Passes** | worker pass predictor, LocationPanel section, "Watch this pass", .ics, humans-in-space count | v0.6.0 (with the Ride-along preview) | ~1–1.5 days |
 | **3 — Ride along** | SatelliteCameraPath (3 views), two-pass model render, ISS glTF, HUD, layer-radius audit, atmosphere-from-inside, `?view=iss` | **v0.6.0** | ~3–4 days |
 | **4 — More sats** | Hubble, provenance sats, GEO belt; then ephemeris propagator for JWST/DSCOVR; constellations | v0.6.x+ | incremental |
 

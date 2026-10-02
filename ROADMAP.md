@@ -24,8 +24,8 @@ Forward-looking engineering tracker. Shipped work lives in
 - ✅ Done
 - ❌ Blocked
 
-Current shipped version: **v0.5.0** (2026-10-01) — ISS and Tiangong: station markers,
-ground tracks, orbit rings, station card with crew aboard. See [CHANGELOG.md](CHANGELOG.md).
+Current shipped version: **v0.6.0** (2026-10-02) — Ride along (preview), visible passes
+from your pin, "Who's up there?" crew view. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -50,18 +50,21 @@ while the cyan axis stays fixed — the seasons made visible.
 
 Effort: ~half a day.
 
-### ⬜ Satellites — visible passes, then "Ride along"
+### 🔄 Ride along — from preview to polished
 
-> **Full design:** [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md) §5.
-> Phases 0–1 (ISS + Tiangong markers, tracks, orbits, station card) shipped in v0.5.0.
+> **Full design:** [frontend/docs/satellites-plan.md](frontend/docs/satellites-plan.md) §3.
+> Shipped: markers, tracks, orbits, station card (v0.5.0); passes, crew view, Ride-along
+> preview with horizon + cupola views (v0.6.0).
 
-- **Phase 2 — Passes (v0.5.1).** Worker-based visible-pass predictor for the pinned
-  location, a LocationPanel section, "Watch this pass", .ics export, humans-in-space count.
-  ~1–1.5 days.
-- **Phase 3 — Ride along (v0.6.0 in the plan).** Camera on the station, ISS model, HUD,
-  `?view=iss`. Has the rendering risks; spike first. ~3–4 days.
+- **Quick fixes from the spike:** hide Beams' rings while riding (edge-on they draw a band
+  across the horizon); finer limb tessellation; flatter twilight limb colour.
+- **Sharper ground:** anisotropic filtering on globe/cloud textures; lazy-load 8k day and
+  night maps on ride entry (today's are 2k, ~20 km/px).
+- **Ride UX:** eased entry/exit flight, drag-to-look-around with spring-back, HUD
+  (altitude, speed, "over …", next sunrise, orbits since boarding).
+- **Chase view** with the ISS model — needs the two-pass depth render.
 - **Keep `public/data/satellites/crew.json` current** — hand-maintained; update on every
-  crew rotation (next: Crew-12 departs after Crew-13 docks, early Oct 2026).
+  crew rotation (next: Crew-12 undocks a few days after the Crew-13 handover).
 
 ---
 

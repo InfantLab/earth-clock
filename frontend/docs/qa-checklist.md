@@ -1,6 +1,6 @@
 # Visual QA checklist
 
-## v0.5.1 — visible passes + who's in space
+## v0.6.0 — visible passes, who's in space, Ride along
 
 Headless checks used the committed real `fallback.json`: pass list, Location-panel row,
 ▶ watch, .ics download and crew view all work. **Needs a real-world sweep:**

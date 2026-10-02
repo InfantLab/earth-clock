@@ -9,7 +9,7 @@ canvas renderer at `/classic/` is preserved but not separately versioned.
 
 ---
 
-## Unreleased — Can I see it tonight?
+## v0.6.0 — 2026-10-02 — Ride along, and can I see it tonight?
 
 - **Visible passes.** Pin a location and the station card lists the next times the ISS or
   Tiangong will be visible from there: sunlit, at least 10° up, in a dark sky. Each pass
