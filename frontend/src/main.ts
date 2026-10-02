@@ -1367,11 +1367,17 @@ function selectSatellite(id: string | null) {
   // Selecting a station you've hidden turns it back on — otherwise the card describes
   // something that isn't on screen.
   menu.setLayer(spec.id, true);
-  satellitePanel.show(spec, crewManifest ? (crewManifest.stations[spec.id] ?? []) : null);
+  satellitePanel.show(spec, crewManifest ? (crewManifest.stations[spec.id] ?? []) : null, crewManifest?.updated ?? null);
   satellitePanel.setRiding(ride?.id === spec.id);
 }
 satellitePanel.onClose(() => selectSatellite(null));
 satellitePanel.onCentre(() => { if (selectedSatellite) centreOnSatellite(selectedSatellite); });
+// Station tabs on the card. A ride follows the switch — you hop to the other station.
+satellitePanel.onSwitch((id) => {
+  const rideView = ride?.path.view;
+  selectSatellite(id);
+  if (rideView) startRide(id, rideView);
+});
 satellitePanel.onRide(() => {
   if (!selectedSatellite) return;
   if (ride?.id === selectedSatellite) stopRide(); else startRide(selectedSatellite);

@@ -38,6 +38,8 @@ export interface SatelliteSpec {
   model?: { url: string; scaleMetres: number };
   /** Rotating one-liners for the info card. */
   facts?: string[];
+  /** The operator's own page about the station and its crew — the card's crew hand-off. */
+  crewLink?: { label: string; url: string };
 }
 
 export const SATELLITES: readonly SatelliteSpec[] = [
@@ -62,6 +64,7 @@ export const SATELLITES: readonly SatelliteSpec[] = [
       "About the size of a football pitch, and it laps Earth every ~92 minutes.",
       "Its crew see about 16 sunrises and 16 sunsets every day.",
     ],
+    crewLink: { label: "nasa.gov", url: "https://www.nasa.gov/international-space-station/" },
   },
   {
     id: "tiangong",
@@ -86,8 +89,22 @@ export const SATELLITES: readonly SatelliteSpec[] = [
       "Tiangong means \"Heavenly Palace\".",
       "Orbits a little lower and at a lower inclination (41.5°) than the ISS.",
     ],
+    crewLink: { label: "China Manned Space", url: "https://en.cmse.gov.cn/" },
   },
 ];
+
+/**
+ * Astronaut pages for the agencies that appear in crew.json, so each name on the card
+ * hands off to the people who flew them. Checked 2026-10-02. Roscosmos is left out:
+ * roscosmos.ru refuses requests from outside Russia, so a link would just be a 403.
+ */
+export const AGENCY_LINKS: Readonly<Record<string, string>> = {
+  NASA: "https://www.nasa.gov/humans-in-space/astronauts/",
+  ESA: "https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/Astronauts",
+  CSA: "https://www.asc-csa.gc.ca/eng/astronauts/",
+  JAXA: "https://humans-in-space.jaxa.jp/en/",
+  CMSA: "https://en.cmse.gov.cn/",
+};
 
 export function satelliteById(id: string): SatelliteSpec | undefined {
   return SATELLITES.find(s => s.id === id);
