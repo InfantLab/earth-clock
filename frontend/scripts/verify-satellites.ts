@@ -20,6 +20,8 @@ import { temeToScene, subPointDeg, isInEarthShadow, lvlhBasis, EARTH_RADIUS_KM }
 import { gmst, sunDirectionWorld } from "../src/astro/solar";
 import { SatelliteTracker } from "../src/space/tracker";
 import type { OmmRecord } from "../src/data/satelliteLoader";
+import { lookAngles, predictVisiblePasses } from "../src/space/passes";
+import { geodeticToEcf, eciToEcf, ecfToLookAngles, degreesToRadians } from "satellite.js";
 
 const TLE1 = "1 25544U 98067A   19156.50900463  .00003075  00000-0  59442-4 0  9992";
 const TLE2 = "2 25544  51.6433  59.2583 0008217  16.4489 347.6017 15.51174618173442";
@@ -126,6 +128,60 @@ const pos = new THREE.Vector3(), vel = new THREE.Vector3(), ref = new THREE.Vect
     n++;
   }
   check("Earth shadow", agree / n > 0.98, `${(100 * agree / n).toFixed(1)}% agreement, in shadow ${(100 * dark / n).toFixed(0)}% of the time`);
+}
+
+// 6b. Look angles (pass predictor) vs satellite.js ecfToLookAngles, London.
+{
+  const obs = { lat: 51.4613, lon: -0.1156, heightKm: 0.03 }; // Brixton
+  const geo = { latitude: degreesToRadians(obs.lat), longitude: degreesToRadians(obs.lon), height: obs.heightKm };
+  let worstEl = 0, worstAz = 0, worstRange = 0;
+  for (let m = 0; m < 600; m += 1) {
+    const t = new Date(t0.getTime() + m * 60_000);
+    const ours = lookAngles(prop, obs, t)!;
+    const ecf = eciToEcf(propagate(tleRec, t)!.position, gmst(t));
+    const ref = ecfToLookAngles(geo, ecf);
+    worstEl = Math.max(worstEl, Math.abs(ours.elDeg - ref.elevation / DEG));
+    if (ours.elDeg > 0) worstAz = Math.max(worstAz, Math.abs(((ours.azDeg - ref.azimuth / DEG + 540) % 360) - 180));
+    worstRange = Math.max(worstRange, Math.abs(ours.rangeKm - ref.rangeSat));
+  }
+  check("look angles vs satellite.js", worstEl < 0.01 && worstAz < 0.05 && worstRange < 0.5,
+    `worst Δel ${worstEl.toExponential(1)}°, Δaz (above horizon) ${worstAz.toExponential(1)}°, Δrange ${worstRange.toFixed(3)} km`);
+}
+
+// 6c. Pass search vs a brute-force reference: scan 7 days every 20 s with satellite.js's
+//     own look angles + conical shadow model + our sun, at several observers; every
+//     reference-visible moment must fall inside one of our predicted passes (±30 s), and
+//     every predicted pass must contain at least one reference-visible moment.
+{
+  const sites = { London: [51.46, -0.12], Sydney: [-33.87, 151.21], Nairobi: [-1.29, 36.82], Reykjavik: [64.15, -21.94], "New York": [40.71, -74.0] } as const;
+  const from = new Date("2019-06-05T12:00:00Z");
+  const days = 7;
+  let refMoments = 0, missed = 0, phantom = 0, total = 0;
+  const summary: string[] = [];
+  for (const [name, [lat, lon]] of Object.entries(sites)) {
+    const obs = { lat, lon };
+    const geo = { latitude: degreesToRadians(lat), longitude: degreesToRadians(lon), height: 0 };
+    const passes = (await predictVisiblePasses(prop, obs, from, { days }))!;
+    total += passes.length;
+    const hits = new Array(passes.length).fill(0);
+    for (let t = from.getTime(); t < from.getTime() + days * 86_400_000; t += 20_000) {
+      const d = new Date(t);
+      const pv = propagate(tleRec, d)!;
+      const el = ecfToLookAngles(geo, eciToEcf(pv.position, gmst(d))).elevation / DEG;
+      if (el < 10.2) continue;
+      if (shadowFraction(sunPos(jday(d)).rsun, pv.position) > 0.5) continue;
+      const g = gmst(d);
+      const up = new THREE.Vector3(Math.cos(lat * DEG) * Math.cos(lon * DEG + g), Math.sin(lat * DEG), -Math.cos(lat * DEG) * Math.sin(lon * DEG + g));
+      if (Math.asin(sunDirectionWorld(d, new THREE.Vector3()).dot(up)) / DEG > -6.2) continue;
+      refMoments++;
+      const i = passes.findIndex(p => t >= p.start.getTime() - 30_000 && t <= p.end.getTime() + 30_000);
+      if (i < 0) missed++; else hits[i]++;
+    }
+    phantom += hits.filter(h => h === 0).length;
+    summary.push(`${name} ${passes.length}`);
+  }
+  check("visible passes vs brute force (5 sites × 7 days)", total > 0 && missed === 0 && phantom === 0,
+    `${total} passes (${summary.join(", ")}), ${refMoments} reference moments, ${missed} missed, ${phantom} phantom`);
 }
 
 // 7. Optional: live element file → print where everything is right now.

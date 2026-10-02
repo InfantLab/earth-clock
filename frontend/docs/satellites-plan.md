@@ -218,6 +218,26 @@ ISS in mind, and this becomes its first real implementation.
 | **Atmosphere shader** | Tuned for viewing from outside the shell. The camera is now *inside* at the top. | Test the limb look early; may need an "inside" branch for the limb glow. |
 | **Station model** | ISS glTF from NASA 3D Resources (public domain), a few MB. Tiangong has no NASA model. | Lazy-load only on POV entry. Tiangong (decided): search for a CC-BY / CC0 model first (Sketchfab etc., check the licence allows redistribution); otherwise build our own low-poly one (Tianhe + Wentian + Mengtian in a T, plus arrays). Solar arrays rotate toward `sunDir`, which is a cheap, lovely detail. |
 
+**Spike results (2026-10-01, branch `feat/iss-ride-along`).** `SatelliteCameraPath` with
+cupola + horizon views, `__orrery.rideAlong()`, `?view=iss[-cupola]`, V / Esc. Checked with
+headless screenshots stepped around one orbit:
+
+- **Depth precision: solved for cupola/horizon.** Dropping `camera.near` to 0.0005 R (≈ 3 km)
+  while riding, far unchanged, shows no z-fighting between globe, clouds (1.003), overlays
+  (1.006), coastlines and tracks. The two-pass render is only needed for the chase view.
+- **Atmosphere: works as-is.** The risk above was mis-stated: the shell tops out at
+  1.018 R (115 km) and the ISS is at ~1.066 R, so the camera is *above* it, not inside. The
+  existing Fresnel rim gives a convincing blue limb on the day side. Issues: (a) the limb
+  shows straight-segment facets — the atmosphere (96×48) and globe (128×64) spheres are too
+  coarse at 400 km range; (b) at dusk the twilight term turns the limb into a flat
+  lavender band; (c) the night limb is near-invisible.
+- **Layer radii: all below the station** (aurora 1.008, equator/ecliptic rings 1.012, track
+  1.0045). But the rings seen edge-on become a thick cyan band across the horizon, so Beams
+  should switch off while riding (restore on exit).
+- **Texture resolution: as predicted.** Clouds go blocky near the camera; wind trails show
+  as streaks on the ocean. Acceptable for a first version; consider hiding trails in ride.
+- The station's own ground track running straight ahead to the horizon reads well — keep it.
+
 ### 3.3 HUD
 
 Minimal and fading, in the same style as the eclipse badge: altitude, speed, position
@@ -333,13 +353,28 @@ rest of it.
 - Not done from §2: nadir line and visibility footprint (optional), "over …" place names
   only where Nominatim has a name (most of the orbit is ocean).
 
-**Still to do before v0.5.0 ships:**
+**v0.5.0 shipped (2026-10-01)** with a committed `fallback.json` and filled-in `crew.json`;
+live ISS sub-point checked within 0.06° of wheretheiss.at.
 
-- `public/data/satellites/fallback.json` isn't committed yet — CelesTrak isn't reachable
-  from the cloud dev sandbox. Run `npm run satellites:fallback` locally and commit it.
-- Fill in `crew.json` (currently `updated: null`, so the UI will hide the count).
-- Live check: `npx tsx scripts/verify-satellites.ts ../public/data/satellites/fallback.json`
-  and compare the printed sub-points with wheretheiss.at (target < 0.1°).
+**Phase 2 — landed (2026-10-01).**
+
+- `space/passes.ts`: visible-pass search (≥ 10° up, station sunlit, sun < −6° at the
+  observer), 30 s coarse scan + 5 s fine sampling, 10-day window, sub-minute slivers
+  dropped, diffuse-sphere magnitude estimate from `spec.stdMagnitude`. Runs on the main
+  thread in 1-day slices with cancellation instead of a Web Worker: a worker build pulls in
+  satellite.js's WASM runtimes, which Vite can't bundle as a classic worker.
+- Verified in `scripts/verify-satellites.ts`: look angles match satellite.js to 1e-5°, and
+  over 5 cities × 7 days every brute-force-visible moment falls inside a predicted pass,
+  with no spurious passes.
+- Station card: "visible from 📍 …" with the next three passes (pin's time zone),
+  **▶ watch** (jump to T−1 min at 10×, camera over the pin), **📅** (.ics with a 10-min
+  alarm), friendly "none in the next 10 days" and "drop a pin" states.
+- Location panel: "🛰️ ISS / Tiangong visible — Tonight 21:42" row for the soonest pass.
+- **Who's up there?** (Space row, or the card's "aboard" link): everyone aboard each crewed
+  station, days in orbit, station names linking to the official sites (`spec.officialUrl`;
+  NASA ISS page and CMSA English site), optional per-person `url` in `crew.json`.
+- Marker "backflip" fix: the silhouette is anchored to the projected orbit normal; the
+  nose only swaps sides where the on-screen ellipse turns round, instead of spinning.
 
 ## 8. Decisions (2026-09-30)
 

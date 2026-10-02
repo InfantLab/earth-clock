@@ -1,5 +1,20 @@
 # Visual QA checklist
 
+## v0.5.1 — visible passes + who's in space
+
+Headless checks used the committed real `fallback.json`: pass list, Location-panel row,
+▶ watch, .ics download and crew view all work. **Needs a real-world sweep:**
+
+- [ ] Pin your home; compare the next few passes with Heavens-Above or NASA Spot the Station
+      (times within ~1 min, max elevation within a few degrees, directions match).
+- [ ] Go outside for one. Magnitude estimate in the right ballpark?
+- [ ] Times shown in the pin's zone (pin somewhere in another zone and check).
+- [ ] 📅 file imports cleanly into Google / Apple / Outlook calendars.
+- [ ] Official-site links open (NASA ISS, CMSA English site).
+- [ ] Marker no longer backflips at the limb (watch at ~60× warp with Orbits on).
+- [ ] Warp to 2027 → card says passes need today's orbit; Location row disappears.
+
+
 ## v0.5.0 — ISS + Tiangong (Space row)
 
 Headless-Chromium checks during development used synthetic "today-epoch" elements

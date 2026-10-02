@@ -14,6 +14,9 @@
  *   🌙 Sub-lunar — live geographic point where the moon is currently overhead.
  *      Click to drop the pin there. Highlighted when the pin's source is the moon.
  *
+ *   🛰️ Next visible space-station pass from the pin (v0.5.1) — hidden until a pass is
+ *      found. Click to open that station's card with the full list.
+ *
  * Plus a "use my location" button that pipes the browser geolocation API into the
  * pin (same flow as a globe click).
  *
@@ -35,6 +38,11 @@ export class LocationPanel {
   private readonly moonRowEl: HTMLElement;
   private readonly sunCoordsEl: HTMLElement;
   private readonly moonCoordsEl: HTMLElement;
+  private readonly satRowEl: HTMLElement;
+  private readonly satNameEl: HTMLElement;
+  private readonly satWhenEl: HTMLElement;
+  private readonly satDetailEl: HTMLElement;
+  private nextPassHandler: (() => void) | null = null;
   private readonly geoButton: HTMLButtonElement | null;
   private readonly geoStatus: HTMLElement | null;
   private lat: number | null = null;
@@ -83,6 +91,18 @@ export class LocationPanel {
         </div>
       </div>
 
+      <div class="orrery-loc-item sat hidden" id="orrery-loc-row-sat" role="button" tabindex="0"
+           title="Open the station card with its upcoming visible passes">
+        <div class="orrery-loc-line1">
+          <span class="orrery-loc-icon" aria-hidden="true">🛰️</span>
+          <span class="orrery-loc-name" id="orrery-loc-sat-name">next pass</span>
+          <span class="orrery-loc-sublabel" id="orrery-loc-sat-when"></span>
+        </div>
+        <div class="orrery-loc-line2">
+          <span class="orrery-loc-coords" id="orrery-loc-sat-detail"></span>
+        </div>
+      </div>
+
       <div class="orrery-loc-item sun" id="orrery-loc-row-sun" role="button" tabindex="0"
            title="Drop the pin where the sun is directly overhead right now">
         <div class="orrery-loc-line1">
@@ -124,6 +144,10 @@ export class LocationPanel {
     this.moonRowEl   = this.root.querySelector("#orrery-loc-row-moon") as HTMLElement;
     this.sunCoordsEl  = this.root.querySelector("#orrery-loc-sun-coords")  as HTMLElement;
     this.moonCoordsEl = this.root.querySelector("#orrery-loc-moon-coords") as HTMLElement;
+    this.satRowEl    = this.root.querySelector("#orrery-loc-row-sat")    as HTMLElement;
+    this.satNameEl   = this.root.querySelector("#orrery-loc-sat-name")   as HTMLElement;
+    this.satWhenEl   = this.root.querySelector("#orrery-loc-sat-when")   as HTMLElement;
+    this.satDetailEl = this.root.querySelector("#orrery-loc-sat-detail") as HTMLElement;
     this.geoButton = this.root.querySelector("#orrery-loc-geo")       as HTMLButtonElement | null;
     this.geoStatus = this.root.querySelector("#orrery-loc-geostatus") as HTMLElement       | null;
 
@@ -141,6 +165,20 @@ export class LocationPanel {
     this.sunRowEl.addEventListener("keydown", activate(() => this.sunBeamHandler?.()));
     this.moonRowEl.addEventListener("click",  () => this.moonBeamHandler?.());
     this.moonRowEl.addEventListener("keydown", activate(() => this.moonBeamHandler?.()));
+    this.satRowEl.addEventListener("click",   () => this.nextPassHandler?.());
+    this.satRowEl.addEventListener("keydown", activate(() => this.nextPassHandler?.()));
+  }
+
+  /** Hook for the next-pass row click — main.ts opens that station's card. */
+  onNextPass(fn: () => void) { this.nextPassHandler = fn; }
+
+  /** Soonest visible station pass from the pin, or null to hide the row. */
+  setNextPass(info: { station: string; when: string; detail: string } | null) {
+    this.satRowEl.classList.toggle("hidden", !info);
+    if (!info) return;
+    this.satNameEl.textContent = `${info.station} visible`;
+    this.satWhenEl.textContent = info.when;
+    this.satDetailEl.textContent = info.detail;
   }
 
   /** Hook for the sub-solar row click. main.ts pins at the current sub-solar (lat, lon). */
@@ -368,6 +406,10 @@ function injectStyles() {
     }
     .orrery-loc-item.current { border-left-color: rgba(110, 200, 120, 0.45); }
     .orrery-loc-item.sun     { border-left-color: rgba(255, 200, 60, 0.45); cursor: pointer; }
+    .orrery-loc-item.sat     { border-left-color: rgba(143, 216, 255, 0.45); cursor: pointer; }
+    .orrery-loc-item.sat:hover { background: rgba(255,255,255,0.07); }
+    .orrery-loc-item.sat .orrery-loc-sublabel { color: #8fd8ff; }
+    #orrery-location .hidden { display: none; }
     .orrery-loc-item.moon    { border-left-color: rgba(200, 215, 235, 0.45); cursor: pointer; }
     .orrery-loc-item.sun:hover,
     .orrery-loc-item.moon:hover { background: rgba(255,255,255,0.07); }
