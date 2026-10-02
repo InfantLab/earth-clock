@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { SatelliteTracker, TrackedSatellite } from "../space/tracker";
 import { elementAge, type ElementAge } from "../space/propagator";
-import { sceneToGeographic, isInEarthShadow } from "../space/frames";
+import { sceneToGeographic, isInEarthShadow, EARTH_RADIUS_KM } from "../space/frames";
 import { gmst } from "../astro/solar";
 
 const AXIAL_TILT = 23.44 * Math.PI / 180;
@@ -212,8 +212,8 @@ export class SatelliteLayer {
     if (!v || !v.placed) return null;
     return {
       lat: v.lat, lon: v.lon,
-      altKm: (v.pos.length() - 1) * 6378.137,
-      speedKms: v.vel.length() * 6378.137,
+      altKm: (v.pos.length() - 1) * EARTH_RADIUS_KM,
+      speedKms: v.vel.length() * EARTH_RADIUS_KM,
       inShadow: v.inShadow,
       age: v.age,
     };

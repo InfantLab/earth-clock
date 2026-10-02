@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { SATELLITES, type SatelliteSpec } from "./catalog";
 import { createPropagator, elementAge, type ElementAge, type ElementIndex, type Propagator } from "./propagator";
-import { subPointDeg, isInEarthShadow } from "./frames";
+import { subPointDeg, isInEarthShadow, EARTH_RADIUS_KM } from "./frames";
 import { gmst, sunDirectionWorld } from "../astro/solar";
 
 export interface TrackedSatellite {
@@ -98,7 +98,7 @@ export class SatelliteTracker {
         lat: round(sp.lat, 3),
         lon: round(sp.lon, 3),
         altKm: round(sp.altKm, 1),
-        speedKms: round(_vel.length() * 6378.137, 3),
+        speedKms: round(_vel.length() * EARTH_RADIUS_KM, 3),
       });
     }
     return out;

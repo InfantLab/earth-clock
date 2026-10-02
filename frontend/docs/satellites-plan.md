@@ -101,7 +101,8 @@ export interface Propagator {
 - **Server mirror is required, not optional.** CelesTrak asks clients not to refetch
   faster than the data updates (~2 h) and blocks IPs that do. Every browser hitting it
   directly isn't acceptable. `satellite-service.js` polls every 4 h, writes
-  `public/data/satellites/current.json` = `{ generated, sats: { iss: {omm}, tiangong: {omm} } }`,
+  `public/data/satellites/current.json` = `{ generated, source, sats: [ {omm}, … ] }` (an array of
+  OMM records; the frontend keys them by `NORAD_CAT_ID`),
   and keeps the last good file on failure. Register in [services/server.js](../../services/server.js)
   like the earthquake service.
 - **Bundled fallback** (`fallback.json`) for the offline / Wallpaper Engine / screensaver
