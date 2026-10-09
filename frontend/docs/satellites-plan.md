@@ -268,6 +268,13 @@ Rough value-for-effort order:
    (`{ updated, stations: { iss: [{name, agency, since}], tiangong: [...] } }`) and show
    its age in the Data panel. A live source comes later (open-notify `astros.json` is
    HTTP-only and unmaintained; pick a replacement then).
+
+   **Operating rule (from 2026-10-09):** a weekday source-check watches NASA's current
+   Expedition page/blog and CMSA/Shenzhou announcements, and alerts the maintainer only
+   when a handover is confirmed or the manifest has become stale. Do not automatically
+   rewrite the list from a scraper. On a confirmed change, update the manifest, set its
+   `updated` date, cite the primary source in the commit, push to `master`, then fetch
+   `/data/satellites/crew.json` from production to prove the deployed roster.
 2. **Data-provenance satellites.** Our cloud layers *come from* NOAA-20 (VIIRS),
    GOES-East, Himawari and Meteosat. Show the satellites behind the pixels you're looking at, with
    the geostationary ones parked in their GEO slots. This connects the Data panel to

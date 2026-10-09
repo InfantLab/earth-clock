@@ -1,12 +1,8 @@
 {
-  "_comment": "Hand-maintained list of people aboard each crewed station (satellites-plan.md §4.1). Keys match catalog.ts ids. Set `updated` to the date you last checked (YYYY-MM-DD); null means not filled in yet and the UI will hide the count. `agency` keys into AGENCY_LINKS in catalog.ts (NASA, ESA, CSA, JAXA, CMSA; Roscosmos is shown unlinked). `since` is the docking date (UTC). Sources: nasa.gov/international-space-station, cmse.gov.cn, en.wikipedia.org/wiki/Expedition_75, en.wikipedia.org/wiki/Shenzhou_23. Next change: Crew-12 (Meir, Hathaway, Adenot, Fedyaev) undocks a few days after the Crew-13 handover.",
-  "updated": "2026-10-02",
+  "_comment": "Hand-maintained list of people aboard each crewed station (satellites-plan.md §4.1). Keys match catalog.ts ids. Set `updated` to the date you last checked (YYYY-MM-DD); null means not filled in yet and the UI will hide the count. `agency` keys into AGENCY_LINKS in catalog.ts (NASA, ESA, CSA, JAXA, CMSA; Roscosmos is shown unlinked). `since` is the docking date (UTC). Sources: NASA Expedition 75 and CMSA/Shenzhou-23 announcements. Recheck at the next station crew handover.",
+  "updated": "2026-10-09",
   "stations": {
     "iss": [
-      { "name": "Jessica Meir", "agency": "NASA", "since": "2026-02-14" },
-      { "name": "Jack Hathaway", "agency": "NASA", "since": "2026-02-14" },
-      { "name": "Sophie Adenot", "agency": "ESA", "since": "2026-02-14" },
-      { "name": "Andrey Fedyaev", "agency": "Roscosmos", "since": "2026-02-14" },
       { "name": "Pyotr Dubrov", "agency": "Roscosmos", "since": "2026-07-14" },
       { "name": "Anna Kikina", "agency": "Roscosmos", "since": "2026-07-14" },
       { "name": "Anil Menon", "agency": "NASA", "since": "2026-07-14" },
